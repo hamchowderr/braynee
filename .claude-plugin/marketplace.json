@@ -1,12 +1,9 @@
 {
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "hamch-plugins",
+  "description": "Claude Code plugins for power users — deep analytics, workflow tools, and more",
   "owner": {
     "name": "HamCh"
-  },
-  "metadata": {
-    "description": "Claude Code plugins for power users — deep analytics, workflow tools, and more",
-    "version": "1.0.0",
-    "pluginRoot": "./plugins"
   },
   "plugins": [
     {
@@ -17,7 +14,7 @@
       "author": {
         "name": "HamCh"
       },
-      "repository": "https://github.com/HamCh/claude-plugins",
+      "repository": "https://github.com/hamchowderr/claude-plugins",
       "license": "MIT",
       "keywords": ["insights", "analytics", "reporting", "usage", "history"]
     }

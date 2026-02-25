@@ -6,7 +6,7 @@ A marketplace of Claude Code plugins for power users.
 
 ```shell
 # Add the marketplace
-/plugin marketplace add HamCh/claude-plugins
+/plugin marketplace add hamchowderr/claude-plugins
 
 # Browse available plugins
 /plugin
@@ -35,7 +35,7 @@ Generate a comprehensive HTML insights report from your **entire** Claude Code h
 **Install:**
 
 ```shell
-/plugin install insightful@claude-plugins
+/plugin install insightful@hamch-plugins
 ```
 
 **Use:**
