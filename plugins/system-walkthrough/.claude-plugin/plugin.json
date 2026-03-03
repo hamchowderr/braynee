@@ -1,0 +1,11 @@
+{
+  "name": "system-walkthrough",
+  "description": "Point it at any codebase and get a complete Obsidian-compatible walkthrough with wikilinks. Autonomously reads through the code, maps the architecture, and produces interlinked documentation a senior dev could use to onboard.",
+  "version": "1.0.0",
+  "author": {
+    "name": "HamCh"
+  },
+  "repository": "https://github.com/HamCh/claude-plugins",
+  "license": "MIT",
+  "keywords": ["documentation", "walkthrough", "codebase", "architecture", "obsidian", "onboarding"]
+}

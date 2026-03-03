@@ -54,6 +54,26 @@ This generates a rich HTML report at `~/.claude/usage-data/insightful-report.htm
 - Multi-clauding stats and notable sessions
 - Evolution over time and usage timeline
 
+### System Walkthrough
+
+Point it at any codebase and get a complete Obsidian-compatible walkthrough with wikilinks. Autonomously reads through the code, maps the architecture, and produces interlinked documentation a senior dev could use to onboard.
+
+**Install:**
+
+```shell
+/plugin install system-walkthrough@claude-plugins
+```
+
+**Use:**
+
+Just ask Claude to document a codebase:
+
+```
+Walk through this codebase and document it
+```
+
+It will survey the project, read through the important files, and output a set of interlinked Obsidian Markdown files covering architecture, data model, routes, core logic, integrations, and configuration.
+
 ## License
 
 MIT
