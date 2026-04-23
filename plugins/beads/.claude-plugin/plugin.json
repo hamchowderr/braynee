@@ -1,0 +1,10 @@
+{
+  "name": "beads",
+  "version": "1.0.0",
+  "description": "Beads issue tracker dashboard — auto-generates and opens a live HTML dashboard for your active project on session start, and refreshes it whenever bd commands run.",
+  "author": {
+    "name": "HamChowderr"
+  },
+  "keywords": ["beads", "issues", "dashboard", "project-management"],
+  "hooks": "./hooks/hooks.json"
+}
