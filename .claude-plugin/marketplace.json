@@ -41,6 +41,30 @@
       "repository": "https://github.com/hamchowderr/claude-plugins",
       "license": "MIT",
       "keywords": ["beads", "issues", "dashboard", "project-management", "dolt"]
+    },
+    {
+      "name": "shadcn",
+      "source": "./plugins/shadcn",
+      "description": "Full context on shadcn/ui CLI v4, known third-party registries, component install patterns, and safe inspection workflows. Auto-loads in any Next.js project using shadcn/ui.",
+      "version": "1.0.0",
+      "author": {
+        "name": "HamCh"
+      },
+      "repository": "https://github.com/hamchowderr/claude-plugins",
+      "license": "MIT",
+      "keywords": ["shadcn", "ui", "components", "registry", "nextjs", "tailwind"]
+    },
+    {
+      "name": "brainy",
+      "source": "./plugins/brainy",
+      "description": "Brainy turns Claude Code into your second brain — setup wizard, PARA vault scaffolding, company knowledge base, project detection, and daily workflow skills.",
+      "version": "1.3.0",
+      "author": {
+        "name": "Otaku Solutions"
+      },
+      "repository": "https://github.com/hamchowderr/claude-plugins",
+      "license": "MIT",
+      "keywords": ["second-brain", "obsidian", "PARA", "vault", "knowledge-management", "daily-notes", "zettelkasten"]
     }
   ]
 }
