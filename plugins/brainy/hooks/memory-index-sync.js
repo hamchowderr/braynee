@@ -52,7 +52,7 @@ function typeToSection(type) {
 
 let input;
 try {
-  input = JSON.parse(fs.readFileSync('/dev/stdin', 'utf8'));
+  input = JSON.parse(fs.readFileSync(0, 'utf8'));
 } catch (err) {
   log.error(HOOK, `failed to read stdin: ${err.message}`);
   process.exit(0);
