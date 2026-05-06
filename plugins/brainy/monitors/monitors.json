@@ -1,17 +1,17 @@
 [
   {
     "name": "vault-inbox",
-    "command": "node \"{pluginDir}/monitors/inbox-watcher.mjs\"",
+    "command": "node \"${CLAUDE_PLUGIN_ROOT}/monitors/inbox-watcher.mjs\"",
     "description": "Vault Inbox — notifies when unprocessed items accumulate"
   },
   {
     "name": "qmd-freshness",
-    "command": "node \"{pluginDir}/monitors/qmd-freshness.mjs\"",
+    "command": "node \"${CLAUDE_PLUGIN_ROOT}/monitors/qmd-freshness.mjs\"",
     "description": "QMD search index — warns when the index is more than 48h stale"
   },
   {
     "name": "hook-watcher",
-    "command": "node \"{pluginDir}/monitors/hook-watcher.mjs\"",
+    "command": "node \"${CLAUDE_PLUGIN_ROOT}/monitors/hook-watcher.mjs\"",
     "description": "Hook diagnostics — surfaces errors from brainy hook scripts as Claude notifications"
   }
 ]
