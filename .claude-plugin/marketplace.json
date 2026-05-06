@@ -10,7 +10,7 @@
       "name": "insightful",
       "source": "./plugins/insightful",
       "description": "Generate a comprehensive HTML insights report from your ENTIRE Claude Code history — every session, every project, all time. The built-in /insights covers recent activity; Insightful covers everything.",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "author": {
         "name": "HamCh"
       },

@@ -543,6 +543,20 @@ async function main() {
   fs.writeFileSync(OUTPUT_PATH, JSON.stringify(result, null, 2), 'utf8');
   console.error(`[insightful] Done! ${totalSessionsFound} sessions across ${Object.keys(projects).length} projects`);
   console.error(`[insightful] Output: ${OUTPUT_PATH}`);
+
+  // ── Facet coverage warning ─────────────────────────────────────────────────
+  const facetCoverage = totalSessionsFound > 0 ? allFacetData.length / totalSessionsFound : 1;
+  if (facetCoverage < 0.8 && totalSessionsFound > 10) {
+    const missing = totalSessionsFound - allFacetData.length;
+    console.log('\n⚠️  FACET COVERAGE LOW');
+    console.log(`   ${allFacetData.length}/${totalSessionsFound} sessions have qualitative analysis (${Math.round(facetCoverage * 100)}%)`);
+    console.log(`   ${missing} sessions are missing facets — your report will have gaps in satisfaction,`);
+    console.log(`   friction, and helpfulness data.`);
+    console.log(`\n   To backfill all missing sessions, run:`);
+    console.log(`   node "\${CLAUDE_PLUGIN_ROOT}/skills/insightful/backfill-facets.mjs" --chunk=50`);
+    console.log(`   (shows cost estimate first — ~$0.004 per session using claude-haiku)`);
+  }
+
   console.log(OUTPUT_PATH);
 }
 

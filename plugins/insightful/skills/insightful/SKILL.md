@@ -21,6 +21,32 @@ Generate a comprehensive HTML insights report covering every Claude Code convers
 | **Pre-tracking data** | Invisible | Recovers sessions from before stats-cache existed |
 | **Output** | In-terminal summary | Interactive HTML report with charts, copy buttons, collapsible sections |
 
+## Step 0: Backfill Facets (first-time setup)
+
+Facets are qualitative per-session analysis files (goal, outcome, satisfaction, friction, helpfulness). Claude Code generates them automatically going forward, but older sessions may not have them — which means gaps in satisfaction and friction analysis.
+
+Run the collect script first to check coverage:
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/skills/insightful/collect-insights.js"
+```
+
+If it prints a `⚠️ FACET COVERAGE LOW` warning, backfill your historical sessions before generating the report. Start with a small chunk to see costs first:
+
+```bash
+# Dry run — shows what would be processed, no API calls
+node "${CLAUDE_PLUGIN_ROOT}/skills/insightful/backfill-facets.mjs" --dry-run
+
+# Run first 50 sessions (~$0.20 at Haiku pricing)
+node "${CLAUDE_PLUGIN_ROOT}/skills/insightful/backfill-facets.mjs" --chunk=50
+
+# Run all remaining once you've verified quality
+node "${CLAUDE_PLUGIN_ROOT}/skills/insightful/backfill-facets.mjs" --chunk=500
+```
+
+Cost: ~$0.004 per session using `claude-haiku-4-5-20251001`. A full backfill of 400 sessions costs roughly $1.50.
+Re-run `collect-insights.js` after backfilling to confirm coverage improved.
+
 ## Step 1: Collect Data
 
 Run the pre-aggregation script to scan all session data:
