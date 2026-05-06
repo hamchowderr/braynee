@@ -1,26 +1,28 @@
 {
-  "SessionStart": [
-    {
-      "matcher": "",
-      "hooks": [
-        {
-          "type": "command",
-          "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/session-start.js\"",
-          "async": true
-        }
-      ]
-    }
-  ],
-  "PostToolUse": [
-    {
-      "matcher": "Bash",
-      "hooks": [
-        {
-          "type": "command",
-          "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/dashboard-refresh.js\"",
-          "async": true
-        }
-      ]
-    }
-  ]
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/session-start.js\"",
+            "async": true
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/dashboard-refresh.js\"",
+            "async": true
+          }
+        ]
+      }
+    ]
+  }
 }

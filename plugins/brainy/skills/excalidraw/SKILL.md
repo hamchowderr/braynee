@@ -15,10 +15,10 @@ description: >
 Generate Excalidraw diagrams using the ExcalidrawAutomate (EA) API. Output is a
 `.excalidraw` file saved directly to the Obsidian vault — Obsidian renders it natively.
 
-**Before writing any diagram code**, read the EA API reference at:
-`C:/Users/HamCh/.claude/reference/excalidraw-api.md`
+**Before writing any diagram code**, read the bundled EA API reference at:
+`${CLAUDE_PLUGIN_ROOT}/skills/excalidraw/reference/excalidraw-api.md`
 
-Full API docs are at `C:/Users/HamCh/.claude/reference/obsidian-excalidraw-plugin/`.
+For the full upstream plugin source, clone https://github.com/zsviczian/obsidian-excalidraw-plugin.
 
 ---
 

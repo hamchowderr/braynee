@@ -19,8 +19,8 @@ it systematically and produce a **visual walkthrough** — Excalidraw diagrams e
 in Obsidian-compatible Markdown. Someone should understand the entire application from
 your diagrams without reading a single line of source code.
 
-**Before writing any diagram code**, read the EA API reference:
-`C:/Users/HamCh/.claude/reference/excalidraw-api.md`
+**Before writing any diagram code**, read the bundled EA API reference:
+`${CLAUDE_PLUGIN_ROOT}/skills/excalidraw/reference/excalidraw-api.md`
 
 ---
 
