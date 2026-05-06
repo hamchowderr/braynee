@@ -1,33 +1,43 @@
 ---
 name: system-walkthrough
 description: >
-  Autonomously reads through a codebase and produces a complete system walkthrough
-  as Obsidian-compatible Markdown with wikilinks. Use this skill whenever the user
-  asks to "document this codebase", "walk through this system", "create documentation
-  for this project", "map out this repo", "explain this codebase", or any variation
-  of wanting a comprehensive understanding of a codebase turned into documentation.
-  Also trigger when the user says things like "I need docs for this", "help me
-  understand this project", "reverse-engineer the docs", or "what does this codebase do".
-  This works on any language, framework, or stack — it figures out what matters on its own.
+  Autonomously reads through a codebase and produces a visual system walkthrough
+  using Mermaid diagrams in Obsidian-compatible Markdown. Generates architecture
+  diagrams, data flow charts, sequence diagrams, and entity relationship diagrams
+  that visually explain how the application works — like an Excalidraw board but
+  generated from code. Use this skill whenever the user asks to "document this
+  codebase", "walk through this system", "create documentation for this project",
+  "map out this repo", "diagram this app", "explain this codebase", or any variation
+  of wanting a visual understanding of how a codebase works. Also trigger when the
+  user says things like "I need docs for this", "show me how this app works",
+  "reverse-engineer the architecture", or "what does this codebase do".
+  This works on any language, framework, or stack.
 ---
 
 # System Walkthrough
 
 You are a senior architect handed a codebase you've never seen. Your job: read through
-it systematically and produce a complete, interlinked walkthrough that someone could
-use to fully understand how the system works. The output is an Obsidian-compatible
-knowledge base with wikilinks connecting the pieces.
+it systematically and produce a **visual walkthrough** — a set of Mermaid diagrams
+embedded in Obsidian-compatible Markdown that show how the system works. Someone should
+be able to look at your diagrams and understand the entire application without reading
+a single line of source code.
+
+Think of this like creating an Excalidraw board: architecture boxes, data flowing
+between them, sequences showing how requests move through the system. Except you're
+generating it as Mermaid so it renders natively in Obsidian.
 
 ## How to think about this
 
-Imagine onboarding a senior developer onto this project. They need to understand:
-- What the system does (purpose, domain)
-- How it's built (architecture, stack, key decisions)
-- How the pieces connect (data flow, dependencies, integrations)
-- Where the important logic lives (not every file — the ones that matter)
+The output should answer these questions visually:
 
-You are not generating API reference docs. You are writing a **walkthrough** — a
-narrative that guides someone through the system with enough context to be productive.
+- **What is this?** → High-level architecture diagram showing all major components
+- **How does data flow?** → Flowcharts showing request paths from user action to response
+- **What talks to what?** → Sequence diagrams for key user flows
+- **How is data shaped?** → Entity relationship diagrams for the data model
+- **What are the layers?** → Component diagrams showing the dependency tree
+
+Text is supporting context for the diagrams, not the main event. Every section should
+lead with a diagram, then explain what you're looking at.
 
 ## Phase 1: Survey
 
@@ -48,119 +58,158 @@ Get the lay of the land before reading any code in depth.
    - Deployment target if apparent
    - External services / APIs
 
-After this phase, you should have a mental model of what you're looking at. Pause and
-share a brief summary with the user as a progress update before proceeding.
+After this phase, share a brief summary with the user before proceeding.
 
 ## Phase 2: Deep Read
 
-Now read through the codebase systematically. The goal is to understand, not to
-document every file. Use judgment about what matters.
+Read through the codebase systematically. While reading, you're specifically looking
+for things that become diagrams:
 
-**Reading order** (adapt to what you find):
+**What to map:**
 
-1. **Entry points** — The file(s) where execution starts. For web apps this is usually
-   routing config, main app file, or the equivalent of `index.*` / `app.*` / `main.*`.
-2. **Routes / endpoints** — What does this system expose? Read through route definitions,
-   API handlers, page components, or CLI commands.
-3. **Data layer** — Schema definitions, models, migrations, database config. How is data
-   shaped and stored?
-4. **Core business logic** — The files that do the actual work. Services, utilities,
-   domain logic. Read the important ones; skim or skip boilerplate.
-5. **Auth & middleware** — How does the system handle authentication, authorization,
-   request processing?
-6. **Integrations** — External API calls, webhook handlers, third-party service
-   connections, queue consumers.
-7. **Configuration** — Environment variables, feature flags, runtime config.
+1. **Entry points and routing** — What comes in and where does it go? This becomes
+   your architecture overview and request flow diagrams.
+2. **Data layer** — Schema, models, relationships. This becomes your ER diagram.
+3. **Core user flows** — The 3-5 most important things a user does in the app. Each
+   becomes a sequence diagram showing the full request lifecycle.
+4. **External integrations** — APIs, webhooks, third-party services. These become
+   nodes in your architecture diagram.
+5. **Auth and middleware** — How requests are intercepted and validated. This becomes
+   part of your flow diagrams.
 
-**What to skip or skim:**
-- Generated files, lock files, build output
-- Test files (note their existence but don't deep-read unless relevant)
-- Vendor / node_modules / dependencies
-- Static assets (images, fonts)
-- Boilerplate that doesn't teach you anything
-
-**While reading, track:**
-- Key architectural decisions you notice
-- Patterns and conventions the codebase follows
-- Anything surprising, clever, or concerning
-- How components depend on each other
+**What to skip:** Generated files, lock files, tests, node_modules, static assets,
+boilerplate that doesn't teach you anything.
 
 ## Phase 3: Produce the Walkthrough
 
-Create the output as a set of interlinked Obsidian Markdown files.
+Create interlinked Obsidian Markdown files. Every file is diagram-first.
 
 ### Output Structure
 
 ```
 system-walkthrough/
-├── index.md              # Start here — system overview and navigation
-├── architecture.md       # How the system is built, stack, key decisions
-├── data-model.md         # Database schema, models, relationships
-├── routes-and-endpoints.md  # What the system exposes (API, pages, CLI)
-├── core-logic.md         # Key business logic explained
-├── integrations.md       # External services, APIs, webhooks
-├── config-and-env.md     # Environment setup, configuration
-└── glossary.md           # Project-specific terms, abbreviations
+├── index.md                  # Overview + master architecture diagram
+├── architecture.md           # Component diagram + tech stack breakdown
+├── data-model.md             # ER diagram + schema explanation
+├── flows/
+│   ├── overview.md           # High-level request flow diagram
+│   ├── [flow-1].md           # Sequence diagram for key flow 1
+│   ├── [flow-2].md           # Sequence diagram for key flow 2
+│   └── [flow-3].md           # Sequence diagram for key flow 3
+├── integrations.md           # External services diagram
+└── glossary.md               # Project-specific terms
 ```
 
-This structure is a starting point. **Adapt it to what you actually find.** If the
-codebase has no database, skip `data-model.md`. If there's a complex auth system,
-give it its own file. If there are 30 API endpoints, break `routes-and-endpoints.md`
-into sub-files. Use your judgment.
+Name the flow files after what they document (e.g., `user-authentication.md`,
+`order-checkout.md`, `ai-chat-generation.md`). Adapt the structure to what you
+actually find — skip what doesn't exist, add what's needed.
+
+### Diagram Guidelines
+
+**Use these Mermaid diagram types:**
+
+1. **Architecture overview** (in `index.md`) — Use `graph TD` or `graph LR` to show
+   all major components and how they connect:
+
+   ```mermaid
+   graph TD
+       Client[Browser] --> NextJS[Next.js App Router]
+       NextJS --> Auth[Supabase Auth]
+       NextJS --> API[API Routes]
+       API --> DB[(PostgreSQL)]
+       API --> External[External APIs]
+   ```
+
+2. **Entity Relationship diagrams** (in `data-model.md`) — Use `erDiagram` to show
+   the database schema:
+
+   ```mermaid
+   erDiagram
+       USER ||--o{ WORKSPACE : belongs_to
+       WORKSPACE ||--o{ PROJECT : contains
+       PROJECT ||--o{ CHAT : has
+   ```
+
+3. **Sequence diagrams** (in `flows/`) — Use `sequenceDiagram` for key user flows
+   showing the full lifecycle of a request:
+
+   ```mermaid
+   sequenceDiagram
+       actor User
+       User->>Browser: Clicks "Generate"
+       Browser->>API: POST /api/chat
+       API->>Auth: Validate session
+       Auth-->>API: OK
+       API->>AI: Stream completion
+       AI-->>API: Tool call: run code
+       API->>Sandbox: Execute code
+       Sandbox-->>API: Result
+       API-->>Browser: Stream response
+   ```
+
+4. **Flowcharts** (in `flows/overview.md`) — Use `flowchart TD` for decision trees
+   and request routing:
+
+   ```mermaid
+   flowchart TD
+       Request --> Middleware{Auth Check}
+       Middleware -->|Authenticated| Router
+       Middleware -->|Anonymous| Login
+       Router --> API_Route
+       Router --> Page_Route
+   ```
+
+5. **Component/dependency diagrams** (in `architecture.md`) — Use `graph TD` to show
+   how packages or modules depend on each other.
+
+**Diagram quality rules:**
+- Every diagram must have a brief title comment above it explaining what you're looking at
+- Keep diagrams focused — one concept per diagram. Split large diagrams into multiple.
+- Use clear, descriptive labels on nodes and edges — no abbreviations without explanation
+- Color-code or group related components using subgraph blocks
+- Include the actual names from the codebase (file names, function names, route paths)
+  so diagrams map directly to source code
 
 ### Writing Guidelines
 
-**index.md** — This is the landing page. It should contain:
+**index.md** — The landing page. Contains:
 - One-paragraph summary of what the system does
-- Tech stack at a glance
-- A "Start here" section with wikilinks guiding the reader through the walkthrough
-  in a logical order
-- A complete list of all walkthrough files with brief descriptions
+- Tech stack table at a glance
+- **The master architecture diagram** — this is the single most important visual
+- A "Start here" section with wikilinks in reading order
+- Links to all walkthrough files
 
 **Every other file** should:
-- Open with a 1-2 sentence summary of what this section covers
-- Use headers (##, ###) to organize content
-- Use wikilinks (`[[other-file]]` or `[[other-file#section]]`) to cross-reference
-  related content in other walkthrough files
-- Include relevant code snippets where they clarify behavior (keep them short —
-  enough to illustrate, not reproduce)
-- Use callouts for important notes: `> [!note]`, `> [!warning]`, `> [!tip]`
-- End with a "Related" section linking to connected walkthrough files
+- **Lead with a diagram** — the diagram is the main content
+- Follow with concise explanatory text that adds context the diagram can't show
+- Use wikilinks (`[[other-file]]`, `[[other-file#section]]`) to cross-reference
+- Use callouts (`> [!note]`, `> [!warning]`, `> [!tip]`) for important context
+- Include short code snippets only when they clarify what the diagram shows
+- End with a "Related" section linking to connected files
 
 **Wikilink conventions:**
-- Link to files: `[[architecture]]`
-- Link to sections: `[[architecture#authentication]]`
-- Link with display text: `[[data-model|the database schema]]`
-- Use links liberally — if you mention something documented elsewhere, link it
+- `[[architecture]]`, `[[data-model]]`
+- `[[flows/user-authentication]]`
+- `[[data-model|the database schema]]`
 
-**Tone:** Direct, technical, conversational. Like a senior engineer explaining the
-system to a peer over coffee. Not dry API docs — a walkthrough someone actually
-wants to read.
+**Tone:** Direct, visual-first. The diagrams do the heavy lifting. Text explains
+the "why" and fills in details that diagrams can't capture.
 
-**Code snippets:** Include them when they clarify, not to pad length. Use the
-actual code from the repo (simplified if needed) with file path references:
+### What makes a great visual walkthrough
 
-```
-// src/lib/auth.ts
-export async function validateSession(token: string) { ... }
-```
-
-### What makes a great walkthrough
-
-- Someone new to the project can read `index.md` and know where to start
-- Each file stands alone but links to related context
-- Architectural decisions are explained (the "why", not just the "what")
-- The reader finishes understanding how data flows through the system
-- Nothing critical is missing, nothing trivial is over-explained
+- Someone can look at `index.md` and understand the entire system in 60 seconds
+- The ER diagram matches the actual database schema
+- Sequence diagrams trace real request paths through actual files and functions
+- You could hand this to a new developer and they'd know where everything is
+- Diagrams use real names from the codebase, not generic placeholders
 
 ## Execution Notes
 
-- **Progress updates:** After Phase 1 (Survey), share a brief summary with the user
-  so they know you're on track. Something like "This looks like a Next.js app with
-  Supabase backend, ~40 routes, auth via middleware. Diving into the code now."
-- **Large codebases:** If the codebase is very large (100+ files of substance), focus
-  on the most important paths first and note areas you skimmed. You can always do a
-  deeper pass on specific areas if the user asks.
-- **Monorepos:** If you detect a monorepo (multiple packages/apps), document each
-  significant package as its own section or sub-folder within the walkthrough, with a
-  top-level index explaining how they relate.
+- **Progress updates:** After Phase 1, share what you found. After Phase 2, share
+  which flows you plan to diagram before producing output.
+- **Prioritize the diagrams:** If you're running low on context, prioritize the
+  architecture overview, ER diagram, and the 2-3 most important sequence diagrams.
+  Those alone give 80% of the understanding.
+- **Large codebases:** Focus on the critical paths. Note areas you skimmed.
+- **Monorepos:** Create a top-level architecture diagram showing how packages relate,
+  then drill into each significant package.
