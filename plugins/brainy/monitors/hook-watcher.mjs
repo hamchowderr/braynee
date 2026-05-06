@@ -15,7 +15,7 @@ const POLL_MS = 5000;
 
 // Common patterns → hint text
 const HINTS = [
-  [/Cannot find module/i,       'Possible {pluginDir} resolution failure — verify hook paths in hooks.json'],
+  [/Cannot find module/i,       'Possible ${CLAUDE_PLUGIN_ROOT} resolution failure — verify hook paths in hooks.json'],
   [/ENOENT.*statusline/i,       'statusline-live.json not found — vault path detection may be broken'],
   [/ENOENT/i,                   'File not found — check that the vault path and Sessions/ folder exist'],
   [/SyntaxError/i,              'JSON parse error — hook received malformed input'],

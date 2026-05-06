@@ -1,42 +1,44 @@
 {
-  "SessionStart": [
-    {
-      "hooks": [
-        {
-          "type": "command",
-          "command": "node \"{pluginDir}/hooks/vault-context.js\""
-        }
-      ]
-    }
-  ],
-  "Stop": [
-    {
-      "hooks": [
-        {
-          "type": "command",
-          "command": "node \"{pluginDir}/hooks/session-tracker.js\""
-        }
-      ]
-    },
-    {
-      "hooks": [
-        {
-          "type": "command",
-          "command": "node \"{pluginDir}/hooks/qmd-sync.js\"",
-          "async": true
-        }
-      ]
-    }
-  ],
-  "PostToolUse": [
-    {
-      "matcher": "Write",
-      "hooks": [
-        {
-          "type": "command",
-          "command": "node \"{pluginDir}/hooks/memory-index-sync.js\""
-        }
-      ]
-    }
-  ]
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/vault-context.js\""
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/session-tracker.js\""
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/qmd-sync.js\"",
+            "async": true
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/memory-index-sync.js\""
+          }
+        ]
+      }
+    ]
+  }
 }
