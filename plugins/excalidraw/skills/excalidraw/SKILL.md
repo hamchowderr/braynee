@@ -1,22 +1,24 @@
 ---
 name: excalidraw
 description: >
-  Create Excalidraw diagram JSON files that make visual arguments. Use when the user
-  wants to visualize workflows, architectures, processes, data models, or any concept
-  that benefits from a diagram. Produces .excalidraw files that open in Excalidraw or
-  render natively in Obsidian. Trigger when the user asks to "diagram this", "draw a
-  flowchart", "create an architecture diagram", "visualize this", "make a diagram",
-  or any variation of wanting a visual representation of a concept or system.
+  Create Excalidraw diagrams in Obsidian using the ExcalidrawAutomate (EA) API.
+  Generates .excalidraw files saved directly to the vault — no external tools needed,
+  Obsidian renders them natively. Use when the user wants to visualize workflows,
+  architectures, processes, data models, or any concept as a diagram. Trigger when
+  the user asks to "diagram this", "draw a flowchart", "create an architecture diagram",
+  "visualize this", "make an Excalidraw", or any variation of wanting a visual
+  representation saved to their vault.
 ---
 
 # Excalidraw Diagram Creator
 
-Generate `.excalidraw` JSON files that **argue visually**, not just display information.
+Generate Excalidraw diagrams using the ExcalidrawAutomate (EA) API. Output is a
+`.excalidraw` file saved directly to the Obsidian vault — Obsidian renders it natively.
 
-**Setup:** First-time renderer setup instructions are at the bottom of this file.
+**Before writing any diagram code**, read the EA API reference at:
+`C:/Users/HamCh/.claude/reference/excalidraw-api.md`
 
-**Before generating any diagram**, read `references/color-palette.md` — it is the
-single source of truth for all color choices.
+Full API docs are at `C:/Users/HamCh/.claude/reference/obsidian-excalidraw-plugin/`.
 
 ---
 
@@ -30,196 +32,146 @@ causality, and flow that words alone can't express. The shape should BE the mean
 **The Isomorphism Test**: If you removed all text, would the structure alone communicate
 the concept? If not, redesign.
 
-**The Education Test**: Could someone learn something concrete from this diagram, or
-does it just label boxes? A good diagram teaches.
+---
+
+## How to Generate a Diagram
+
+Every diagram is a JavaScript script that uses the EA API. The script runs via
+Obsidian's Templater plugin, or can be saved as an EA script in the vault's scripts folder.
+
+### Script Pattern
+
+```javascript
+const ea = ExcalidrawAutomate;
+ea.reset(); // Always call first
+
+// Set global styles
+ea.style.roughness = 0;
+ea.style.strokeWidth = 2;
+ea.style.fontFamily = 1; // 1=Virgil, 2=Helvetica, 3=Cascadia
+
+// Add elements
+const rectId = ea.addRect(x, y, width, height);
+const textId = ea.addText(x, y, "Label", { box: true, boxPadding: 15, width: 200 });
+const ellipseId = ea.addEllipse(x, y, width, height);
+const diamondId = ea.addDiamond(x, y, width, height);
+
+// Connect elements
+ea.connectObjects(idA, "right", idB, "left", {
+  label: "arrow label",
+  startArrowHead: null,
+  endArrowHead: "arrow",
+});
+
+// Save to vault
+await ea.create({
+  filename: "diagram-name",
+  foldername: "2. Areas/Excalidraw",
+  onNewPane: true,
+});
+```
+
+### Key EA Methods
+
+| Method | Purpose |
+|--------|---------|
+| `ea.reset()` | **Always call first** |
+| `ea.addText(x, y, text, opts)` | Text with optional container (`box: true`) |
+| `ea.addRect(x, y, w, h)` | Rectangle |
+| `ea.addEllipse(x, y, w, h)` | Ellipse (start/end nodes) |
+| `ea.addDiamond(x, y, w, h)` | Decision diamond |
+| `ea.addLine([[x1,y1],[x2,y2]])` | Line (no arrow) |
+| `ea.addArrow([[x1,y1],[x2,y2]])` | Arrow |
+| `ea.connectObjects(idA, sideA, idB, sideB, opts)` | Smart connection between shapes |
+| `ea.addToGroup([ids])` | Group elements |
+| `await ea.create({filename, foldername, onNewPane})` | Save to vault |
+
+Sides for `connectObjects`: `"top"` `"bottom"` `"left"` `"right"`
+
+The `box` parameter on `addText` accepts: `true` (rect), `"box"`, `"blob"`, `"ellipse"`, `"diamond"`
+
+### Style Properties
+
+```javascript
+ea.style.strokeColor = "#1e1e1e";
+ea.style.backgroundColor = "#e8f4f8";
+ea.style.fillStyle = "solid";        // "hachure" | "cross-hatch" | "solid"
+ea.style.strokeWidth = 2;
+ea.style.strokeStyle = "solid";      // "solid" | "dashed" | "dotted"
+ea.style.roughness = 0;              // 0=clean, 1=artist, 2=cartoonist
+ea.style.roundness = { type: 3 };   // Rounded corners
+ea.style.fontFamily = 1;            // 1=Virgil, 2=Helvetica, 3=Cascadia
+ea.style.fontSize = 20;
+ea.style.opacity = 100;
+```
+
+Change styles between element additions — each new element picks up the current style.
 
 ---
 
-## Depth Assessment (Do This First)
+## Color Palette
 
-### Simple/Conceptual Diagrams
-Use abstract shapes when explaining a mental model, philosophy, or concept where the
-audience doesn't need technical specifics.
+See `references/color-palette.md` for the semantic color system. Quick reference:
 
-### Comprehensive/Technical Diagrams
-Use concrete examples when diagramming a real system, protocol, or architecture that
-will be used to teach or explain. **You MUST include evidence artifacts** (actual data
-formats, real function names, API endpoint names) for technical diagrams.
-
-**For technical diagrams, research the actual specifications before drawing anything.**
+| Semantic Purpose | backgroundColor | strokeColor |
+|------------------|----------------|-------------|
+| Primary/Neutral | `#3b82f6` | `#1e3a5f` |
+| Start/Trigger/User | `#fed7aa` | `#c2410c` |
+| End/Success | `#a7f3d0` | `#047857` |
+| Decision | `#fef3c7` | `#b45309` |
+| Auth/AI/Special | `#ddd6fe` | `#6d28d9` |
+| Error/Warning | `#fecaca` | `#b91c1c` |
 
 ---
 
 ## Design Process
 
-### Step 1: Understand Deeply
-Read the content. For each concept, ask:
-- What does this concept **DO**?
-- What relationships exist between concepts?
-- What's the core transformation or flow?
-- What would someone need to SEE to understand this?
+### Step 1: Understand the concept
+- What does this visualize? What's the core flow or argument?
+- Simple/conceptual (abstract shapes) or technical (real names, real data)?
 
-### Step 2: Map Concepts to Patterns
+### Step 2: Map concepts to visual patterns
 
 | If the concept... | Use this pattern |
 |-------------------|------------------|
-| Spawns multiple outputs | **Fan-out** (radial arrows from center) |
-| Combines inputs into one | **Convergence** (funnel) |
-| Has hierarchy/nesting | **Tree** (lines + free-floating text) |
-| Is a sequence of steps | **Timeline** (line + dots + labels) |
-| Loops or improves | **Spiral/Cycle** (arrow returning to start) |
-| Is an abstract state | **Cloud** (overlapping ellipses) |
-| Transforms input to output | **Assembly line** (before → process → after) |
-| Compares two things | **Side-by-side** (parallel with contrast) |
-| Separates into phases | **Gap/Break** (visual whitespace between sections) |
+| Spawns multiple outputs | Fan-out (radial arrows from center) |
+| Combines inputs | Convergence (funnel) |
+| Has hierarchy | Tree (lines + text, no boxes needed) |
+| Is a sequence | Timeline (line + dots + labels) |
+| Loops | Cycle (arrow returning to start) |
+| Transforms input | Assembly line (before → process → after) |
+| Has phases | Gap/break (visual whitespace between sections) |
 
-### Step 3: Ensure Variety
-Each major concept must use a different visual pattern. No uniform card grids.
+### Step 3: Plan layout before writing code
+Sketch x/y coordinates on paper or in your head. Typical spacing:
+- Sibling elements: 60–80px apart
+- Major sections: 150–200px apart
+- Allow ~100px padding around the full diagram
 
-### Step 4: Sketch the Flow
-Before JSON, trace how the eye moves through the diagram. There should be a clear story.
+### Step 4: Write the script
+Use `ea.connectObjects()` over manual `ea.addArrow()` when connecting named shapes —
+it handles positioning automatically.
 
-### Step 5: Generate JSON
-See reference files. Build section by section for large diagrams.
-
-### Step 6: Render & Validate (MANDATORY)
-Render to PNG and inspect. Fix. Repeat.
-
----
-
-## Container vs. Free-Floating Text
-
-Default to free-floating text. Add containers only when they serve a purpose.
-
-| Use a Container When... | Use Free-Floating Text When... |
-|------------------------|-------------------------------|
-| It's the focal point of a section | It's a label or description |
-| Arrows need to connect to it | It's supporting detail |
-| The shape itself carries meaning | It describes something nearby |
-| It represents a distinct "thing" | It's a section title or annotation |
-
-**Aim for <30% of text elements inside containers.**
+### Step 5: Save and review
+`await ea.create()` saves to the vault. Open the file in Obsidian to review.
+Adjust coordinates and re-run if layout needs fixing.
 
 ---
 
-## Large Diagram Strategy
+## Output Location
 
-**Build JSON one section at a time.** Never generate the entire file in a single pass.
+Default save location: `2. Areas/Excalidraw/`
 
-1. Create the base file with the wrapper + first section
-2. Add one section per edit — take time with layout and spacing
-3. Use descriptive string IDs (`"trigger_rect"`, `"auth_arrow"`)
-4. Namespace seeds by section (section 1 → 100xxx, section 2 → 200xxx)
-5. Update cross-section bindings as you go
-6. After all sections, review the full JSON for broken bindings
-7. Then render and validate
-
----
-
-## Shape Meaning
-
-| Concept Type | Shape |
-|--------------|-------|
-| Labels, descriptions | **none** (free-floating text) |
-| Timeline markers, bullet points | small `ellipse` (10–20px) |
-| Start, trigger, input | `ellipse` |
-| End, output, result | `ellipse` |
-| Decision, condition | `diamond` |
-| Process, action, step | `rectangle` |
-| Abstract state, context | overlapping `ellipse` |
-| Hierarchy | lines + text (no boxes) |
-
----
-
-## Modern Aesthetics
-
-- `roughness: 0` — always. Clean, crisp edges.
-- `strokeWidth: 2` — standard. Use 1 for dividers, 3 for key connections.
-- `opacity: 100` — always. No transparency.
-- `fontFamily: 3` — always.
-
----
-
-## Layout Principles
-
-| Role | Width × Height |
-|------|----------------|
-| Hero | 300 × 150 |
-| Primary | 180 × 90 |
-| Secondary | 120 × 60 |
-| Small | 60 × 40 |
-
-- Most important element has the most whitespace around it (200px+)
-- Siblings: 60–80px apart. Major sections: 150–200px apart.
-- If A relates to B, there must be an arrow.
-
----
-
-## JSON Structure
-
-```json
-{
-  "type": "excalidraw",
-  "version": 2,
-  "source": "https://excalidraw.com",
-  "elements": [...],
-  "appState": {
-    "viewBackgroundColor": "#ffffff",
-    "gridSize": 20
-  },
-  "files": {}
-}
-```
-
-See `references/element-templates.md` for copy-paste element JSON.
-See `references/color-palette.md` for all color values.
-See `references/json-schema.md` for full property reference.
-
----
-
-## Render & Validate (MANDATORY)
-
-You cannot judge a diagram from JSON alone. After generating or editing, render to PNG,
-view it, and fix what you see — in a loop until it's right.
-
-**Render:**
-```bash
-cd plugins/excalidraw/skills/excalidraw/references
-uv run python render_excalidraw.py <path-to-file.excalidraw>
-```
-
-Then use the **Read tool** on the PNG.
-
-**The loop:**
-1. Render → Read PNG
-2. Audit against your original design intent
-3. Check: text overflow, broken arrows, overlapping elements, lopsided composition
-4. Fix coordinates, widen containers, reroute arrows
-5. Re-render → repeat until clean (typically 2–4 iterations)
-
-**Stop when:**
-- Rendered diagram matches your design intent
-- No text clipped, overlapping, or unreadable
-- Arrows route cleanly to the right elements
-- Spacing is consistent
-- You'd show this to someone without caveats
-
-**First-time setup:**
-```bash
-cd plugins/excalidraw/skills/excalidraw/references
-uv sync
-uv run playwright install chromium
-```
+For project-specific diagrams: `2. Areas/Excalidraw/<project-name>/`
 
 ---
 
 ## Quality Checklist
 
-- [ ] Read `references/color-palette.md` before generating
+- [ ] `ea.reset()` called first
+- [ ] Styles set before elements that use them
+- [ ] `connectObjects()` used for named element connections
 - [ ] Each major concept uses a different visual pattern
-- [ ] <30% of text elements inside containers
-- [ ] `roughness: 0`, `opacity: 100`, `fontFamily: 3` on all elements
-- [ ] Built section by section (not one giant pass)
-- [ ] Rendered to PNG and visually inspected
-- [ ] No text overflow, overlapping, or broken arrows
-- [ ] For technical diagrams: real names, real data shapes, evidence artifacts
+- [ ] Real names used for technical diagrams (not "Service A")
+- [ ] Saved to `2. Areas/Excalidraw/` or appropriate subfolder
+- [ ] Reviewed in Obsidian after saving
