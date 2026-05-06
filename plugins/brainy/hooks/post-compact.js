@@ -9,10 +9,11 @@
 
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 
-const VAULT_DIR = path.join(process.env.USERPROFILE, 'Obsidian Vault');
+const VAULT_DIR = path.join(os.homedir(), 'Obsidian Vault');
 const SESSIONS_DIR = path.join(VAULT_DIR, '2. Areas', 'Sessions');
-const CODE_DIR = path.join(process.env.USERPROFILE, 'code');
+const CODE_DIR = path.join(os.homedir(), 'code');
 
 function findProjectName(folderName) {
   const projectsDir = path.join(VAULT_DIR, '1. Projects');

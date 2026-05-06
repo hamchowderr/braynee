@@ -6,11 +6,12 @@
 
 const { execSync } = require('child_process');
 const path = require('path');
+const os = require('os');
 const fs = require('fs');
 
-const VAULT_QUERY = path.join(process.env.USERPROFILE, '.claude', 'scripts', 'vault-query.mjs');
-const VAULT_DIR = path.join(process.env.USERPROFILE, 'Obsidian Vault');
-const CODE_DIR = path.join(process.env.USERPROFILE, 'code');
+const VAULT_QUERY = path.join(os.homedir(), '.claude', 'scripts', 'vault-query.mjs');
+const VAULT_DIR = path.join(os.homedir(), 'Obsidian Vault');
+const CODE_DIR = path.join(os.homedir(), 'code');
 
 function findProjectName(folderName) {
   const projectsDir = path.join(VAULT_DIR, '1. Projects');

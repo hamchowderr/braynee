@@ -12,11 +12,12 @@
 
 const { execSync } = require('child_process');
 const path = require('path');
+const os = require('os');
 const fs = require('fs');
 
-const VAULT_DIR = path.join(process.env.USERPROFILE, 'Obsidian Vault');
+const VAULT_DIR = path.join(os.homedir(), 'Obsidian Vault');
 const TRANSCRIPTS_DIR = path.join(VAULT_DIR, '2. Areas', 'Sessions', 'Transcripts');
-const CLAUDE_PROJECTS_DIR = path.join(process.env.USERPROFILE, '.claude', 'projects');
+const CLAUDE_PROJECTS_DIR = path.join(os.homedir(), '.claude', 'projects');
 const QMD_PATH = path.join(process.env.APPDATA, 'npm', 'node_modules', '@tobilu', 'qmd', 'dist', 'qmd.js');
 const NODE_PATH = 'C:\\Program Files\\nodejs\\node.exe';
 

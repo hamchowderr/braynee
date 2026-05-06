@@ -11,7 +11,7 @@ process.stdin.on('end', () => {
   try {
     const data = JSON.parse(input);
     const cwd = data.cwd || process.cwd();
-    const codeDir = path.join(process.env.USERPROFILE || os.homedir(), 'code');
+    const codeDir = path.join(os.homedir(), 'code');
     if (cwd.toLowerCase().startsWith(codeDir.toLowerCase())) {
       try { execSync('bd prime', { cwd, encoding: 'utf8', timeout: 5000, stdio: 'ignore' }); } catch {}
     }

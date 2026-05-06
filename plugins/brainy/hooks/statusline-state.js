@@ -12,13 +12,14 @@
 
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const http = require('http');
 const net = require('net');
 
-const VAULT_DIR = path.join(process.env.USERPROFILE, 'Obsidian Vault');
+const VAULT_DIR = path.join(os.homedir(), 'Obsidian Vault');
 const SESSIONS_DIR = path.join(VAULT_DIR, '2. Areas', 'Sessions');
-const CODE_DIR = path.join(process.env.USERPROFILE, 'code');
-const STATE_FILE = path.join(process.env.USERPROFILE, '.claude', 'statusline-live.json');
+const CODE_DIR = path.join(os.homedir(), 'code');
+const STATE_FILE = path.join(os.homedir(), '.claude', 'statusline-live.json');
 const AUTH_TOKEN = process.env.TASKNOTES_TOKEN || '5Z3IySQ9uI5jzH0q8sMp+Np0vruJILVSLhX1PITANl0=';
 
 function findProjectName(folderName) {

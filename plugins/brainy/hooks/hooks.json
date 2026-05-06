@@ -15,7 +15,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "powershell -ExecutionPolicy Bypass -File \"${CLAUDE_PLUGIN_ROOT}/hooks/reinject-after-compact.ps1\""
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/reinject-after-compact.js\""
           }
         ]
       },

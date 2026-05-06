@@ -11,9 +11,10 @@
 
 const { execSync } = require('child_process');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 
-const HOME = process.env.USERPROFILE || require('os').homedir();
+const HOME = os.homedir();
 const VAULT_DIR = path.join(HOME, 'Obsidian Vault');
 const SESSIONS_DIR = path.join(VAULT_DIR, '2. Areas', 'Sessions');
 const CODE_DIR = path.join(HOME, 'code');

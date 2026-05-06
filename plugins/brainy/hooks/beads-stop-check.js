@@ -7,7 +7,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
-const CODE_DIR = path.join(process.env.USERPROFILE || os.homedir(), 'code');
+const CODE_DIR = path.join(os.homedir(), 'code');
 
 function run(cmd, opts = {}) {
   try {

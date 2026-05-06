@@ -6,7 +6,7 @@ description: "This skill should be used when the user asks about vault session m
 # vault-query.mjs — Session & Project Context
 
 ```bash
-node "C:/Users/HamCh/.claude/scripts/vault-query.mjs" <command>
+node "~/.claude/scripts/vault-query.mjs" <command>
 ```
 
 | Command | Action |

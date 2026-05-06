@@ -3,8 +3,9 @@
 const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 
-const CODE_DIR = path.join(process.env.USERPROFILE, 'code');
+const CODE_DIR = path.join(os.homedir(), 'code');
 
 let input = '';
 process.stdin.setEncoding('utf8');
