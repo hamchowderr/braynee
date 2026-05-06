@@ -1,4 +1,4 @@
 #!/usr/bin/env bash
 # Thin wrapper around QMD (Quick Memory Database) search engine.
 # Usage: qmd search "query"  |  qmd vsearch "query"  |  qmd index  |  qmd status
-exec node "$HOME/.claude/scripts/qmd-wrapper.mjs" "$@"
+exec node "$(dirname "$0")/../scripts/qmd-wrapper.mjs" "$@"

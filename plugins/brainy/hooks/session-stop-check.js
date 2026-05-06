@@ -9,7 +9,7 @@ const path = require('path');
 const os = require('os');
 const fs = require('fs');
 
-const VAULT_QUERY = path.join(os.homedir(), '.claude', 'scripts', 'vault-query.mjs');
+const VAULT_QUERY = path.join(__dirname, '..', 'scripts', 'vault-query.mjs');
 const VAULT_DIR = path.join(os.homedir(), 'Obsidian Vault');
 const CODE_DIR = path.join(os.homedir(), 'code');
 

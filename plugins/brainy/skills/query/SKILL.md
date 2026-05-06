@@ -17,13 +17,13 @@ and deep research (multi-pass).
 
 ```bash
 # Exact/keyword search (fastest)
-node ~/.claude/scripts/qmd-wrapper.mjs search "QUERY"
+node ${CLAUDE_PLUGIN_ROOT}/scripts/qmd-wrapper.mjs search "QUERY"
 
 # Semantic / conceptual search
-node ~/.claude/scripts/qmd-wrapper.mjs vsearch "QUERY"
+node ${CLAUDE_PLUGIN_ROOT}/scripts/qmd-wrapper.mjs vsearch "QUERY"
 
 # Deep research — runs multiple angles, CPU-bound
-node ~/.claude/scripts/qmd-wrapper.mjs query "QUERY"
+node ${CLAUDE_PLUGIN_ROOT}/scripts/qmd-wrapper.mjs query "QUERY"
 
 # Literal search with line context
 obsidian search:context query="TERM" format=json

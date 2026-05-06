@@ -112,7 +112,7 @@ bd create --title="Project: {name}" --description="New {category} project scaffo
 
 2. Run QMD to check if anything related already existed:
 ```bash
-node "$HOME/.claude/scripts/qmd-wrapper.mjs" vsearch "{name} {description}"
+node "${CLAUDE_PLUGIN_ROOT}/scripts/qmd-wrapper.mjs" vsearch "{name} {description}"
 ```
 
 3. Report what was created and the Beads issue ID.

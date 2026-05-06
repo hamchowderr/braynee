@@ -69,7 +69,7 @@ Search vault notes and sessions by content.
 **Step 1 — Keyword search (exact terms)**
 
 ```bash
-node ~/.claude/scripts/qmd-wrapper.mjs search "QUERY"
+node ${CLAUDE_PLUGIN_ROOT}/scripts/qmd-wrapper.mjs search "QUERY"
 ```
 
 Use for specific names, error messages, function names, exact phrases.
@@ -77,7 +77,7 @@ Use for specific names, error messages, function names, exact phrases.
 **Step 2 — Semantic search (conceptual)**
 
 ```bash
-node ~/.claude/scripts/qmd-wrapper.mjs vsearch "QUERY"
+node ${CLAUDE_PLUGIN_ROOT}/scripts/qmd-wrapper.mjs vsearch "QUERY"
 ```
 
 Use for concepts, themes, intent. Run both — BM25 catches exact matches semantic

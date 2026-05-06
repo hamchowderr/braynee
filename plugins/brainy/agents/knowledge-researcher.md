@@ -22,13 +22,13 @@ Check `~/.claude/statusline-live.json` for `vault` key. Fallback: `~/Obsidian Va
 
 ```bash
 # 1. Keyword search (BM25 — exact terms, split compound words)
-node "$HOME/.claude/scripts/qmd-wrapper.mjs" search "term1 term2"
+node "${CLAUDE_PLUGIN_ROOT}/scripts/qmd-wrapper.mjs" search "term1 term2"
 
 # 2. Semantic search (meaning-based — use concepts, not just keywords)
-node "$HOME/.claude/scripts/qmd-wrapper.mjs" vsearch "conceptual query"
+node "${CLAUDE_PLUGIN_ROOT}/scripts/qmd-wrapper.mjs" vsearch "conceptual query"
 
 # 3. Deep research (CPU-bound, comprehensive)
-node "$HOME/.claude/scripts/qmd-wrapper.mjs" query "research question"
+node "${CLAUDE_PLUGIN_ROOT}/scripts/qmd-wrapper.mjs" query "research question"
 ```
 
 Run all 3 in sequence. For compound topics, run each sub-topic separately. Minimum 3 searches, maximum 6 before synthesizing.
