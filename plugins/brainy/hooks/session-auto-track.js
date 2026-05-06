@@ -11,14 +11,15 @@
 
 const { execSync } = require('child_process');
 const path = require('path');
+const os = require('os');
 const fs = require('fs');
 const { findSessionViaQmd } = require('./lib/qmd-search');
 
-const VAULT_QUERY = path.join(process.env.USERPROFILE, '.claude', 'scripts', 'vault-query.mjs');
-const TASKNOTES = path.join(process.env.USERPROFILE, '.claude', 'scripts', 'tasknotes.mjs');
-const VAULT_DIR = path.join(process.env.USERPROFILE, 'Obsidian Vault');
+const VAULT_QUERY = path.join(os.homedir(), '.claude', 'scripts', 'vault-query.mjs');
+const TASKNOTES = path.join(os.homedir(), '.claude', 'scripts', 'tasknotes.mjs');
+const VAULT_DIR = path.join(os.homedir(), 'Obsidian Vault');
 const SESSIONS_DIR = path.join(VAULT_DIR, '2. Areas', 'Sessions');
-const CODE_DIR = path.join(process.env.USERPROFILE, 'code');
+const CODE_DIR = path.join(os.homedir(), 'code');
 
 function findProjectName(folderName) {
   const projectsDir = path.join(VAULT_DIR, '1. Projects');
@@ -250,7 +251,7 @@ function formatSessionContext(content, filename) {
 
 // Find the most recent JSONL transcript for this project folder
 function getRecentTranscriptContext(folderName) {
-  const projectsDir = path.join(process.env.USERPROFILE, '.claude', 'projects');
+  const projectsDir = path.join(os.homedir(), '.claude', 'projects');
   if (!fs.existsSync(projectsDir)) return null;
 
   // Transcript dirs use pattern: C--Users-HamCh-code-{folder}
@@ -562,7 +563,7 @@ process.stdin.on('end', () => {
             goal = text.split('\n').find(l => l.trim())?.replace(/^[-*#]\s*/, '').trim().substring(0, 120) || '';
           }
         }
-        const STATE_FILE = path.join(process.env.USERPROFILE, '.claude', 'statusline-live.json');
+        const STATE_FILE = path.join(os.homedir(), '.claude', 'statusline-live.json');
         fs.writeFileSync(STATE_FILE, JSON.stringify({
           goal,
           project: projectName,

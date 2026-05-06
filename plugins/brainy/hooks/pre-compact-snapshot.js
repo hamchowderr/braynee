@@ -13,15 +13,16 @@
 
 const { execSync } = require('child_process');
 const path = require('path');
+const os = require('os');
 const fs = require('fs');
 
-const VAULT_QUERY = path.join(process.env.USERPROFILE, '.claude', 'scripts', 'vault-query.mjs');
-const TASKNOTES = path.join(process.env.USERPROFILE, '.claude', 'scripts', 'tasknotes.mjs');
-const VAULT_DIR = path.join(process.env.USERPROFILE, 'Obsidian Vault');
+const VAULT_QUERY = path.join(os.homedir(), '.claude', 'scripts', 'vault-query.mjs');
+const TASKNOTES = path.join(os.homedir(), '.claude', 'scripts', 'tasknotes.mjs');
+const VAULT_DIR = path.join(os.homedir(), 'Obsidian Vault');
 const SESSIONS_DIR = path.join(VAULT_DIR, '2. Areas', 'Sessions');
-const CODE_DIR = path.join(process.env.USERPROFILE, 'code');
-const SNAPSHOT_FILE = path.join(process.env.USERPROFILE, '.claude', 'compact-snapshot.json');
-const CONTEXT_CACHE = path.join(process.env.USERPROFILE, '.claude', 'vault-context-cache.json');
+const CODE_DIR = path.join(os.homedir(), 'code');
+const SNAPSHOT_FILE = path.join(os.homedir(), '.claude', 'compact-snapshot.json');
+const CONTEXT_CACHE = path.join(os.homedir(), '.claude', 'vault-context-cache.json');
 
 function findProjectName(folderName) {
   const projectsDir = path.join(VAULT_DIR, '1. Projects');

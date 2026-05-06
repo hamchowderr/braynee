@@ -15,7 +15,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
-const HOME = process.env.USERPROFILE || os.homedir();
+const HOME = os.homedir();
 const ACTIVE_ISSUE_FILE = path.join(HOME, '.claude', 'beads-active-issue.json');
 
 function run(cmd, opts = {}) {

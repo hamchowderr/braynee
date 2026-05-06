@@ -10,11 +10,12 @@
 
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 
-const VAULT_DIR = path.join(process.env.USERPROFILE, 'Obsidian Vault');
+const VAULT_DIR = path.join(os.homedir(), 'Obsidian Vault');
 const SESSIONS_DIR = path.join(VAULT_DIR, '2. Areas', 'Sessions');
-const CODE_DIR = path.join(process.env.USERPROFILE, 'code');
-const STATE_FILE = path.join(process.env.USERPROFILE, '.claude', 'session-nudge-state.json');
+const CODE_DIR = path.join(os.homedir(), 'code');
+const STATE_FILE = path.join(os.homedir(), '.claude', 'session-nudge-state.json');
 
 const NUDGE_INTERVAL_TOOLS = 5;
 const NUDGE_INTERVAL_MS = 8 * 60 * 1000; // 8 minutes

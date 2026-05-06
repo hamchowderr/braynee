@@ -14,11 +14,12 @@
 
 const { execSync } = require('child_process');
 const path = require('path');
+const os = require('os');
 const fs = require('fs');
 
-const VAULT_DIR = path.join(process.env.USERPROFILE, 'Obsidian Vault');
+const VAULT_DIR = path.join(os.homedir(), 'Obsidian Vault');
 const SESSIONS_DIR = path.join(VAULT_DIR, '2. Areas', 'Sessions');
-const CODE_DIR = path.join(process.env.USERPROFILE, 'code');
+const CODE_DIR = path.join(os.homedir(), 'code');
 
 function findProjectName(folderName) {
   const projectsDir = path.join(VAULT_DIR, '1. Projects');
@@ -134,7 +135,7 @@ function getBranch(cwd) {
 // Extract goal from JSONL when session note still has placeholder
 function extractGoalFromJSONL(folderName) {
   try {
-    const projectsDir = path.join(process.env.USERPROFILE, '.claude', 'projects');
+    const projectsDir = path.join(os.homedir(), '.claude', 'projects');
     const patterns = [
       `C--Users-HamCh-code-${folderName}`,
       `C--Users-HamCh-${folderName}`,
@@ -302,7 +303,7 @@ process.stdin.on('end', () => {
     fs.writeFileSync(session.filepath, content, 'utf-8');
 
     // Clean up nudge state so next session starts fresh
-    const nudgeState = path.join(process.env.USERPROFILE, '.claude', 'session-nudge-state.json');
+    const nudgeState = path.join(os.homedir(), '.claude', 'session-nudge-state.json');
     try { fs.unlinkSync(nudgeState); } catch {}
 
     process.stderr.write(
