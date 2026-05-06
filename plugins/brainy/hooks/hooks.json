@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/vault-context.js\""
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/session-auto-track.js\""
           }
         ]
       },
@@ -32,7 +32,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/session-tracker.js\""
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/session-auto-close.js\""
           }
         ]
       },
@@ -40,7 +40,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/qmd-sync.js\"",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/session-export-qmd.js\"",
             "async": true
           }
         ]
@@ -69,6 +69,16 @@
           {
             "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/memory-index-sync.js\""
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/statusline-state.js\"",
+            "async": true
           }
         ]
       },
