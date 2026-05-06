@@ -309,7 +309,7 @@ git -C "{vault_path}" commit -m "initial vault setup via second-brain plugin"
 cd "{vault_path}" && bd init
 
 # QMD (search index — rebuild after scaffold)
-node ~/.claude/scripts/qmd-wrapper.mjs index
+node ${CLAUDE_PLUGIN_ROOT}/scripts/qmd-wrapper.mjs index
 ```
 
 ---

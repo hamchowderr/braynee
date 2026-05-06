@@ -202,7 +202,7 @@ def claude_md(name: str, company: str, projects: list[dict],
         - Email: {email}
         - Calendar: {calendar}
         - Tasks: `/tasks`
-        - Search: `/query` or `node ~/.claude/scripts/qmd-wrapper.mjs search "query"`
+        - Search: `/query` or `qmd search "query"` (qmd is in PATH via brainy plugin)
         - Sessions: `/sessions`
         - Recall: `/recall yesterday`
         - Meetings: `/granola`
@@ -219,11 +219,13 @@ def claude_md(name: str, company: str, projects: list[dict],
         ## Search (Mandatory — never use grep or find in vault)
 
         ```bash
-        node ~/.claude/scripts/qmd-wrapper.mjs search "exact terms"
-        node ~/.claude/scripts/qmd-wrapper.mjs vsearch "conceptual query"
-        node ~/.claude/scripts/qmd-wrapper.mjs query "deep research"
+        qmd search "exact terms"        # BM25 keyword search
+        qmd vsearch "conceptual query"  # semantic search
+        qmd query "deep research"       # CPU-intensive deep research
         obsidian search:context query="term" format=json
         ```
+
+        Note: `qmd` command is added to PATH automatically when the brainy plugin is enabled.
 
         ## Writing Vault Files (Obsidian CLI — two-path rule)
 

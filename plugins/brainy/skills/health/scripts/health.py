@@ -77,9 +77,11 @@ def cmd_setup(args, vault: Path):
         else:
             warn(f"{label} — NOT FOUND")
 
-    qmd_wrapper = Path.home() / ".claude" / "scripts" / "qmd-wrapper.mjs"
+    # health.py lives at brainy/skills/health/scripts/health.py
+    # qmd-wrapper.mjs is at brainy/scripts/qmd-wrapper.mjs (3 levels up)
+    qmd_wrapper = Path(__file__).resolve().parent.parent.parent.parent / "scripts" / "qmd-wrapper.mjs"
     if not qmd_wrapper.exists():
-        warn("qmd — wrapper not found at ~/.claude/scripts/qmd-wrapper.mjs")
+        warn(f"qmd — wrapper not found at {qmd_wrapper}")
     else:
         r = subprocess.run(
             ["node", str(qmd_wrapper), "status"],

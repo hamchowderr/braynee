@@ -111,9 +111,9 @@ If you already have an Obsidian vault, `/setup` detects it and runs a non-destru
 Brainy installs QMD (a local BM25 + semantic search engine) and keeps its index updated via the `qmd-sync.js` Stop hook. All brainy skills use QMD for vault search — never grep or filesystem scanning.
 
 ```bash
-node ~/.claude/scripts/qmd-wrapper.mjs search "query"    # exact terms
-node ~/.claude/scripts/qmd-wrapper.mjs vsearch "query"   # semantic
-node ~/.claude/scripts/qmd-wrapper.mjs query "query"     # deep research
+node ${CLAUDE_PLUGIN_ROOT}/scripts/qmd-wrapper.mjs search "query"    # exact terms
+node ${CLAUDE_PLUGIN_ROOT}/scripts/qmd-wrapper.mjs vsearch "query"   # semantic
+node ${CLAUDE_PLUGIN_ROOT}/scripts/qmd-wrapper.mjs query "query"     # deep research
 ```
 
 ---

@@ -15,8 +15,8 @@ const os = require('os');
 const fs = require('fs');
 const { findSessionViaQmd } = require('./lib/qmd-search');
 
-const VAULT_QUERY = path.join(os.homedir(), '.claude', 'scripts', 'vault-query.mjs');
-const TASKNOTES = path.join(os.homedir(), '.claude', 'scripts', 'tasknotes.mjs');
+const VAULT_QUERY = path.join(__dirname, '..', 'scripts', 'vault-query.mjs');
+const TASKNOTES = path.join(__dirname, '..', 'scripts', 'tasknotes.mjs');
 const VAULT_DIR = path.join(os.homedir(), 'Obsidian Vault');
 const SESSIONS_DIR = path.join(VAULT_DIR, '2. Areas', 'Sessions');
 const CODE_DIR = path.join(os.homedir(), 'code');

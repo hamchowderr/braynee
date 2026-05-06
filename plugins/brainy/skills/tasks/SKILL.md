@@ -16,22 +16,22 @@ Manage tasks through the Obsidian TaskNotes plugin API.
 
 ```bash
 # List open tasks
-node ~/.claude/scripts/tasknotes-wrapper.mjs list
+node ${CLAUDE_PLUGIN_ROOT}/scripts/tasknotes.mjs list
 
 # List tasks for a project
-node ~/.claude/scripts/tasknotes-wrapper.mjs list --project "ProjectName"
+node ${CLAUDE_PLUGIN_ROOT}/scripts/tasknotes.mjs list --project "ProjectName"
 
 # Create a task
-node ~/.claude/scripts/tasknotes-wrapper.mjs create "Task description" --project "ProjectName"
+node ${CLAUDE_PLUGIN_ROOT}/scripts/tasknotes.mjs create "Task description" --project "ProjectName"
 
 # Complete a task
-node ~/.claude/scripts/tasknotes-wrapper.mjs complete TASK_ID
+node ${CLAUDE_PLUGIN_ROOT}/scripts/tasknotes.mjs complete TASK_ID
 
 # Search tasks
-node ~/.claude/scripts/tasknotes-wrapper.mjs search "keyword"
+node ${CLAUDE_PLUGIN_ROOT}/scripts/tasknotes.mjs search "keyword"
 
 # Overdue tasks
-node ~/.claude/scripts/tasknotes-wrapper.mjs list --overdue
+node ${CLAUDE_PLUGIN_ROOT}/scripts/tasknotes.mjs list --overdue
 ```
 
 ## TaskNotes API

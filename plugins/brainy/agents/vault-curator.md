@@ -66,8 +66,8 @@ hosting: vercel|vps|wordpress|local  (if deployed)
 Before answering any "where does X go?" question, search to see if something related already exists:
 
 ```bash
-node "$HOME/.claude/scripts/qmd-wrapper.mjs" search "relevant terms"
-node "$HOME/.claude/scripts/qmd-wrapper.mjs" vsearch "conceptual query"
+node "${CLAUDE_PLUGIN_ROOT}/scripts/qmd-wrapper.mjs" search "relevant terms"
+node "${CLAUDE_PLUGIN_ROOT}/scripts/qmd-wrapper.mjs" vsearch "conceptual query"
 ```
 
 Use `obsidian search:context query="term" format=json` for literal content searches.

@@ -10,6 +10,9 @@ import { homedir } from 'os';
 import { join } from 'path';
 import { execSync } from 'child_process';
 
+import { fileURLToPath as _fu } from 'url';
+import { dirname as _dn } from 'path';
+const __dirname = _dn(_fu(import.meta.url));
 const qmdPath = join(homedir(), '.claude', 'scripts', 'qmd-wrapper.mjs');
 if (!existsSync(qmdPath)) process.exit(0);
 
@@ -43,8 +46,9 @@ function check() {
 
   const ageDays = Math.round(ageMs / (24 * 60 * 60 * 1000));
   const docCount = collections.reduce((sum, c) => sum + (c.documents || 0), 0);
+  const qmdWrapper = join(__dirname, '..', 'scripts', 'qmd-wrapper.mjs');
   process.stdout.write(
-    `QMD search index is ${ageDays}d stale (${docCount} docs) — run: node ~/.claude/scripts/qmd-wrapper.mjs index\n`
+    `QMD search index is ${ageDays}d stale (${docCount} docs) — run: node "${qmdWrapper}" index\n`
   );
 }
 

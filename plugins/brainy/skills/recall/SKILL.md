@@ -43,8 +43,8 @@ python3 {baseDir}/scripts/recall.py list "last 3 days"
 python3 {baseDir}/scripts/recall.py expand SESSION_ID
 
 # Topic — QMD search with expansion
-node ~/.claude/scripts/qmd-wrapper.mjs search "QUERY" 
-node ~/.claude/scripts/qmd-wrapper.mjs vsearch "QUERY"
+node ${CLAUDE_PLUGIN_ROOT}/scripts/qmd-wrapper.mjs search "QUERY" 
+node ${CLAUDE_PLUGIN_ROOT}/scripts/qmd-wrapper.mjs vsearch "QUERY"
 
 # Graph
 python3 {baseDir}/scripts/recall.py graph yesterday --out ~/Downloads/recall-graph.html
