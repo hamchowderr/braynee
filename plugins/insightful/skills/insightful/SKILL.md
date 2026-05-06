@@ -89,10 +89,11 @@ Use a `general-purpose` Task agent with this prompt:
 >
 > **1. friction_analysis** — Identify the top 3-5 friction categories from the facets data (all_facets array). For each: category name, occurrence count, a description of the pattern, AND 1-2 specific examples quoting actual session data. If no facets exist, analyze session patterns for likely friction points.
 >
-> **2. suggestions** — Three sub-sections:
->   - **claude_md_suggestions**: 5 specific CLAUDE.md additions the user should make, based on their actual workflow patterns. Each needs: the exact text to add to CLAUDE.md, and a "why" explanation referencing their data. These should be genuinely useful, not generic.
->   - **features_to_try**: 5-6 Claude Code features the user hasn't fully utilized yet (check tool usage data). Options: MCP Servers, Custom Skills, Hooks, Headless Mode, Task Agents, Plan Mode, Git Worktrees, /compact, /resume. For each: name and why it would help THIS user specifically.
->   - **new_patterns**: 3 new workflow patterns the user should try, each with a concrete copyable prompt they can paste into Claude Code. Reference their actual projects and work style.
+> **2. personalization_plan** — Four sub-sections. Everything must be derived from the user's ACTUAL data — friction counts, session types, tool usage patterns, facets. No generic tips.
+>   - **hooks**: 3-5 hooks to add to `settings.json`. For each: a title, the exact JSON block (hook event + shell command, ready to paste), and a "why" citing the specific pattern in their data that justifies it. Available hook events: `UserPromptSubmit` (fires when user submits a prompt — good for injecting context or reminders), `PostToolUse` (fires after any tool runs — good for auto-running tests after Edit, logging, etc.), `Stop` (fires when Claude finishes responding — good for mandatory git checks, reminders), `PreToolUse` (fires before a tool runs — good for safety gates). Example: if they have many sessions with missing-commit friction → `Stop` hook running `git status`. If they have context-loss friction → `UserPromptSubmit` hook echoing a project summary. Base every hook on evidence from their data.
+>   - **claude_md_instructions**: 5-7 instructions for CLAUDE.md, each traceable to a real pattern or friction in their data. Each needs: the exact instruction text (imperative voice, copy-pasteable as a bullet or rule), whether it's global or project-specific, and a one-line "Evidence:" note citing the data. Must be specific to this user — not reminders every developer needs.
+>   - **skills_to_build**: 3 custom Claude Code skills the user should build, based on tasks repeated across multiple sessions. Each needs: skill name, 2-sentence description of what it does, which specific sessions/projects show the repeating pattern, and a starter prompt they can paste to begin building it.
+>   - **settings_to_configure**: 3-4 `settings.json` changes (tools to pre-allow in permissions, env vars to set, or other settings). Each needs: the exact JSON and a one-sentence justification from their tool usage or friction data.
 >
 > **3. on_the_horizon** — 3 forward-looking automation opportunities based on what the user already does. Each needs: title, description of the opportunity, and a specific copyable prompt to get started. Think about what they could automate next given their existing tools and projects.
 >
@@ -139,9 +140,10 @@ The built-in `/insights` skill runs these structured analysis stages: `project_a
 This means:
 - **Multi-paragraph narrative sections** analyzing the user's working style with specific examples
 - **"Impressive Things You Did"** section with 3-4 detailed big wins (green cards)
-- **CLAUDE.md Suggestions** with checkboxes and a "Copy All Checked" button — each suggestion should have the exact text and a "why" explanation
-- **Features to Try** — specific Claude Code features the user hasn't fully utilized
-- **New Workflow Patterns** — copyable prompts the user can paste into Claude Code
+- **Hooks to Add** — 3-5 hooks with exact JSON the user can paste into settings.json, each justified by their actual data
+- **CLAUDE.md Instructions** with checkboxes and a "Copy All Checked" button — each instruction with exact text and evidence from their data
+- **Skills to Build** — repeating tasks that should be custom skills, with starter prompts
+- **Settings to Configure** — specific settings.json changes with justification
 - **"On the Horizon"** — forward-looking automation opportunities with copyable prompts
 - **Interaction Style** — dedicated section analyzing how the user works with Claude Code
 - **Detailed friction analysis** with specific examples from facets, not just counts
@@ -281,6 +283,13 @@ h2 { font-size: 20px; font-weight: 600; color: #0f172a; margin-top: 48px; margin
 .evolution-card { background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px; }
 .evolution-label { font-size: 12px; font-weight: 600; color: #64748b; text-transform: uppercase; margin-bottom: 6px; }
 .evolution-value { font-size: 13px; color: #334155; line-height: 1.5; }
+/* Hook cards */
+.hook-section { display: flex; flex-direction: column; gap: 16px; margin-bottom: 24px; }
+.hook-card { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 16px; }
+.hook-title { font-weight: 600; font-size: 15px; color: #166534; margin-bottom: 4px; }
+.hook-why { font-size: 13px; color: #15803d; margin-bottom: 10px; line-height: 1.5; }
+.hook-json { background: #1e293b; color: #e2e8f0; font-family: 'SF Mono', Menlo, monospace; font-size: 12px; border-radius: 6px; padding: 12px 14px; white-space: pre; overflow-x: auto; }
+.hook-copy-row { display: flex; justify-content: flex-end; margin-top: 8px; }
 /* Multi-claude stats */
 .multi-claude-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 16px; }
 .multi-claude-stat { background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 8px; padding: 12px; text-align: center; }
@@ -316,13 +325,14 @@ These map directly to the built-in `/insights` analysis stages plus our enhancem
 16. **Working Hours** (`.chart-card`): Bar chart of `stats_cache.hourCounts`
 17. **Session Outcomes** (if facets exist): Goal achievement + satisfaction charts
 18. **Friction Analysis** (`.friction-categories`): From Agent 2's `friction_analysis` — detailed cards with counts, descriptions, AND specific examples
-19. **CLAUDE.md Suggestions** (`.claude-md-section`): From Agent 2's `suggestions.claude_md_suggestions` — checkbox format with individual "Copy" buttons and "Copy All Checked" button
-20. **Features to Try** (`.feature-grid`): From Agent 2's `suggestions.features_to_try` — purple cards
-21. **New Ways to Use Claude Code** (`.pattern-card`s): From Agent 2's `suggestions.new_patterns` — cards with copyable prompts
-22. **On the Horizon** (`.horizon-card`s): From Agent 2's `on_the_horizon` — blue gradient cards with copyable prompts
-23. **Fun Ending** (`.fun-ending`): From Agent 1's `fun_ending` — gold card with headline and detail
-24. **Per-Project Sessions**: Load dynamically from JSON via `fetch('insightful-data.json')` — collapsible sections with session lists showing date, source badge, first prompt, message count, tool count, and facet summary
-25. **Data Coverage Note**: Full breakdown of all 5 data sources, message accounting, git commit detection limitations, and what's recoverable vs not
+19. **Hooks to Add** (`.hook-section`): From Agent 2's `personalization_plan.hooks` — each hook as a `.hook-card` showing title, why, and the exact JSON in a `<pre>` block with a Copy button. Ordered by impact (most impactful first).
+20. **CLAUDE.md Instructions** (`.claude-md-section`): From Agent 2's `personalization_plan.claude_md_instructions` — checkbox format with individual "Copy" buttons and "Copy All Checked" button. Include the Evidence line in smaller text under each item.
+21. **Skills to Build** (`.pattern-card`s): From Agent 2's `personalization_plan.skills_to_build` — cards with skill name, description, the sessions/projects that evidence the pattern, and a copyable starter prompt.
+22. **Settings to Configure** (`.feature-grid`): From Agent 2's `personalization_plan.settings_to_configure` — purple cards with exact JSON snippet and justification.
+23. **On the Horizon** (`.horizon-card`s): From Agent 2's `on_the_horizon` — blue gradient cards with copyable prompts
+24. **Fun Ending** (`.fun-ending`): From Agent 1's `fun_ending` — gold card with headline and detail
+25. **Per-Project Sessions**: Load dynamically from JSON via `fetch('insightful-data.json')` — collapsible sections with session lists showing date, source badge, first prompt, message count, tool count, and facet summary
+26. **Data Coverage Note**: Full breakdown of all 5 data sources, message accounting, git commit detection limitations, and what's recoverable vs not
 
 ### JavaScript
 
@@ -351,6 +361,24 @@ function copyCmdItem(idx) {
   if (!code) return;
   navigator.clipboard.writeText(code.textContent.trim()).then(() => {
     const btn = items[idx].querySelector('.copy-btn');
+    if (btn) {
+      const orig = btn.textContent;
+      btn.textContent = 'Copied!';
+      btn.style.background = '#d1fae5';
+      btn.style.color = '#065f46';
+      setTimeout(() => { btn.textContent = orig; btn.style.background = ''; btn.style.color = ''; }, 1500);
+    }
+  });
+}
+
+// Copy hook JSON by index
+function copyHookJson(idx) {
+  const cards = document.querySelectorAll('.hook-card');
+  if (idx >= cards.length) return;
+  const pre = cards[idx].querySelector('.hook-json');
+  if (!pre) return;
+  navigator.clipboard.writeText(pre.textContent.trim()).then(() => {
+    const btn = cards[idx].querySelector('.copy-btn');
     if (btn) {
       const orig = btn.textContent;
       btn.textContent = 'Copied!';

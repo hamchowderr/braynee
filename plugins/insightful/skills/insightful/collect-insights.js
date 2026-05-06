@@ -295,7 +295,22 @@ async function main() {
       }
     } catch { continue; }
   }
-  console.error(`[insightful] .jsonl files found: ${Object.keys(jsonlFiles).length}`);
+  const totalJsonlFound = Object.keys(jsonlFiles).length;
+  const JSONL_SCAN_LIMIT = 300;
+  if (totalJsonlFound > JSONL_SCAN_LIMIT) {
+    const sorted = Object.entries(jsonlFiles)
+      .map(([sid, fp]) => {
+        let mtime = 0;
+        try { mtime = fs.statSync(fp).mtimeMs; } catch {}
+        return { sid, fp, mtime };
+      })
+      .sort((a, b) => b.mtime - a.mtime)
+      .slice(0, JSONL_SCAN_LIMIT);
+    for (const sid of Object.keys(jsonlFiles)) delete jsonlFiles[sid];
+    for (const { sid, fp } of sorted) jsonlFiles[sid] = fp;
+  }
+  console.error(`[insightful] .jsonl files: ${totalJsonlFound} found, ${Object.keys(jsonlFiles).length} to scan (most recent)`);
+
 
   // ── Merge all sources into unified session records ─────────────────
   // Start with history sessions as the base (most complete discovery)
