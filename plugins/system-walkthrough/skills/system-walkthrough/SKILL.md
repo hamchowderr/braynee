@@ -1,69 +1,131 @@
 ---
 name: system-walkthrough
 description: >
-  Autonomously reads through a codebase and produces a visual system walkthrough
-  using Mermaid diagrams in Obsidian-compatible Markdown. Generates architecture
-  diagrams, data flow charts, sequence diagrams, and entity relationship diagrams
-  that visually explain how the application works — like an Excalidraw board but
-  generated from code. Use this skill whenever the user asks to "document this
-  codebase", "walk through this system", "create documentation for this project",
-  "map out this repo", "diagram this app", "explain this codebase", or any variation
-  of wanting a visual understanding of how a codebase works. Also trigger when the
-  user says things like "I need docs for this", "show me how this app works",
-  "reverse-engineer the architecture", or "what does this codebase do".
-  This works on any language, framework, or stack.
+  Autonomously reads through a codebase and produces a complete visual system walkthrough
+  as Excalidraw diagrams embedded in Obsidian-compatible Markdown. Generates architecture
+  diagrams, data flow charts, sequence diagrams, and ER diagrams as .excalidraw files
+  that render natively in Obsidian. Use this skill whenever the user asks to "document
+  this codebase", "walk through this system", "diagram this app", "map out this repo",
+  "create documentation for this project", or any variation of wanting a visual
+  understanding of how a codebase works. Also trigger when the user says things like
+  "show me how this app works", "reverse-engineer the architecture", or "what does this
+  codebase do". Works on any language, framework, or stack.
 ---
 
 # System Walkthrough
 
 You are a senior architect handed a codebase you've never seen. Your job: read through
-it systematically and produce a **visual walkthrough** — a set of Mermaid diagrams
-embedded in Obsidian-compatible Markdown that show how the system works. Someone should
-be able to look at your diagrams and understand the entire application without reading
-a single line of source code.
+it systematically and produce a **visual walkthrough** — a set of Excalidraw diagrams
+embedded in Obsidian-compatible Markdown. Someone should be able to look at your diagrams
+and understand the entire application without reading a single line of source code.
 
-Think of this like creating an Excalidraw board: architecture boxes, data flowing
-between them, sequences showing how requests move through the system. Except you're
-generating it as Mermaid so it renders natively in Obsidian.
+**Before generating any diagrams**, read `references/color-palette.md` in this skill
+directory. All colors must come from that palette — no improvising.
 
-## How to think about this
+---
 
-The output should answer these questions visually:
+## Core Philosophy
 
-- **What is this?** → High-level architecture diagram showing all major components
-- **How does data flow?** → Flowcharts showing request paths from user action to response
-- **What talks to what?** → Sequence diagrams for key user flows
-- **How is data shaped?** → Entity relationship diagrams for the data model
-- **What are the layers?** → Component diagrams showing the dependency tree
+**Diagrams should ARGUE, not DISPLAY.**
 
-Text is supporting context for the diagrams, not the main event. Every section should
-lead with a diagram, then explain what you're looking at.
+A diagram isn't formatted text. It's a visual argument that shows relationships,
+causality, and flow that words alone can't express. The shape should BE the meaning.
+
+**The Isomorphism Test**: If you removed all text, would the structure alone communicate
+the concept? If not, redesign.
+
+**The Education Test**: Could someone learn something concrete from this diagram, or
+does it just label boxes? A good diagram teaches — it shows actual file names, real
+function calls, concrete data formats.
+
+---
+
+## Output Format
+
+All diagrams are `.excalidraw` JSON files. Each markdown file embeds its diagram with:
+
+```
+![[diagram-name.excalidraw]]
+```
+
+Obsidian renders this inline. The `.excalidraw` files go in the vault's
+`2. Areas/Excalidraw/` folder (or the nearest Excalidraw folder the vault uses).
+The markdown walkthrough files go in `3. Resources/` or wherever the user specifies.
+
+### Output Structure
+
+```
+Walkthrough markdown → vault's 3. Resources/<project-name>/
+  index.md                  → embeds architecture.excalidraw
+  architecture.md           → embeds architecture.excalidraw
+  data-model.md             → embeds data-model.excalidraw
+  flows/
+    overview.md             → embeds flows-overview.excalidraw
+    [flow-name].md          → embeds flows-[name].excalidraw
+  integrations.md           → embeds integrations.excalidraw
+  glossary.md
+
+Excalidraw diagrams → vault's 2. Areas/Excalidraw/<project-name>/
+  architecture.excalidraw
+  data-model.excalidraw
+  flows-overview.excalidraw
+  flows-[name].excalidraw
+  integrations.excalidraw
+```
+
+---
+
+## Diagram Types to Produce
+
+### 1. Architecture Overview (architecture.excalidraw)
+Fan-out or layered diagram showing all major components and how they connect.
+Every external service, database, auth system, and major module as a node.
+Arrows show data flow direction. Use boundary rectangles to cluster related components.
+
+### 2. Entity Relationship / Data Model (data-model.excalidraw)
+Tables as rectangles with field names listed. Lines connecting related tables
+with cardinality labels (1, N). Show the actual column names from the schema.
+
+### 3. Request Flow Overview (flows-overview.excalidraw)
+Flowchart showing how a request enters the system, hits middleware/auth, routes to
+a handler, touches the database, and returns a response. The spine of the application.
+
+### 4. Key User Flow Sequences (flows-[name].excalidraw, one per major flow)
+Swimlane/sequence diagrams for the 3-5 most important things a user does:
+- Auth flow (login/signup/token refresh)
+- Primary feature flow (the core thing the app does)
+- Any complex background/async flows
+
+Show the actual function names, route paths, and data shapes — not generic placeholders.
+
+### 5. Integrations (integrations.excalidraw)
+All external services mapped out — what the app sends, what it receives. Include
+actual API endpoint names and payload shapes where discoverable from the code.
+
+---
 
 ## Phase 1: Survey
 
-Get the lay of the land before reading any code in depth.
+Get the lay of the land before reading code in depth.
 
-1. **Directory tree** — Run a 2-3 level directory listing to see the project shape.
-2. **Identity files** — Read the files that tell you what this project is:
-   - `package.json`, `requirements.txt`, `Cargo.toml`, `go.mod`, `composer.json`,
-     `Gemfile`, `pom.xml`, `build.gradle`, or equivalent
-   - `README.md` or any root-level docs
-   - `.env.example`, `.env.local.example`, or similar config templates
-   - `docker-compose.yml`, `Dockerfile`, deployment configs
-   - Config files: `next.config.*`, `vite.config.*`, `tsconfig.json`, `pyproject.toml`, etc.
-3. **Framework detection** — From the above, determine:
-   - Language(s) and framework(s)
-   - Database / ORM if any
-   - Auth strategy if apparent
-   - Deployment target if apparent
+1. Read the root directory listing, `package.json`/`Cargo.toml`/`go.mod`/`pyproject.toml`,
+   `README.md`, and any `.env.example` or `docker-compose.yml`.
+2. Identify:
+   - Language and framework
+   - Entry point(s)
+   - Approximate size (rough file count)
+   - Database and ORM
+   - Auth approach
    - External services / APIs
+   - Deployment target if apparent
 
 After this phase, share a brief summary with the user before proceeding.
 
+---
+
 ## Phase 2: Deep Read
 
-Read through the codebase systematically. While reading, you're specifically looking
-for things that become diagrams:
+Read the codebase systematically. You're looking for things that become diagrams.
 
 **What to map:**
 
@@ -71,145 +133,148 @@ for things that become diagrams:
    your architecture overview and request flow diagrams.
 2. **Data layer** — Schema, models, relationships. This becomes your ER diagram.
 3. **Core user flows** — The 3-5 most important things a user does in the app. Each
-   becomes a sequence diagram showing the full request lifecycle.
+   becomes a sequence/flow diagram.
 4. **External integrations** — APIs, webhooks, third-party services. These become
    nodes in your architecture diagram.
-5. **Auth and middleware** — How requests are intercepted and validated. This becomes
-   part of your flow diagrams.
+5. **Auth and middleware** — How requests are intercepted and validated. This goes
+   into your flow diagrams.
 
 **What to skip:** Generated files, lock files, tests, node_modules, static assets,
-boilerplate that doesn't teach you anything.
+boilerplate that teaches you nothing.
+
+**While reading, track:**
+- Actual file names, function names, route paths — these go in the diagrams verbatim
+- Real data shapes (what a request body looks like, what a DB row contains)
+- The sequence in which things happen for each user flow
+
+After reading, tell the user which flows you plan to diagram before producing output.
+
+---
 
 ## Phase 3: Produce the Walkthrough
 
-Create interlinked Obsidian Markdown files. Every file is diagram-first.
+### Generating .excalidraw Files
 
-### Output Structure
+Each diagram is a raw `.excalidraw` JSON file. See the reference files in this skill:
+- `references/element-templates.md` — copy-paste JSON for rectangles, arrows, text, lines, dots
+- `references/color-palette.md` — all colors by semantic purpose
+- `references/json-schema.md` — full property reference
 
+**JSON structure:**
+```json
+{
+  "type": "excalidraw",
+  "version": 2,
+  "source": "https://excalidraw.com",
+  "elements": [...],
+  "appState": {
+    "viewBackgroundColor": "#ffffff",
+    "gridSize": 20
+  },
+  "files": {}
+}
 ```
-system-walkthrough/
-├── index.md                  # Overview + master architecture diagram
-├── architecture.md           # Component diagram + tech stack breakdown
-├── data-model.md             # ER diagram + schema explanation
-├── flows/
-│   ├── overview.md           # High-level request flow diagram
-│   ├── [flow-1].md           # Sequence diagram for key flow 1
-│   ├── [flow-2].md           # Sequence diagram for key flow 2
-│   └── [flow-3].md           # Sequence diagram for key flow 3
-├── integrations.md           # External services diagram
-└── glossary.md               # Project-specific terms
+
+**For large diagrams, build section by section.** Each section gets its own edit pass.
+Namespace element ID seeds by section (section 1 → 100xxx, section 2 → 200xxx).
+
+### Shape Conventions for Walkthrough Diagrams
+
+| What | Shape | Colors |
+|------|-------|--------|
+| External system / user | `ellipse` | Start/Trigger |
+| Application component / service | `rectangle` | Primary |
+| Database | `rectangle` | Secondary |
+| Auth/middleware layer | `rectangle` | AI/LLM |
+| External API | `rectangle` | Tertiary |
+| Decision / condition | `diamond` | Decision |
+| Section boundary | `rectangle` | Light fill, no stroke |
+
+### Large Diagram Strategy
+
+Build the JSON one section at a time:
+1. Create the base file with the wrapper and first section
+2. Add one section per edit pass — take time with layout and spacing
+3. Use descriptive string IDs (`"api_handler_rect"`, `"auth_arrow"`)
+4. Update cross-section bindings as you go
+5. After all sections, review the full JSON for broken bindings
+6. Then render and validate
+
+### Render & Validate (MANDATORY)
+
+After generating each `.excalidraw` file, render it to PNG and inspect visually.
+
+**Setup (first time only):**
+```bash
+cd plugins/system-walkthrough/skills/system-walkthrough/references
+uv sync
+uv run playwright install chromium
 ```
 
-Name the flow files after what they document (e.g., `user-authentication.md`,
-`order-checkout.md`, `ai-chat-generation.md`). Adapt the structure to what you
-actually find — skip what doesn't exist, add what's needed.
+**Render:**
+```bash
+uv run python references/render_excalidraw.py <path-to-file.excalidraw>
+```
 
-### Diagram Guidelines
+Then use the Read tool on the output PNG. Fix what you see. Repeat until:
+- No text is clipped or overlapping
+- Arrows connect to the right elements
+- Spacing is balanced
+- A new developer could understand the system from the diagram alone
 
-**Use these Mermaid diagram types:**
+**The loop:**
+1. Render → Read PNG → audit against your design intent
+2. Check for: text overflow, broken arrows, lopsided composition, unreadable labels
+3. Fix coordinates, widen containers, reroute arrows
+4. Re-render → repeat until clean
 
-1. **Architecture overview** (in `index.md`) — Use `graph TD` or `graph LR` to show
-   all major components and how they connect:
+### Writing the Markdown Files
 
-   ```mermaid
-   graph TD
-       Client[Browser] --> NextJS[Next.js App Router]
-       NextJS --> Auth[Supabase Auth]
-       NextJS --> API[API Routes]
-       API --> DB[(PostgreSQL)]
-       API --> External[External APIs]
-   ```
-
-2. **Entity Relationship diagrams** (in `data-model.md`) — Use `erDiagram` to show
-   the database schema:
-
-   ```mermaid
-   erDiagram
-       USER ||--o{ WORKSPACE : belongs_to
-       WORKSPACE ||--o{ PROJECT : contains
-       PROJECT ||--o{ CHAT : has
-   ```
-
-3. **Sequence diagrams** (in `flows/`) — Use `sequenceDiagram` for key user flows
-   showing the full lifecycle of a request:
-
-   ```mermaid
-   sequenceDiagram
-       actor User
-       User->>Browser: Clicks "Generate"
-       Browser->>API: POST /api/chat
-       API->>Auth: Validate session
-       Auth-->>API: OK
-       API->>AI: Stream completion
-       AI-->>API: Tool call: run code
-       API->>Sandbox: Execute code
-       Sandbox-->>API: Result
-       API-->>Browser: Stream response
-   ```
-
-4. **Flowcharts** (in `flows/overview.md`) — Use `flowchart TD` for decision trees
-   and request routing:
-
-   ```mermaid
-   flowchart TD
-       Request --> Middleware{Auth Check}
-       Middleware -->|Authenticated| Router
-       Middleware -->|Anonymous| Login
-       Router --> API_Route
-       Router --> Page_Route
-   ```
-
-5. **Component/dependency diagrams** (in `architecture.md`) — Use `graph TD` to show
-   how packages or modules depend on each other.
-
-**Diagram quality rules:**
-- Every diagram must have a brief title comment above it explaining what you're looking at
-- Keep diagrams focused — one concept per diagram. Split large diagrams into multiple.
-- Use clear, descriptive labels on nodes and edges — no abbreviations without explanation
-- Color-code or group related components using subgraph blocks
-- Include the actual names from the codebase (file names, function names, route paths)
-  so diagrams map directly to source code
-
-### Writing Guidelines
-
-**index.md** — The landing page. Contains:
-- One-paragraph summary of what the system does
-- Tech stack table at a glance
-- **The master architecture diagram** — this is the single most important visual
-- A "Start here" section with wikilinks in reading order
-- Links to all walkthrough files
+**index.md** — Landing page. Contains:
+- One-paragraph summary of the system
+- Tech stack table
+- `![[architecture.excalidraw]]` embed
+- Wikilinks to every other walkthrough file in reading order
 
 **Every other file** should:
-- **Lead with a diagram** — the diagram is the main content
-- Follow with concise explanatory text that adds context the diagram can't show
-- Use wikilinks (`[[other-file]]`, `[[other-file#section]]`) to cross-reference
-- Use callouts (`> [!note]`, `> [!warning]`, `> [!tip]`) for important context
-- Include short code snippets only when they clarify what the diagram shows
-- End with a "Related" section linking to connected files
+- Open with the diagram embed (`![[diagram-name.excalidraw]]`)
+- Follow with concise explanatory text — what the diagram shows, key decisions, gotchas
+- Use wikilinks (`[[other-file]]`) to cross-reference related files
+- Use callouts (`> [!note]`, `> [!warning]`) for important context
+- End with a "Related" section
 
-**Wikilink conventions:**
-- `[[architecture]]`, `[[data-model]]`
-- `[[flows/user-authentication]]`
-- `[[data-model|the database schema]]`
+**Wikilink conventions:** `[[architecture]]`, `[[data-model]]`, `[[flows/user-authentication]]`
 
-**Tone:** Direct, visual-first. The diagrams do the heavy lifting. Text explains
-the "why" and fills in details that diagrams can't capture.
-
-### What makes a great visual walkthrough
-
-- Someone can look at `index.md` and understand the entire system in 60 seconds
-- The ER diagram matches the actual database schema
-- Sequence diagrams trace real request paths through actual files and functions
-- You could hand this to a new developer and they'd know where everything is
-- Diagrams use real names from the codebase, not generic placeholders
+---
 
 ## Execution Notes
 
-- **Progress updates:** After Phase 1, share what you found. After Phase 2, share
-  which flows you plan to diagram before producing output.
-- **Prioritize the diagrams:** If you're running low on context, prioritize the
-  architecture overview, ER diagram, and the 2-3 most important sequence diagrams.
-  Those alone give 80% of the understanding.
-- **Large codebases:** Focus on the critical paths. Note areas you skimmed.
+- **Progress updates:** After Phase 1, share findings. After Phase 2, share planned flows.
+- **Prioritize:** If running low on context, finish architecture + data-model first.
+  Those two diagrams give 80% of the understanding.
+- **Large codebases:** Focus on critical paths. Note what you skimmed.
 - **Monorepos:** Create a top-level architecture diagram showing how packages relate,
   then drill into each significant package.
+- **Use real names:** Every node, arrow label, and field name should come from the
+  actual codebase — not generic placeholders like "Service A" or "Handler".
+
+---
+
+## Quality Checklist
+
+### Depth & Accuracy
+- [ ] Actual schemas, route definitions, and function signatures read from the code
+- [ ] Real names used throughout — no generic placeholders
+- [ ] Data shapes shown where relevant (what goes in, what comes out)
+
+### Diagrams
+- [ ] Architecture: all major components, data flow direction, external services
+- [ ] Data model: actual column names, real relationships with cardinality
+- [ ] At least 2 flow diagrams for key user paths
+- [ ] Rendered to PNG and visually inspected
+- [ ] No text overflow, overlapping elements, or broken arrows
+
+### Markdown
+- [ ] All diagrams embedded with `![[filename.excalidraw]]`
+- [ ] Wikilinks connect related files
+- [ ] index.md stands alone and links to everything else
