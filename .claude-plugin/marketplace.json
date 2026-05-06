@@ -19,18 +19,6 @@
       "keywords": ["insights", "analytics", "reporting", "usage", "history"]
     },
     {
-      "name": "excalidraw",
-      "source": "./plugins/excalidraw",
-      "description": "Generate .excalidraw JSON files that argue visually — architecture diagrams, flowcharts, sequence diagrams, ER diagrams. Renders to PNG via Playwright for validation. Diagrams argue, not display.",
-      "version": "1.0.0",
-      "author": {
-        "name": "HamCh"
-      },
-      "repository": "https://github.com/hamchowderr/claude-plugins",
-      "license": "MIT",
-      "keywords": ["excalidraw", "diagrams", "architecture", "visualization", "obsidian"]
-    },
-    {
       "name": "system-walkthrough",
       "source": "./plugins/system-walkthrough",
       "description": "Point it at any codebase and get a complete visual walkthrough — Excalidraw architecture diagrams, ER diagrams, and sequence diagrams embedded in Obsidian-compatible Markdown. Autonomously reads the code and produces diagrams a senior dev could use to onboard.",
@@ -58,13 +46,13 @@
       "name": "brainy",
       "source": "./plugins/brainy",
       "description": "Brainy turns Claude Code into your second brain — setup wizard, PARA vault scaffolding, company knowledge base, project detection, and daily workflow skills.",
-      "version": "1.3.0",
+      "version": "1.4.0",
       "author": {
         "name": "Otaku Solutions"
       },
       "repository": "https://github.com/hamchowderr/claude-plugins",
       "license": "MIT",
-      "keywords": ["second-brain", "obsidian", "PARA", "vault", "knowledge-management", "daily-notes", "zettelkasten"]
+      "keywords": ["second-brain", "obsidian", "PARA", "vault", "knowledge-management", "daily-notes", "zettelkasten", "excalidraw"]
     }
   ]
 }
