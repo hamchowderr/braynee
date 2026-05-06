@@ -10,7 +10,7 @@
       "name": "insightful",
       "source": "./plugins/insightful",
       "description": "Generate a comprehensive HTML insights report from your ENTIRE Claude Code history — every session, every project, all time. The built-in /insights covers recent activity; Insightful covers everything.",
-      "version": "1.1.0",
+      "version": "1.1.1",
       "author": {
         "name": "HamCh"
       },
@@ -22,7 +22,7 @@
       "name": "beads",
       "source": "./plugins/beads",
       "description": "Live HTML dashboard for your beads issue tracker — auto-opens on session start and refreshes whenever bd commands run. Shows active project issues with tabbed views, full issue detail, and a paginated grid of all other projects. Configure your projects root via BEADS_CODE_DIR env var.",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "author": {
         "name": "HamCh"
       },
@@ -34,7 +34,7 @@
       "name": "brainy",
       "source": "./plugins/brainy",
       "description": "Brainy turns Claude Code into your second brain — setup wizard, PARA vault scaffolding, company knowledge base, project detection, and daily workflow skills.",
-      "version": "1.5.1",
+      "version": "1.5.2",
       "author": {
         "name": "Otaku Solutions"
       },

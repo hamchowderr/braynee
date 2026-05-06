@@ -479,10 +479,15 @@ fetch('insightful-data.json')
 
 ## Step 5: Open the Report
 
-After writing the HTML file:
+After writing the HTML file, open it using the right command for the platform:
 
 ```bash
-start "" ~/.claude/usage-data/insightful-report.html
+# Detect platform and open
+case "$(uname -s)" in
+  Darwin) open "$HOME/.claude/usage-data/insightful-report.html" ;;
+  Linux)  xdg-open "$HOME/.claude/usage-data/insightful-report.html" ;;
+  MINGW*|MSYS*|CYGWIN*) start "" "$USERPROFILE/.claude/usage-data/insightful-report.html" ;;
+esac
 ```
 
 Tell the user the report is ready and the file path.
