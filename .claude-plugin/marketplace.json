@@ -19,18 +19,6 @@
       "keywords": ["insights", "analytics", "reporting", "usage", "history"]
     },
     {
-      "name": "system-walkthrough",
-      "source": "./plugins/system-walkthrough",
-      "description": "Point it at any codebase and get a complete visual walkthrough — Excalidraw architecture diagrams, ER diagrams, and sequence diagrams embedded in Obsidian-compatible Markdown. Autonomously reads the code and produces diagrams a senior dev could use to onboard.",
-      "version": "2.0.0",
-      "author": {
-        "name": "HamCh"
-      },
-      "repository": "https://github.com/hamchowderr/claude-plugins",
-      "license": "MIT",
-      "keywords": ["documentation", "walkthrough", "codebase", "architecture", "obsidian", "excalidraw", "onboarding"]
-    },
-    {
       "name": "beads",
       "source": "./plugins/beads",
       "description": "Live HTML dashboard for your beads issue tracker — auto-opens on session start and refreshes whenever bd commands run. Shows active project issues with tabbed views, full issue detail, and a paginated grid of all other projects. Configure your projects root via BEADS_CODE_DIR env var.",
@@ -46,7 +34,7 @@
       "name": "brainy",
       "source": "./plugins/brainy",
       "description": "Brainy turns Claude Code into your second brain — setup wizard, PARA vault scaffolding, company knowledge base, project detection, and daily workflow skills.",
-      "version": "1.4.0",
+      "version": "1.5.0",
       "author": {
         "name": "Otaku Solutions"
       },
