@@ -1,0 +1,126 @@
+// post-compact.js
+// Hook: PostCompact — Appends the compact_summary to the active session note
+// Fired AFTER compaction completes; compact_summary is the AI-generated summary
+// of what was in context. This preserves it as a permanent record in the vault.
+//
+// Does NOT replace reinject-after-compact.ps1 — that handles context injection
+// BACK into Claude. This handles writing the summary TO the vault for future reference.
+// Exit 0 always — informational, no decision control on PostCompact.
+
+const fs = require('fs');
+const path = require('path');
+
+const VAULT_DIR = path.join(process.env.USERPROFILE, 'Obsidian Vault');
+const SESSIONS_DIR = path.join(VAULT_DIR, '2. Areas', 'Sessions');
+const CODE_DIR = path.join(process.env.USERPROFILE, 'code');
+
+function findProjectName(folderName) {
+  const projectsDir = path.join(VAULT_DIR, '1. Projects');
+  if (!fs.existsSync(projectsDir)) return null;
+  const files = fs.readdirSync(projectsDir).filter(f => f.endsWith('.md'));
+  for (const file of files) {
+    try {
+      const content = fs.readFileSync(path.join(projectsDir, file), 'utf8');
+      const folderMatch = content.match(/^folder:\s*"?([^"\n]+)"?$/m);
+      if (folderMatch && folderMatch[1].trim().toLowerCase() === folderName.toLowerCase()) {
+        const nameMatch = content.match(/^name:\s*"?([^"\n]+)"?$/m);
+        if (nameMatch) return nameMatch[1].trim();
+        return file.replace('.md', '');
+      }
+    } catch { continue; }
+  }
+  return null;
+}
+
+function findMdFiles(dir) {
+  const results = [];
+  try {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (entry.isDirectory() && !entry.name.startsWith('.')) {
+        results.push(...findMdFiles(path.join(dir, entry.name)));
+      } else if (entry.isFile() && entry.name.endsWith('.md')) {
+        results.push(path.join(dir, entry.name));
+      }
+    }
+  } catch {}
+  return results;
+}
+
+function findActiveSession(projectName) {
+  if (!fs.existsSync(SESSIONS_DIR)) return null;
+
+  const projectSlug = projectName.replace(/[^a-zA-Z0-9]+/g, '-');
+  const projectDir = path.join(SESSIONS_DIR, projectSlug);
+  const seen = new Set();
+
+  for (const searchDir of [projectDir, SESSIONS_DIR].filter(d => fs.existsSync(d))) {
+    const files = findMdFiles(searchDir).filter(f => !seen.has(f));
+    files.sort((a, b) => path.basename(b).localeCompare(path.basename(a)));
+
+    for (const filepath of files) {
+      seen.add(filepath);
+      try {
+        const content = fs.readFileSync(filepath, 'utf8');
+        const statusMatch = content.match(/^status:\s*(\S+)/m);
+        if (!statusMatch || statusMatch[1] !== 'active') continue;
+        const projectMatch = content.match(/^project:\s*"?\[?\[?([^\]"\n]+)\]?\]?"?/m);
+        if (!projectMatch) continue;
+        if (projectMatch[1].trim().toLowerCase() === projectName.toLowerCase()) {
+          return { filepath, content };
+        }
+      } catch { continue; }
+    }
+  }
+  return null;
+}
+
+let input = '';
+process.stdin.setEncoding('utf8');
+process.stdin.on('data', chunk => { input += chunk; });
+process.stdin.on('end', () => {
+  try {
+    const data = JSON.parse(input);
+    const compactSummary = data.compact_summary;
+    const trigger = data.trigger || 'auto';
+
+    if (!compactSummary || !compactSummary.trim()) process.exit(0);
+
+    const cwd = data.cwd || process.cwd();
+    const folderName = path.basename(cwd);
+    const isInCodeDir = cwd.toLowerCase().startsWith(CODE_DIR.toLowerCase());
+    if (!isInCodeDir || folderName.toLowerCase() === 'workspace') process.exit(0);
+
+    const projectName = findProjectName(folderName);
+    if (!projectName) process.exit(0);
+
+    const session = findActiveSession(projectName);
+    if (!session) process.exit(0);
+
+    const now = new Date().toISOString().replace('T', ' ').split('.')[0];
+
+    // Trim summary to reasonable length (first 30 lines)
+    const summaryLines = compactSummary.trim().split('\n').slice(0, 30);
+    const trimmedSummary = summaryLines.join('\n') +
+      (compactSummary.trim().split('\n').length > 30 ? '\n*(truncated)*' : '');
+
+    const compactionBlock =
+      `\n#### Compaction record (${trigger}, ${now})\n` +
+      `${trimmedSummary}\n`;
+
+    let content = session.content;
+
+    // Append to ## Progress section if it exists
+    const progressRegex = /(## Progress\s*\n)([\s\S]*?)(?=\n## |\n$)/;
+    if (progressRegex.test(content)) {
+      content = content.replace(progressRegex, `$1$2${compactionBlock}`);
+    } else {
+      // Append at end
+      content = content.trimEnd() + '\n\n## Progress\n' + compactionBlock;
+    }
+
+    fs.writeFileSync(session.filepath, content, 'utf-8');
+    process.exit(0);
+  } catch {
+    process.exit(0);
+  }
+});
