@@ -169,6 +169,17 @@
         "hooks": [
           {
             "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/beads-dashboard-refresh.js\"",
+            "if": "Bash(bd *)",
+            "async": true
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/beads-claim-to-tasknotes.js\"",
             "if": "Bash(bd *)"
           }
