@@ -3,11 +3,13 @@ name: excalidraw
 description: >
   Create Excalidraw diagrams in Obsidian using the ExcalidrawAutomate (EA) API.
   Generates .excalidraw files saved directly to the vault — no external tools needed,
-  Obsidian renders them natively. Use when the user wants to visualize workflows,
-  architectures, processes, data models, or any concept as a diagram. Trigger when
-  the user asks to "diagram this", "draw a flowchart", "create an architecture diagram",
-  "visualize this", "make an Excalidraw", or any variation of wanting a visual
-  representation saved to their vault.
+  Obsidian renders them natively. Two modes: (1) Single diagram on demand for any
+  workflow, architecture, process, or data model — trigger on "diagram this", "draw
+  a flowchart", "create an architecture diagram", "visualize this", "make an Excalidraw".
+  (2) Full codebase walkthrough — autonomously reads a codebase and produces a
+  complete visual system documentation (architecture, data flow, sequence, ER) plus
+  interlinked Markdown notes — trigger on "document this codebase", "walk through this
+  system", "diagram this app", "map out this repo", "create documentation for this project".
 ---
 
 # Excalidraw Diagram Creator
@@ -20,6 +22,13 @@ Generate Excalidraw diagrams using the ExcalidrawAutomate (EA) API. Output is a
 
 For the full upstream plugin source, clone https://github.com/zsviczian/obsidian-excalidraw-plugin.
 
+This skill has **two modes** depending on the request:
+
+- **Single Diagram Mode** — user wants ONE diagram of a specific concept. Output: one `.excalidraw` file.
+- **Codebase Walkthrough Mode** — user wants to document an entire codebase visually. Output: 4-6 `.excalidraw` files + interlinked markdown notes.
+
+If the request mentions "document the codebase", "walk through this system", "map out this repo", or similar, jump to the **Codebase Walkthrough Mode** section. Otherwise stay in Single Diagram Mode.
+
 ---
 
 ## Core Philosophy
@@ -31,6 +40,8 @@ causality, and flow that words alone can't express. The shape should BE the mean
 
 **The Isomorphism Test**: If you removed all text, would the structure alone communicate
 the concept? If not, redesign.
+
+For technical diagrams, use real names from the codebase — never "Service A" or "Handler".
 
 ---
 
@@ -124,13 +135,13 @@ See `references/color-palette.md` for the semantic color system. Quick reference
 
 ---
 
-## Design Process
+## Single Diagram Mode
 
-### Step 1: Understand the concept
-- What does this visualize? What's the core flow or argument?
-- Simple/conceptual (abstract shapes) or technical (real names, real data)?
+### Design Process
 
-### Step 2: Map concepts to visual patterns
+**Step 1: Understand the concept** — What does this visualize? What's the core flow or argument? Simple/conceptual (abstract shapes) or technical (real names, real data)?
+
+**Step 2: Map concepts to visual patterns**
 
 | If the concept... | Use this pattern |
 |-------------------|------------------|
@@ -142,31 +153,17 @@ See `references/color-palette.md` for the semantic color system. Quick reference
 | Transforms input | Assembly line (before → process → after) |
 | Has phases | Gap/break (visual whitespace between sections) |
 
-### Step 3: Plan layout before writing code
-Sketch x/y coordinates on paper or in your head. Typical spacing:
-- Sibling elements: 60–80px apart
-- Major sections: 150–200px apart
-- Allow ~100px padding around the full diagram
+**Step 3: Plan layout before writing code** — Sketch x/y coordinates. Typical spacing: sibling elements 60–80px apart, major sections 150–200px apart, ~100px padding around the full diagram.
 
-### Step 4: Write the script
-Use `ea.connectObjects()` over manual `ea.addArrow()` when connecting named shapes —
-it handles positioning automatically.
+**Step 4: Write the script** — Use `ea.connectObjects()` over manual `ea.addArrow()` when connecting named shapes — it handles positioning automatically.
 
-### Step 5: Save and review
-`await ea.create()` saves to the vault. Open the file in Obsidian to review.
-Adjust coordinates and re-run if layout needs fixing.
+**Step 5: Save and review** — `await ea.create()` saves to the vault. Open the file in Obsidian to review. Adjust coordinates and re-run if layout needs fixing.
 
----
+### Default Output Location
 
-## Output Location
+`2. Areas/Excalidraw/` — or `2. Areas/Excalidraw/<project-name>/` for project-specific diagrams.
 
-Default save location: `2. Areas/Excalidraw/`
-
-For project-specific diagrams: `2. Areas/Excalidraw/<project-name>/`
-
----
-
-## Quality Checklist
+### Single Diagram Quality Checklist
 
 - [ ] `ea.reset()` called first
 - [ ] Styles set before elements that use them
@@ -175,3 +172,107 @@ For project-specific diagrams: `2. Areas/Excalidraw/<project-name>/`
 - [ ] Real names used for technical diagrams (not "Service A")
 - [ ] Saved to `2. Areas/Excalidraw/` or appropriate subfolder
 - [ ] Reviewed in Obsidian after saving
+
+---
+
+## Codebase Walkthrough Mode
+
+You are a senior architect handed a codebase you've never seen. Your job: read through it systematically and produce a **visual walkthrough** — Excalidraw diagrams embedded in Obsidian-compatible Markdown. Someone should understand the entire application from your diagrams without reading a single line of source code.
+
+### Output Structure
+
+```
+3. Resources/<project-name>/
+  index.md                  → ![[project-architecture.excalidraw]]
+  architecture.md           → ![[project-architecture.excalidraw]]
+  data-model.md             → ![[project-data-model.excalidraw]]
+  flows/
+    overview.md             → ![[project-flows-overview.excalidraw]]
+    [flow-name].md          → ![[project-flows-[name].excalidraw]]
+  integrations.md           → ![[project-integrations.excalidraw]]
+  glossary.md
+
+2. Areas/Excalidraw/<project-name>/
+  project-architecture.excalidraw
+  project-data-model.excalidraw
+  project-flows-overview.excalidraw
+  project-flows-[name].excalidraw
+  project-integrations.excalidraw
+```
+
+Each markdown file embeds its diagram with `![[diagram-name.excalidraw]]`.
+
+### Diagrams to Produce
+
+**1. Architecture** (`project-architecture.excalidraw`) — All major components, external services, databases, auth system. Arrows show data flow direction. Group related components with boundary rectangles. Use actual service names.
+
+**2. Data Model** (`project-data-model.excalidraw`) — Tables as rectangles with real column names listed. Lines connecting related tables with cardinality labels. Matches the actual schema from the code.
+
+**3. Request Flow Overview** (`project-flows-overview.excalidraw`) — How a request enters, hits middleware/auth, routes to a handler, touches the DB, returns a response. The spine of the application.
+
+**4. Key User Flow Sequences** (`project-flows-[name].excalidraw`) — Swimlane/sequence diagrams for the 3–5 most important user flows: auth (login/signup/token refresh), primary feature (the core thing the app does), any complex async/background flows. Use actual function names, route paths, and data shapes.
+
+**5. Integrations** (`project-integrations.excalidraw`) — All external services — what the app sends, what it receives. Real API endpoint names and payload shapes where discoverable from the code.
+
+### Shape Conventions
+
+| What | Method | Color |
+|------|--------|-------|
+| User / external system | `addEllipse` | Start/Trigger (`#fed7aa` / `#c2410c`) |
+| Application component | `addText(..., {box:true})` | Primary (`#3b82f6` / `#1e3a5f`) |
+| Database | `addText(..., {box:true})` | Secondary (`#60a5fa` / `#1e3a5f`) |
+| Auth / middleware | `addText(..., {box:true})` | AI/Special (`#ddd6fe` / `#6d28d9`) |
+| External API | `addText(..., {box:true})` | Tertiary (`#93c5fd` / `#1e3a5f`) |
+| Decision / branch | `addDiamond` | Decision (`#fef3c7` / `#b45309`) |
+
+### Phase 1: Survey
+
+1. Read root directory, `package.json` / `go.mod` / `pyproject.toml`, `README.md`, `.env.example`, `docker-compose.yml`.
+2. Identify: language + framework, entry points, database + ORM, auth approach, external services, deployment target.
+
+Share a brief summary with the user before proceeding.
+
+### Phase 2: Deep Read
+
+Read the codebase looking for things that become diagrams.
+
+1. **Entry points + routing** → architecture + request flow diagrams
+2. **Data layer** → ER diagram (actual column names)
+3. **Core user flows** → sequence diagrams (3–5 flows)
+4. **External integrations** → integrations diagram
+5. **Auth + middleware** → part of flow diagrams
+
+Track actual file names, function names, route paths — these go in diagrams verbatim.
+
+Tell the user which flows you plan to diagram before producing output.
+
+### Phase 3: Produce
+
+Generate each diagram script, run it (or provide it for the user to run via Templater), then write the markdown files. Each markdown file opens with its diagram embed.
+
+**index.md** — landing page with one-paragraph summary, tech stack table, `![[project-architecture.excalidraw]]` embed, and wikilinks to all other files.
+
+**Every other file:**
+- Opens with `![[diagram.excalidraw]]`
+- Concise explanatory text below (key decisions, what to notice)
+- Wikilinks to related files
+- `> [!note]` callouts for important context
+- "Related" section at the bottom
+
+### Execution Notes
+
+- After Phase 1, share findings. After Phase 2, share planned flows.
+- If running low on context, finish architecture + data-model first — those two give 80%.
+- Large codebases: focus on critical paths, note what you skimmed.
+- Monorepos: top-level architecture showing how packages relate, then drill in.
+
+### Codebase Walkthrough Quality Checklist
+
+- [ ] `ea.reset()` called at start of every diagram script
+- [ ] Real names throughout — no generic placeholders
+- [ ] Architecture: all major components, data flow direction, external services
+- [ ] Data model: actual column names + real relationships
+- [ ] At least 2 flow diagrams for key user paths
+- [ ] All diagrams saved to `2. Areas/Excalidraw/<project-name>/`
+- [ ] All markdown files embed diagrams with `![[filename.excalidraw]]`
+- [ ] index.md stands alone and links to everything else
