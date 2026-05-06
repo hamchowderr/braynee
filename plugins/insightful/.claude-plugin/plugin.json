@@ -1,10 +1,11 @@
 {
   "name": "insightful",
   "description": "Generate a comprehensive HTML insights report from your ENTIRE Claude Code history — every session, every project, all time. The built-in /insights covers recent activity; Insightful covers everything.",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "author": {
     "name": "HamCh"
   },
+  "homepage": "https://github.com/hamchowderr/claude-plugins/tree/master/plugins/insightful",
   "repository": "https://github.com/hamchowderr/claude-plugins",
   "license": "MIT",
   "keywords": ["insights", "analytics", "reporting", "usage", "history"]

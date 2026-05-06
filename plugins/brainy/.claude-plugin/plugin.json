@@ -1,12 +1,13 @@
 {
   "name": "brainy",
   "description": "Brainy turns Claude Code into your second brain — setup wizard, PARA vault scaffolding, company knowledge base, project detection, and daily workflow skills.",
-  "version": "1.5.2",
+  "version": "1.5.3",
   "author": {
     "name": "Otaku Solutions",
     "email": "admin@otakusolutions.io",
     "url": "https://otakusolutions.io"
   },
+  "homepage": "https://github.com/hamchowderr/claude-plugins/tree/master/plugins/brainy",
   "repository": "https://github.com/hamchowderr/claude-plugins",
   "license": "MIT",
   "keywords": ["second-brain", "obsidian", "PARA", "vault", "knowledge-management", "daily-notes", "zettelkasten"]
