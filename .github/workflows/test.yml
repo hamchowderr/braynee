@@ -1,0 +1,95 @@
+name: Plugin Self-Tests
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  brainy:
+    name: brainy / ${{ matrix.os }} / Node ${{ matrix.node }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        node: ['20', '22']
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node ${{ matrix.node }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Run brainy self-test
+        shell: bash
+        run: node plugins/brainy/bin/brainy-self-test
+
+  insightful:
+    name: insightful / ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Parse insightful JS
+        shell: bash
+        run: |
+          for f in plugins/insightful/skills/insightful/*.js plugins/insightful/skills/insightful/*.mjs; do
+            [ -f "$f" ] && node --check "$f"
+          done
+      - name: Validate insightful manifest
+        shell: bash
+        run: |
+          node -e "const p = require('./plugins/insightful/.claude-plugin/plugin.json'); if (!p.name || !p.description) throw 'invalid manifest'; console.log('OK: insightful v' + p.version);"
+
+  beads-dashboard:
+    name: beads-dashboard / ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Parse beads-dashboard JS
+        shell: bash
+        run: |
+          for f in plugins/beads/scripts/*.js; do
+            node --check "$f"
+          done
+      - name: Validate hooks.json schema
+        shell: bash
+        run: |
+          node -e "const h = require('./plugins/beads/hooks/hooks.json'); if (!h.hooks) throw 'missing hooks wrapper'; console.log('OK:', Object.keys(h.hooks).length, 'events');"
+      - name: Validate beads manifest
+        shell: bash
+        run: |
+          node -e "const p = require('./plugins/beads/.claude-plugin/plugin.json'); if (!p.name) throw 'invalid manifest'; console.log('OK: beads v' + p.version);"
+
+  marketplace:
+    name: marketplace.json valid
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate marketplace.json
+        shell: bash
+        run: |
+          node -e "
+          const m = require('./.claude-plugin/marketplace.json');
+          if (!m.name || !Array.isArray(m.plugins)) throw 'invalid marketplace';
+          console.log('OK:', m.name, '|', m.plugins.length, 'plugins');
+          for (const p of m.plugins) {
+            if (!p.name || !p.source) throw 'invalid plugin entry: ' + JSON.stringify(p);
+          }
+          "

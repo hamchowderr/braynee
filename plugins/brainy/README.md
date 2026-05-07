@@ -131,3 +131,46 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/qmd-wrapper.mjs query "query"     # deep rese
 ## Plugin name
 
 `brainy` — published under the `otaku-solutions` namespace.
+
+---
+
+## Development & testing
+
+### Iterating on brainy locally
+
+Don't use `claude plugin update` for every edit. Launch Claude Code with `--plugin-dir` pointing at the source:
+
+```bash
+claude --plugin-dir "/path/to/claude-plugins/plugins/brainy"
+```
+
+The local copy takes precedence over the installed marketplace version for that session. After each edit, run `/reload-plugins` — no restart needed. It reloads plugins, skills, agents, hooks, MCP, and LSP servers.
+
+### Self-test
+
+Validate the plugin install end-to-end:
+
+```bash
+node bin/brainy-self-test           # human-readable
+node bin/brainy-self-test --json    # machine-readable
+```
+
+Or via the health skill: `/brainy:health self-test`.
+
+The self-test runs all of these in sequence:
+- Parse all hooks/monitors/scripts
+- Validate hooks.json + monitors.json + plugin.json schemas
+- Verify every skill + agent has valid frontmatter
+- Execute every hook with mock stdin (catches crashes)
+- Boot-test every monitor (3s startup check)
+- Dispatch each bundled script to confirm it's callable
+
+Exit 0 = all passed. Non-zero = at least one failure.
+
+### Continuous integration
+
+`.github/workflows/test.yml` runs the self-test on every push to `master` and every PR, across:
+- Ubuntu / macOS / Windows
+- Node 20 + Node 22
+
+This catches platform regressions before they ship.

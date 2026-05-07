@@ -20,7 +20,7 @@ const HINTS = [
   [/ENOENT/i,                   'File not found — check that the vault path and Sessions/ folder exist'],
   [/SyntaxError/i,              'JSON parse error — hook received malformed input'],
   [/EPERM|EACCES/i,             'Permission denied — check vault directory write access'],
-  [/qmd-wrapper.*not found/i,   'QMD not installed — run brainy-health to check setup'],
+  [/qmd-wrapper.*not found/i,   'QMD not installed — run /brainy:health self-test'],
 ];
 
 function getHint(message) {
@@ -28,6 +28,33 @@ function getHint(message) {
     if (pattern.test(message)) return ` → ${hint}`;
   }
   return '';
+}
+
+// Pattern detection — track recent errors per hook to surface chronic failures.
+// If a single hook fires >3 errors within 24h, emit a "chronic failure" notification.
+const CHRONIC_THRESHOLD = 3;
+const CHRONIC_WINDOW_MS = 24 * 60 * 60 * 1000;
+const errorHistory = new Map(); // hookName → [{ timestamp, message }]
+const chronicNotified = new Set(); // hookName already notified about chronic state
+
+function trackError(hookName, message) {
+  const now = Date.now();
+  const cutoff = now - CHRONIC_WINDOW_MS;
+
+  let history = errorHistory.get(hookName) || [];
+  history = history.filter(e => e.timestamp >= cutoff);
+  history.push({ timestamp: now, message });
+  errorHistory.set(hookName, history);
+
+  if (history.length >= CHRONIC_THRESHOLD && !chronicNotified.has(hookName)) {
+    chronicNotified.add(hookName);
+    process.stdout.write(
+      `[brainy] CHRONIC: ${hookName} has failed ${history.length}x in last 24h — investigate. Run /brainy:health self-test\n`
+    );
+  } else if (history.length < CHRONIC_THRESHOLD && chronicNotified.has(hookName)) {
+    // Recovered — clear the flag so we'll notify again if it goes chronic
+    chronicNotified.delete(hookName);
+  }
 }
 
 let lastPos = 0;
@@ -67,6 +94,7 @@ function poll() {
       const [, hookName, message] = m;
       const hint = getHint(message);
       process.stdout.write(`[brainy] Hook error in ${hookName}: ${message}${hint}\n`);
+      trackError(hookName, message);
     }
   });
 }
