@@ -20,6 +20,40 @@ AIMock runs alongside whenever an LLM is in the loop, hijacking calls via
 ANTHROPIC_BASE_URL / OPENAI_BASE_URL so all three tiers stay deterministic.
 ```
 
+## CLI install
+
+The brainy `check-testing-setup` SessionStart hook nudges if any of these are missing.
+
+```bash
+# Vitest — unit + integration
+npm i -D vitest @vitest/ui
+npx vitest --version
+# Docs: https://vitest.dev/guide/cli
+
+# Playwright — E2E
+npm i -D @playwright/test
+npx playwright install
+# Docs: https://playwright.dev/docs/getting-started-cli
+
+# AIMock — deterministic LLM
+npm i -D @copilotkit/aimock
+npx aimock-cli init
+# Docs: https://aimock.copilotkit.dev/aimock-cli/
+```
+
+Wire `package.json` scripts:
+```json
+{
+  "scripts": {
+    "test": "vitest",
+    "test:e2e": "playwright test",
+    "test:ai": "aimock-cli serve & vitest run --config vitest.ai.config.ts"
+  }
+}
+```
+
+CI should run all three on PR.
+
 ## Why these specifically
 
 - **Vitest** — fastest dev loop. Watches and re-runs on save. Compatible with most things Jest does, with better TS + ESM support.
