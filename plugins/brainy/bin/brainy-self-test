@@ -1,0 +1,262 @@
+#!/usr/bin/env node
+// brainy-self-test — Validate the brainy plugin install end-to-end.
+//
+// Runs:
+//   1. JS/MJS parse check on all hooks, monitors, scripts
+//   2. JSON schema validation on hooks.json, monitors.json, plugin.json
+//   3. Frontmatter check on every SKILL.md and agents/*.md
+//   4. Mock-stdin execution of every hook (verify no crashes)
+//   5. Boot-only test of every monitor (3s timeout — checks startup, not loop)
+//   6. Bundled scripts dispatch (qmd-wrapper, vault-query, tasknotes, beads-dashboard)
+//
+// Cross-platform: works on Windows, macOS, Linux. Pure Node, no shell deps.
+// Usage:
+//   node bin/brainy-self-test                 # from plugin root
+//   brainy-self-test                          # if added to PATH
+//   brainy-self-test --json                   # machine-readable output
+//
+// Exit codes:
+//   0 — all checks passed
+//   1 — at least one check failed (CI should fail the build)
+
+'use strict';
+
+const fs = require('fs');
+const path = require('path');
+const { spawnSync } = require('child_process');
+
+// Find brainy plugin root: this file lives at brainy/bin/brainy-self-test
+const PLUGIN_ROOT = path.resolve(__dirname, '..');
+
+const args = process.argv.slice(2);
+const jsonMode = args.includes('--json');
+
+const results = {
+  parse: { ok: 0, fail: 0, errors: [] },
+  configs: { ok: 0, fail: 0, errors: [] },
+  frontmatter: { ok: 0, fail: 0, errors: [] },
+  hooks: { ok: 0, fail: 0, errors: [] },
+  monitors: { ok: 0, fail: 0, errors: [] },
+  scripts: { ok: 0, fail: 0, errors: [] },
+};
+
+function log(line) {
+  if (!jsonMode) process.stdout.write(line + '\n');
+}
+
+function listFiles(dir, exts) {
+  if (!fs.existsSync(dir)) return [];
+  return fs.readdirSync(dir, { withFileTypes: true })
+    .filter(d => d.isFile() && exts.some(e => d.name.endsWith(e)))
+    .map(d => path.join(dir, d.name));
+}
+
+function listDirs(dir) {
+  if (!fs.existsSync(dir)) return [];
+  return fs.readdirSync(dir, { withFileTypes: true })
+    .filter(d => d.isDirectory())
+    .map(d => path.join(dir, d.name));
+}
+
+// ── 1. Parse all JS/MJS files ────────────────────────────────────────────────
+log('=== 1. Parse JS/MJS files ===');
+const jsFiles = [
+  ...listFiles(path.join(PLUGIN_ROOT, 'hooks'), ['.js']),
+  ...listFiles(path.join(PLUGIN_ROOT, 'hooks', 'lib'), ['.js']),
+  ...listFiles(path.join(PLUGIN_ROOT, 'scripts'), ['.mjs', '.js']),
+  ...listFiles(path.join(PLUGIN_ROOT, 'monitors'), ['.mjs', '.js']),
+];
+for (const fp of jsFiles) {
+  const r = spawnSync(process.execPath, ['--check', fp], { encoding: 'utf8' });
+  if (r.status === 0) {
+    results.parse.ok++;
+  } else {
+    results.parse.fail++;
+    results.parse.errors.push({ file: path.relative(PLUGIN_ROOT, fp), error: r.stderr.trim() });
+  }
+}
+log(`  ${results.parse.ok} parsed OK | ${results.parse.fail} failed`);
+results.parse.errors.forEach(e => log(`    FAIL: ${e.file}\n      ${e.error.split('\n')[0]}`));
+
+// ── 2. JSON config validation ────────────────────────────────────────────────
+log('\n=== 2. JSON configs ===');
+const configs = [
+  { path: path.join(PLUGIN_ROOT, '.claude-plugin', 'plugin.json'),
+    label: 'plugin.json',
+    validate: (j) => {
+      if (!j.name) throw new Error('missing name');
+      if (!j.description) throw new Error('missing description');
+      return `v${j.version} | ${j.name}`;
+    } },
+  { path: path.join(PLUGIN_ROOT, 'hooks', 'hooks.json'),
+    label: 'hooks.json',
+    validate: (j) => {
+      if (!j.hooks || typeof j.hooks !== 'object') throw new Error('missing top-level "hooks" wrapper');
+      const events = Object.keys(j.hooks);
+      const total = events.reduce((s, e) => s + j.hooks[e].reduce((s2, g) => s2 + (g.hooks || []).length, 0), 0);
+      return `${events.length} events, ${total} hooks`;
+    } },
+  { path: path.join(PLUGIN_ROOT, 'monitors', 'monitors.json'),
+    label: 'monitors.json',
+    validate: (j) => {
+      if (!Array.isArray(j)) throw new Error('expected array');
+      for (const m of j) {
+        if (!m.name || !m.command) throw new Error(`monitor missing name or command: ${JSON.stringify(m)}`);
+      }
+      return `${j.length} monitors`;
+    } },
+];
+for (const cfg of configs) {
+  if (!fs.existsSync(cfg.path)) continue;
+  try {
+    const j = JSON.parse(fs.readFileSync(cfg.path, 'utf8'));
+    const summary = cfg.validate(j);
+    log(`  OK: ${cfg.label} — ${summary}`);
+    results.configs.ok++;
+  } catch (e) {
+    log(`  FAIL: ${cfg.label} — ${e.message}`);
+    results.configs.fail++;
+    results.configs.errors.push({ file: cfg.label, error: e.message });
+  }
+}
+
+// ── 3. Frontmatter check on skills + agents ──────────────────────────────────
+log('\n=== 3. Frontmatter on skills + agents ===');
+function checkFrontmatter(filePath) {
+  const src = fs.readFileSync(filePath, 'utf8');
+  const lines = src.split('\n');
+  if (lines[0].trim() !== '---') return { ok: false, error: 'no opening ---' };
+  let endIdx = -1;
+  for (let i = 1; i < lines.length; i++) {
+    if (lines[i].trim() === '---') { endIdx = i; break; }
+  }
+  if (endIdx === -1) return { ok: false, error: 'no closing ---' };
+  const fm = lines.slice(1, endIdx).join('\n');
+  if (!/^description:/m.test(fm)) return { ok: false, error: 'missing description' };
+  return { ok: true };
+}
+for (const skillDir of listDirs(path.join(PLUGIN_ROOT, 'skills'))) {
+  const skillMd = path.join(skillDir, 'SKILL.md');
+  const name = `skills/${path.basename(skillDir)}`;
+  if (!fs.existsSync(skillMd)) {
+    results.frontmatter.fail++;
+    results.frontmatter.errors.push({ file: name, error: 'no SKILL.md' });
+    log(`  FAIL: ${name} — no SKILL.md`);
+    continue;
+  }
+  const r = checkFrontmatter(skillMd);
+  if (r.ok) {
+    results.frontmatter.ok++;
+  } else {
+    results.frontmatter.fail++;
+    results.frontmatter.errors.push({ file: name, error: r.error });
+    log(`  FAIL: ${name} — ${r.error}`);
+  }
+}
+for (const agentMd of listFiles(path.join(PLUGIN_ROOT, 'agents'), ['.md'])) {
+  const name = `agents/${path.basename(agentMd)}`;
+  const r = checkFrontmatter(agentMd);
+  if (r.ok) {
+    results.frontmatter.ok++;
+  } else {
+    results.frontmatter.fail++;
+    results.frontmatter.errors.push({ file: name, error: r.error });
+    log(`  FAIL: ${name} — ${r.error}`);
+  }
+}
+log(`  ${results.frontmatter.ok} OK | ${results.frontmatter.fail} failed`);
+
+// ── 4. Run each hook with mock stdin (verify no crashes) ─────────────────────
+log('\n=== 4. Run each hook with mock stdin ===');
+const mockInput = JSON.stringify({
+  session_id: 'self-test',
+  cwd: PLUGIN_ROOT,
+  source: 'self-test',
+  tool_name: 'Write',
+  tool_input: { file_path: '/tmp/self-test', command: 'echo test' },
+});
+for (const hookFile of listFiles(path.join(PLUGIN_ROOT, 'hooks'), ['.js'])) {
+  const name = path.basename(hookFile);
+  const r = spawnSync(process.execPath, [hookFile], {
+    input: mockInput,
+    encoding: 'utf8',
+    timeout: 15_000,
+  });
+  // Hooks are allowed to exit 0 (success) or 2 (blocking). Anything else is a crash.
+  if (r.status === 0 || r.status === 2) {
+    results.hooks.ok++;
+  } else {
+    results.hooks.fail++;
+    const err = (r.stderr || r.stdout || '').split('\n').slice(0, 3).join(' | ');
+    results.hooks.errors.push({ file: name, status: r.status, error: err });
+    log(`  CRASH: ${name} (exit ${r.status}) — ${err}`);
+  }
+}
+log(`  ${results.hooks.ok} ran cleanly | ${results.hooks.fail} crashed`);
+
+// ── 5. Boot-test each monitor (verify it can start) ──────────────────────────
+log('\n=== 5. Boot-test monitors ===');
+for (const monFile of listFiles(path.join(PLUGIN_ROOT, 'monitors'), ['.mjs', '.js'])) {
+  const name = path.basename(monFile);
+  const r = spawnSync(process.execPath, [monFile], { encoding: 'utf8', timeout: 3_000 });
+  // Monitors run forever. Timeout signal is expected; what matters is that they didn't fail to start.
+  // signal === 'SIGTERM' means we killed them after 3s — that's fine (they were still running).
+  // status 0 means they exited cleanly (likely because the watched thing wasn't found — also fine).
+  if (r.signal === 'SIGTERM' || r.status === 0) {
+    results.monitors.ok++;
+  } else {
+    results.monitors.fail++;
+    results.monitors.errors.push({ file: name, status: r.status, signal: r.signal, error: (r.stderr || '').slice(0, 200) });
+    log(`  FAIL: ${name} (exit ${r.status} signal ${r.signal})`);
+  }
+}
+log(`  ${results.monitors.ok} started OK | ${results.monitors.fail} failed`);
+
+// ── 6. Bundled scripts dispatch ──────────────────────────────────────────────
+log('\n=== 6. Bundled scripts ===');
+const scripts = [
+  { file: 'qmd-wrapper.mjs', args: ['--help'], expectExit: [0, 1, 127] },
+  { file: 'vault-query.mjs', args: ['--help'], expectExit: [0, 1] },
+  { file: 'tasknotes.mjs', args: ['--help'], expectExit: [0, 1] },
+  { file: 'beads-dashboard.js', args: ['--help'], expectExit: [0, 1] },
+];
+for (const s of scripts) {
+  const fp = path.join(PLUGIN_ROOT, 'scripts', s.file);
+  if (!fs.existsSync(fp)) {
+    results.scripts.fail++;
+    results.scripts.errors.push({ file: s.file, error: 'not found' });
+    log(`  FAIL: ${s.file} — not found`);
+    continue;
+  }
+  const r = spawnSync(process.execPath, [fp, ...s.args], { encoding: 'utf8', timeout: 10_000 });
+  if (s.expectExit.includes(r.status)) {
+    results.scripts.ok++;
+    log(`  OK: ${s.file} (exit ${r.status})`);
+  } else {
+    results.scripts.fail++;
+    results.scripts.errors.push({ file: s.file, status: r.status, error: (r.stderr || r.stdout).slice(0, 200) });
+    log(`  FAIL: ${s.file} — exit ${r.status}`);
+  }
+}
+
+// ── Summary ──────────────────────────────────────────────────────────────────
+const totalOk = Object.values(results).reduce((s, r) => s + r.ok, 0);
+const totalFail = Object.values(results).reduce((s, r) => s + r.fail, 0);
+
+log('\n=== Summary ===');
+log(`  Plugin root: ${PLUGIN_ROOT}`);
+log(`  Platform: ${process.platform} | Node: ${process.version}`);
+log(`  Results: ${totalOk} passed, ${totalFail} failed`);
+
+if (jsonMode) {
+  process.stdout.write(JSON.stringify({
+    ok: totalFail === 0,
+    pluginRoot: PLUGIN_ROOT,
+    platform: process.platform,
+    node: process.version,
+    totals: { ok: totalOk, fail: totalFail },
+    results,
+  }, null, 2) + '\n');
+}
+
+process.exit(totalFail === 0 ? 0 : 1);
