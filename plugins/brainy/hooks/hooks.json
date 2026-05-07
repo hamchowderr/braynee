@@ -43,6 +43,31 @@
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/check-beads-init.js\""
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/check-git-init.js\""
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/check-no-main-push.js\"",
+            "if": "Bash(git push *)"
+          },
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/branch-name-check.js\"",
+            "if": "Bash(git push *)"
+          }
+        ]
       }
     ],
     "SessionEnd": [
@@ -149,6 +174,27 @@
           {
             "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/statusline-state.js\"",
+            "async": true
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/commit-cadence-nudge.js\"",
+            "async": true
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/beads-claim-to-branch.js\"",
+            "if": "Bash(bd update * --claim) || Bash(bd claim *)",
             "async": true
           }
         ]
