@@ -3,11 +3,12 @@
 // Replaces beads-claim-to-tasknotes.js (consolidated here).
 //
 // Handles:
+//   bd create "title" ...             → create matching mtn task at planning time (status: open, no timer)
 //   bd update <id> --claim            → in_progress: session note + mtn task + timer + active-issue.json
 //   bd update <id> --status in_progress → same as above
-//   bd update <id> --status closed    → session note + stop timer + clear active-issue.json
+//   bd update <id> --status closed    → session note + stop timer + clear active-issue.json + mtn complete
 //   bd update <id> --status open/blocked → session note only
-//   bd close <id>                     → same as closed
+//   bd close <id>                     → same as closed (also marks mtn task complete)
 
 const { execSync } = require('child_process');
 const fs = require('fs');
@@ -118,6 +119,21 @@ function mtnTaskExists(title) {
   return result && !/no tasks matching/i.test(result);
 }
 
+function findMtnTaskByIssueId(issueId) {
+  // Tasks created by ensureMtnTask carry a #<issueId> hashtag (e.g. #bd-42).
+  const result = run(`mtn search ${JSON.stringify('#' + issueId)}`);
+  if (!result || /no tasks matching/i.test(result)) return null;
+  // Return the search output so caller can pass to mtn complete (mtn complete accepts a title fragment).
+  return result;
+}
+
+function completeMtnTaskByIssueId(issueId) {
+  // mtn complete accepts a title or path; use the issue tag as a unique token.
+  // If multiple tasks somehow match, mtn will surface the ambiguity — we don't
+  // force-resolve to avoid closing the wrong task.
+  run(`mtn complete ${JSON.stringify('#' + issueId)}`);
+}
+
 function ensureMtnTask(issueId, title, priority, projectSlug) {
   // Check if task already exists
   if (mtnTaskExists(title)) return sanitizeTitle(title);
@@ -139,6 +155,28 @@ process.stdin.on('end', () => {
     const cwd = data.cwd || process.cwd();
 
     if (!fs.existsSync(path.join(cwd, '.beads'))) process.exit(0);
+
+    // ─── bd create: mirror new issue to mtn at planning time ─────────
+    if (/^bd\s+create\s/.test(cmd)) {
+      // The new issue ID + title are in the bd create response.
+      const stdout = data.tool_response?.stdout || data.tool_response?.output || '';
+      const idMatch = stdout.match(/(?:Created|created issue|bd-)\s*[:#]?\s*(bd-[\w-]+)/i)
+                   || stdout.match(/\b(bd-[\w-]+)\b/);
+      const titleArg = cmd.match(/bd\s+create\s+(?:"([^"]+)"|'([^']+)'|(\S.*?))(?:\s+--|\s+-[a-z]|$)/);
+      const title = titleArg ? (titleArg[1] || titleArg[2] || titleArg[3] || '').trim() : '';
+      const prioMatch = cmd.match(/-p\s+(P[0-4]|critical|high|medium|low)/i);
+      const priority = prioMatch
+        ? (PRIORITY_MAP[parseInt(prioMatch[1].replace(/^P/i, ''))] || prioMatch[1].toLowerCase())
+        : 'medium';
+      if (idMatch && title) {
+        const folderName = path.basename(cwd);
+        const projectName = findProjectName(folderName);
+        const projectSlug = (projectName || folderName)
+          .split(/[-_\s]/).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join('-');
+        ensureMtnTask(idMatch[1], title, priority, projectSlug);
+      }
+      process.exit(0);
+    }
 
     // Detect all bd status-change patterns
     const claimMatch  = cmd.match(/^bd\s+update\s+([\w-]+).*--claim/);
@@ -189,6 +227,11 @@ process.stdin.on('end', () => {
     } else if (newStatus === 'closed') {
       // Stop running timer
       run('mtn timer stop');
+
+      // Mark the linked mtn task complete (gated to avoid no-op churn).
+      // The reverse listener (mtn-to-beads-sync.js) is guarded against re-entry
+      // because by the time it runs, bd will already be in 'closed' status.
+      if (findMtnTaskByIssueId(issueId)) completeMtnTaskByIssueId(issueId);
 
       // Clear active issue if it was this one
       try {
