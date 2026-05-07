@@ -3,7 +3,9 @@
 const { execSync } = require('child_process');
 const path = require('path');
 
-const QMD_SCRIPT = path.join(process.env.APPDATA, 'npm', 'node_modules', '@tobilu/qmd', 'dist', 'qmd.js');
+// Use brainy's bundled qmd-wrapper (cross-platform — handles qmd discovery internally).
+// This file lives at brainy/hooks/lib/qmd-search.js, so the wrapper is 2 levels up.
+const QMD_SCRIPT = path.join(__dirname, '..', '..', 'scripts', 'qmd-wrapper.mjs');
 const NODE = process.execPath;
 const TIMEOUT = 5000; // 5 second timeout
 

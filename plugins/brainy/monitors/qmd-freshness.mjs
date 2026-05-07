@@ -2,22 +2,21 @@
 /**
  * Monitor: QMD search index freshness.
  * Checks QMD index age on startup and every 4 hours.
- * Emits a notification line when the index is more than 48h stale.
+ * Emits a notification line when the index is more than 24h stale.
  */
 
 import { existsSync } from 'fs';
-import { homedir } from 'os';
 import { join } from 'path';
 import { execSync } from 'child_process';
 
 import { fileURLToPath as _fu } from 'url';
 import { dirname as _dn } from 'path';
 const __dirname = _dn(_fu(import.meta.url));
-const qmdPath = join(homedir(), '.claude', 'scripts', 'qmd-wrapper.mjs');
+const qmdPath = join(__dirname, '..', 'scripts', 'qmd-wrapper.mjs');
 if (!existsSync(qmdPath)) process.exit(0);
 
 const CHECK_INTERVAL_MS  = 4 * 60 * 60 * 1000; // 4 hours
-const STALE_THRESHOLD_MS = 48 * 60 * 60 * 1000; // 48 hours
+const STALE_THRESHOLD_MS = 24 * 60 * 60 * 1000; // 24 hours
 let lastNotified = 0;
 
 function check() {
