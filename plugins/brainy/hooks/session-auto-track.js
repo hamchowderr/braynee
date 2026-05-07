@@ -548,6 +548,45 @@ process.stdin.on('end', () => {
             output.push('Active projects with tracking: ' + activeProjects.join(', '));
           }
         }
+
+        // ─── Cross-project bd rollup ────────────────────────────────
+        try {
+          const codeFolders = fs.existsSync(CODE_DIR)
+            ? fs.readdirSync(CODE_DIR).filter(f => fs.existsSync(path.join(CODE_DIR, f, '.beads')))
+            : [];
+          const ready = []; const inProgress = [];
+          for (const folder of codeFolders) {
+            const raw = run('bd list --json --all', { cwd: path.join(CODE_DIR, folder) });
+            if (!raw) continue;
+            try {
+              const issues = JSON.parse(raw);
+              for (const i of issues) {
+                if (i.status === 'in_progress') inProgress.push({ ...i, folder });
+                else if (i.status === 'open') ready.push({ ...i, folder });
+              }
+            } catch {}
+          }
+          // Priority sort: P0 first (priority value 0), then P1, etc.
+          ready.sort((a, b) => (a.priority ?? 9) - (b.priority ?? 9));
+          if (ready.length > 0 || inProgress.length > 0) {
+            output.push('');
+            output.push('=== ACROSS YOUR PROJECTS ===');
+            if (inProgress.length > 0) {
+              output.push(`◐ ${inProgress.length} in progress:`);
+              for (const i of inProgress.slice(0, 5)) output.push(`  ${i.id.padEnd(22)} ${i.title?.slice(0, 70) || ''}`);
+            }
+            const p0 = ready.filter(i => (i.priority ?? 9) === 0);
+            if (p0.length > 0) {
+              output.push(`🔥 ${p0.length} P0 ready:`);
+              for (const i of p0.slice(0, 5)) output.push(`  ${i.id.padEnd(22)} ${i.title?.slice(0, 70) || ''}`);
+            } else if (ready.length > 0) {
+              output.push(`○ ${ready.length} ready, top priority:`);
+              for (const i of ready.slice(0, 5)) output.push(`  ${i.id.padEnd(22)} P${i.priority ?? '?'} ${i.title?.slice(0, 60) || ''}`);
+            }
+            output.push('=== END ACROSS YOUR PROJECTS ===');
+          }
+        } catch (e) { log.warn(HOOK, `cross-project rollup failed: ${e.message}`); }
+
         output.push('');
         output.push('VAULT MODE: Session tracking requires specifying which project you are working on.');
         output.push('When working on a code project from the vault, load context with: vault-query.mjs context <ProjectName>');
