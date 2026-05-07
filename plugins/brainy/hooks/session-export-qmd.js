@@ -18,8 +18,8 @@ const fs = require('fs');
 const VAULT_DIR = path.join(os.homedir(), 'Obsidian Vault');
 const TRANSCRIPTS_DIR = path.join(VAULT_DIR, '2. Areas', 'Sessions', 'Transcripts');
 const CLAUDE_PROJECTS_DIR = path.join(os.homedir(), '.claude', 'projects');
-const QMD_PATH = path.join(process.env.APPDATA, 'npm', 'node_modules', '@tobilu', 'qmd', 'dist', 'qmd.js');
-const NODE_PATH = 'C:\\Program Files\\nodejs\\node.exe';
+// Use brainy's bundled qmd-wrapper (cross-platform) — handles qmd discovery internally.
+const QMD_WRAPPER = path.join(__dirname, '..', 'scripts', 'qmd-wrapper.mjs');
 
 function encodeCwd(cwd) {
   // Claude Code encodes CWD: C:\Users\HamCh\code\workspace -> C--Users-HamCh-code-workspace
@@ -134,7 +134,7 @@ function buildMarkdown(messages, meta) {
 
 function updateQmdIndex() {
   try {
-    execSync(`"${NODE_PATH}" "${QMD_PATH}" update -c vault`, {
+    execSync(`"${process.execPath}" "${QMD_WRAPPER}" update -c vault`, {
       encoding: 'utf8',
       stdio: ['pipe', 'pipe', 'ignore'],
       timeout: 30000
