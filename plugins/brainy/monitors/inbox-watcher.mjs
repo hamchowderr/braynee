@@ -40,7 +40,20 @@ const THRESHOLDS = [1, 5, 10, 20];
 let lastStaleCount = -1;
 let lastNotifiedThreshold = -1;
 
+function isInVaultSession() {
+  // Only fire notifications when the active session's cwd is the vault.
+  // statusline-live.json is updated on every PostToolUse, so it reflects current cwd.
+  const livePath = join(homedir(), '.claude', 'statusline-live.json');
+  if (!existsSync(livePath)) return false;
+  try {
+    const live = JSON.parse(readFileSync(livePath, 'utf8'));
+    if (!live.cwd) return false;
+    return live.cwd.toLowerCase().startsWith(vault.toLowerCase());
+  } catch { return false; }
+}
+
 function check() {
+  if (!isInVaultSession()) return;  // Silent in code projects
   if (!existsSync(inboxDir)) return;
   let files;
   try { files = readdirSync(inboxDir).filter(f => f.endsWith('.md')); }
