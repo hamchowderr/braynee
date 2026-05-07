@@ -118,6 +118,17 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/qmd-wrapper.mjs query "query"     # deep rese
 
 ---
 
+## Recommendations
+
+Opinionated guides on how the author builds. Recommendations, not requirements — adapt or replace freely.
+
+- [Project lifecycle](./docs/project-lifecycle.md) — vault → PRD → bd → code → ship
+- [PRD authoring](./docs/prd-authoring.md) — schema + acceptance criteria patterns
+- [Testing stack](./docs/testing-stack.md) — Vitest, Supertest, Playwright, AIMock
+- [Recommended stack](./docs/recommended-stack.md) — Convex, Mastra, Clerk, Vercel, Coolify, Infisical
+
+---
+
 ## Requirements
 
 - Claude Code CLI
