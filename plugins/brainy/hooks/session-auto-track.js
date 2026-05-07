@@ -18,11 +18,53 @@ const log = require(path.join(__dirname, 'lib', 'hook-logger.js'));
 
 const HOOK = 'session-auto-track';
 
-const VAULT_QUERY = path.join(__dirname, '..', 'scripts', 'vault-query.mjs');
-const TASKNOTES = path.join(__dirname, '..', 'scripts', 'tasknotes.mjs');
+const PLUGIN_ROOT = path.join(__dirname, '..');
+const VAULT_QUERY = path.join(PLUGIN_ROOT, 'scripts', 'vault-query.mjs');
+const TASKNOTES = path.join(PLUGIN_ROOT, 'scripts', 'tasknotes.mjs');
 const VAULT_DIR = path.join(os.homedir(), 'Obsidian Vault');
 const SESSIONS_DIR = path.join(VAULT_DIR, '2. Areas', 'Sessions');
+const PRD_DIR = path.join(VAULT_DIR, '2. Areas', 'Product Manager', 'PRDs');
 const CODE_DIR = path.join(os.homedir(), 'code');
+
+function findPrdForFolder(folderName) {
+  if (!fs.existsSync(PRD_DIR)) return null;
+  function walk(dir) {
+    const out = [];
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) out.push(...walk(p));
+      else if (e.isFile() && e.name.endsWith('.md') && !e.name.startsWith('_')) out.push(p);
+    }
+    return out;
+  }
+  for (const file of walk(PRD_DIR)) {
+    try {
+      const content = fs.readFileSync(file, 'utf-8').replace(/^﻿/, '').replace(/\r\n/g, '\n');
+      const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
+      if (!fmMatch) continue;
+      const fm = {};
+      for (const line of fmMatch[1].split('\n')) {
+        const kv = line.match(/^(\w[\w-]*)\s*:\s*(.*)$/);
+        if (kv) {
+          let v = kv[2].trim().replace(/^["'](.*)["']$/, '$1');
+          if (v === 'true') v = true;
+          else if (v === 'false') v = false;
+          else if (/^\d+$/.test(v)) v = parseInt(v);
+          fm[kv[1]] = v;
+        }
+      }
+      if (fm.type !== 'prd') continue;
+      if ((fm.folder || '').toLowerCase() !== folderName.toLowerCase()) continue;
+      const body = content.slice(fmMatch[0].length);
+      const acMatch = body.match(/##\s+Acceptance Criteria\s*\n([\s\S]*?)(?=\n##\s+|\n*$)/i);
+      const acceptanceCount = acMatch
+        ? acMatch[1].split('\n').filter(l => /^\s*-\s+\[\s\]\s+\*\*\[P[0-3]\]/.test(l)).length
+        : 0;
+      return { fm, acceptanceCount, relPath: path.relative(VAULT_DIR, file) };
+    } catch { continue; }
+  }
+  return null;
+}
 
 function findProjectName(folderName) {
   const projectsDir = path.join(VAULT_DIR, '1. Projects');
@@ -540,6 +582,22 @@ process.stdin.on('end', () => {
       if (context) {
         output.push(context);
       }
+
+      // ─── PRD context ────────────────────────────────────────────────
+      try {
+        const prdInfo = findPrdForFolder(folderName);
+        if (prdInfo) {
+          output.push('');
+          output.push(`── PRD: ${prdInfo.relPath} ──`);
+          output.push(`  status: ${prdInfo.fm.status || '?'} | build_status: ${prdInfo.fm.build_status || '?'} | seeded: ${prdInfo.fm.seeded === true ? 'yes' : 'no'}`);
+          if (prdInfo.fm.seeded !== true && prdInfo.acceptanceCount > 0) {
+            output.push(`  ${prdInfo.acceptanceCount} acceptance criteria not yet seeded — run:`);
+            output.push(`    node "${PLUGIN_ROOT}/scripts/prd-seed.mjs" "${path.basename(prdInfo.relPath, '.md')}"`);
+          } else if (prdInfo.fm.seeded === true) {
+            output.push(`  ${prdInfo.fm.seeded_count || '?'} issue(s) seeded at ${prdInfo.fm.seeded_at || '?'}`);
+          }
+        }
+      } catch (e) { log.warn(HOOK, `prd lookup failed: ${e.message}`); }
 
       // ─── Session: find or create ────────────────────────────────────
       session = findActiveSession(projectName);
