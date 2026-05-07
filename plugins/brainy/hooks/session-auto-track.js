@@ -14,6 +14,9 @@ const path = require('path');
 const os = require('os');
 const fs = require('fs');
 const { findSessionViaQmd } = require('./lib/qmd-search');
+const log = require(path.join(__dirname, 'lib', 'hook-logger.js'));
+
+const HOOK = 'session-auto-track';
 
 const VAULT_QUERY = path.join(__dirname, '..', 'scripts', 'vault-query.mjs');
 const TASKNOTES = path.join(__dirname, '..', 'scripts', 'tasknotes.mjs');
@@ -40,6 +43,79 @@ function findProjectName(folderName) {
     }
   }
   return null;
+}
+
+// Convert "foreman" → "Foreman", "ncat-mcp" → "NCAT MCP"
+function folderNameToTitle(folder) {
+  // ALL CAPS acronyms (3-4 chars) get uppercased; otherwise titlecase each part
+  return folder
+    .split(/[-_\s]+/)
+    .map(part => {
+      if (!part) return '';
+      if (part.length <= 4 && part.toLowerCase() === part) return part.toUpperCase();
+      return part.charAt(0).toUpperCase() + part.slice(1);
+    })
+    .join(' ');
+}
+
+// Auto-create a minimal 1. Projects/<Name>.md so session tracking works.
+// Returns the project name, or null on failure.
+function autoCreateProjectFile(folderName) {
+  try {
+    const projectsDir = path.join(VAULT_DIR, '1. Projects');
+    if (!fs.existsSync(projectsDir)) return null;
+
+    const projectName = folderNameToTitle(folderName);
+    const fileName = `${projectName}.md`;
+    const filePath = path.join(projectsDir, fileName);
+
+    // Don't overwrite if it exists with a different folder mapping
+    if (fs.existsSync(filePath)) {
+      log.warn(HOOK, `auto-create skipped: ${fileName} exists but folder field doesn't match "${folderName}"`);
+      return null;
+    }
+
+    const now = new Date().toISOString();
+    const today = now.slice(0, 10);
+    const body = [
+      '---',
+      `name: "${projectName}"`,
+      `folder: "${folderName}"`,
+      'status: active',
+      'category: product',
+      'tags: [project, auto-created]',
+      `created: ${today}`,
+      `description: "Auto-created by brainy session-auto-track. Update with real description."`,
+      '---',
+      '',
+      `# ${projectName}`,
+      '',
+      '> Auto-created by brainy on first session in this folder. Replace this with a real project description.',
+      '',
+      '## Status',
+      'active',
+      '',
+      '## Goal',
+      '*(none yet — set when you know what this project is for)*',
+      '',
+      '## Architecture',
+      '*(to fill in)*',
+      '',
+      '## Decisions',
+      '*(none yet)*',
+      '',
+      '## Sessions',
+      '`= "[[" + this.file.path.replace(".md", "") + "]]"`',
+      '',
+    ].join('\n');
+
+    fs.writeFileSync(filePath, body, 'utf8');
+    log.info(HOOK, `auto-created project file: ${fileName} (folder=${folderName})`);
+    return projectName;
+  } catch (err) {
+    log.error(HOOK, `auto-create project failed: ${err.message}`);
+    return null;
+  }
 }
 
 function run(cmd) {
@@ -334,6 +410,7 @@ process.stdin.on('end', () => {
     const data = JSON.parse(input);
     const cwd = data.cwd || process.cwd();
     const folderName = path.basename(cwd);
+    const sessionId = data.session_id || null;
 
     // Normalize paths to forward slashes for consistent comparison on Windows
     const norm = (p) => p.toLowerCase().replace(/\\/g, '/');
@@ -341,9 +418,16 @@ process.stdin.on('end', () => {
     const isWorkspace = folderName.toLowerCase() === 'workspace';
     const isVault = norm(cwd).startsWith(norm(VAULT_DIR));
 
+    log.info(HOOK, `start cwd=${folderName} session=${sessionId || 'unknown'} mode=${isInCodeDir ? 'code' : isVault ? 'vault' : isWorkspace ? 'workspace' : 'other'}`);
+
     if (!isInCodeDir && !isWorkspace && !isVault) {
+      log.info(HOOK, `skip: outside vault/code/workspace`);
       process.exit(0);
     }
+
+    // Outer-scope declarations for cross-block references (statusline write below)
+    let projectName = null;
+    let session = null;
 
     const output = [];
 
@@ -435,13 +519,19 @@ process.stdin.on('end', () => {
 
     // ─── Project mode ────────────────────────────────────────────────
     } else {
-      const projectName = findProjectName(folderName);
+      projectName = findProjectName(folderName);
 
       if (!projectName) {
+        log.warn(HOOK, `no project file in vault for folder "${folderName}" — auto-creating`);
+        projectName = autoCreateProjectFile(folderName);
+      }
+      if (!projectName) {
+        log.error(HOOK, `failed to resolve or create project for folder "${folderName}" — session won't track`);
         process.exit(0);
       }
 
       const branch = getGitBranch(cwd);
+      log.info(HOOK, `project mode: ${projectName} (folder=${folderName}, branch=${branch})`);
 
       output.push(`=== VAULT AUTO-CONTEXT (${projectName}) ===`);
 
@@ -452,7 +542,7 @@ process.stdin.on('end', () => {
       }
 
       // ─── Session: find or create ────────────────────────────────────
-      let session = findActiveSession(projectName);
+      session = findActiveSession(projectName);
 
       if (session) {
         // Existing active session — inject its content
@@ -577,6 +667,7 @@ process.stdin.on('end', () => {
 
     process.exit(0);
   } catch (e) {
+    log.error(HOOK, `crash: ${e.message} at ${e.stack?.split('\n')[1]?.trim() || ''}`);
     process.exit(0);
   }
 });

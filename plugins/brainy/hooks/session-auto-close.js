@@ -16,6 +16,9 @@ const { execSync } = require('child_process');
 const path = require('path');
 const os = require('os');
 const fs = require('fs');
+const log = require(path.join(__dirname, 'lib', 'hook-logger.js'));
+
+const HOOK = 'session-auto-close';
 
 const VAULT_DIR = path.join(os.homedir(), 'Obsidian Vault');
 const SESSIONS_DIR = path.join(VAULT_DIR, '2. Areas', 'Sessions');
@@ -132,54 +135,67 @@ function getBranch(cwd) {
   }
 }
 
-// Extract goal from JSONL when session note still has placeholder
-function extractGoalFromJSONL(folderName) {
+// Extract goal from JSONL — use the EXACT session_id passed by Claude Code,
+// not whichever JSONL was most recently touched. Aggregates per project can
+// span many sessions; we want this session's first prompt only.
+function findCwdProjectsDir(cwd) {
+  // Claude Code encodes cwd by replacing path separators with dashes.
+  // E.g. C:\Users\HamCh\code\foreman → C--Users-HamCh-code-foreman
+  const encoded = cwd.replace(/[:\\\/]+/g, '-').replace(/^-+|-+$/g, '');
+  const dir = path.join(os.homedir(), '.claude', 'projects', encoded);
+  return fs.existsSync(dir) ? dir : null;
+}
+
+function extractGoalFromJSONL(cwd, sessionId) {
   try {
-    const projectsDir = path.join(os.homedir(), '.claude', 'projects');
-    const patterns = [
-      `C--Users-HamCh-code-${folderName}`,
-      `C--Users-HamCh-${folderName}`,
-    ];
-    let transcriptDir = null;
-    for (const pattern of patterns) {
-      const dir = path.join(projectsDir, pattern);
-      if (fs.existsSync(dir)) { transcriptDir = dir; break; }
+    const transcriptDir = findCwdProjectsDir(cwd);
+    if (!transcriptDir) {
+      log.info(HOOK, `goal-extract: no transcripts dir for cwd=${cwd}`);
+      return null;
     }
-    if (!transcriptDir) return null;
 
-    const jsonlFiles = fs.readdirSync(transcriptDir)
-      .filter(f => f.endsWith('.jsonl'))
-      .map(f => ({ name: f, mtime: fs.statSync(path.join(transcriptDir, f)).mtime }))
-      .sort((a, b) => b.mtime - a.mtime);
-    if (jsonlFiles.length === 0) return null;
+    let jsonlPath = null;
+    if (sessionId) {
+      const candidate = path.join(transcriptDir, `${sessionId}.jsonl`);
+      if (fs.existsSync(candidate)) jsonlPath = candidate;
+    }
+    if (!jsonlPath) {
+      // Fallback: most-recently-modified jsonl (legacy behavior)
+      const candidates = fs.readdirSync(transcriptDir)
+        .filter(f => f.endsWith('.jsonl'))
+        .map(f => ({ name: f, mtime: fs.statSync(path.join(transcriptDir, f)).mtimeMs }))
+        .sort((a, b) => b.mtime - a.mtime);
+      if (candidates.length === 0) return null;
+      jsonlPath = path.join(transcriptDir, candidates[0].name);
+      log.warn(HOOK, `goal-extract: no session_id, falling back to ${candidates[0].name}`);
+    }
 
-    const raw = fs.readFileSync(path.join(transcriptDir, jsonlFiles[0].name), 'utf8');
+    const raw = fs.readFileSync(jsonlPath, 'utf8');
     const lines = raw.split('\n').filter(Boolean);
 
-    const userMessages = [];
     for (const line of lines) {
       try {
         const obj = JSON.parse(line);
-        if (obj.type === 'user' && obj.isMeta !== true) {
-          let msg = '';
-          if (typeof obj.message?.content === 'string') {
-            msg = obj.message.content;
-          } else if (Array.isArray(obj.message?.content)) {
-            msg = obj.message.content.filter(c => c.type === 'text').map(c => c.text).join(' ');
-          }
-          msg = msg.replace(/<[^>]+>/g, '').trim();
-          if (msg.length > 15 && !msg.startsWith('/') && !msg.includes('command-name')) {
-            userMessages.push(msg.substring(0, 200));
-            if (userMessages.length >= 2) break;
-          }
+        // Only accept user messages from THIS session (not aggregated history).
+        // Each line in the JSONL has a top-level sessionId field.
+        if (sessionId && obj.sessionId && obj.sessionId !== sessionId) continue;
+        if (obj.type !== 'user' || obj.isMeta === true) continue;
+        let msg = '';
+        if (typeof obj.message?.content === 'string') {
+          msg = obj.message.content;
+        } else if (Array.isArray(obj.message?.content)) {
+          msg = obj.message.content.filter(c => c.type === 'text').map(c => c.text).join(' ');
+        }
+        msg = msg.replace(/<[^>]+>/g, '').trim();
+        if (msg.length > 15 && !msg.startsWith('/') && !msg.includes('command-name')) {
+          const goal = msg.substring(0, 200);
+          return goal.length > 120 ? goal.substring(0, 117) + '...' : goal;
         }
       } catch { continue; }
     }
-
-    if (userMessages.length === 0) return null;
-    const goal = userMessages[0];
-    return goal.length > 120 ? goal.substring(0, 117) + '...' : goal;
-  } catch {
+    return null;
+  } catch (err) {
+    log.error(HOOK, `goal-extract failed: ${err.message}`);
     return null;
   }
 }
@@ -200,25 +216,34 @@ let input = '';
 process.stdin.setEncoding('utf8');
 process.stdin.on('data', chunk => { input += chunk; });
 process.stdin.on('end', () => {
+  let sessionId = null;
   try {
-    const cwd = process.cwd();
+    const data = input ? JSON.parse(input) : {};
+    sessionId = data.session_id || null;
+    const cwd = data.cwd || process.cwd();
     const folderName = path.basename(cwd);
     const isInCodeDir = cwd.toLowerCase().startsWith(CODE_DIR.toLowerCase());
 
+    log.info(HOOK, `start cwd=${folderName} session=${sessionId || 'unknown'}`);
+
     if (!isInCodeDir || folderName.toLowerCase() === 'workspace') {
+      log.info(HOOK, `skip: not in code dir`);
       process.exit(0);
     }
 
     const projectName = findProjectName(folderName);
     if (!projectName) {
+      log.warn(HOOK, `no project file in vault for folder "${folderName}" — session won't be closed. Run /brainy:project-onboarder or create 1. Projects/<name>.md with folder: ${folderName}`);
       process.exit(0);
     }
 
     const session = findActiveSession(projectName);
     if (!session) {
-      // No active session — nothing to close
+      log.info(HOOK, `no active session for ${projectName} — nothing to close`);
       process.exit(0);
     }
+
+    log.info(HOOK, `closing session ${session.filename} for ${projectName}`);
 
     let content = session.content;
     const now = new Date().toISOString();
@@ -242,12 +267,16 @@ process.stdin.on('end', () => {
       goalText.startsWith('(session just');
 
     if (goalIsPlaceholder) {
-      const extracted = extractGoalFromJSONL(folderName);
+      const cwdForExtract = process.cwd();
+      const extracted = extractGoalFromJSONL(cwdForExtract, sessionId);
       if (extracted) {
+        log.info(HOOK, `goal extracted (${extracted.length} chars)`);
         content = content.replace(
           /## Goal\s*\n[\s\S]*?(?=\n## )/,
           `## Goal\n${extracted} *(auto-extracted from session)*\n`
         );
+      } else {
+        log.warn(HOOK, `goal still placeholder — extraction returned nothing`);
       }
     }
 
@@ -301,6 +330,7 @@ process.stdin.on('end', () => {
 
     // Write
     fs.writeFileSync(session.filepath, content, 'utf-8');
+    log.info(HOOK, `wrote ${session.filename} (commits=${commits.length}, duration=${duration})`);
 
     // Clean up nudge state so next session starts fresh
     const nudgeState = path.join(os.homedir(), '.claude', 'session-nudge-state.json');
@@ -313,6 +343,7 @@ process.stdin.on('end', () => {
 
     process.exit(0);
   } catch (e) {
+    log.error(HOOK, `crash: ${e.message} at ${e.stack?.split('\n')[1]?.trim() || ''}`);
     // Don't block stop
     process.exit(0);
   }
