@@ -11,6 +11,9 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const log = require(path.join(__dirname, 'lib', 'hook-logger.js'));
+
+const HOOK = 'session-note-nudge';
 
 const VAULT_DIR = path.join(os.homedir(), 'Obsidian Vault');
 const SESSIONS_DIR = path.join(VAULT_DIR, '2. Areas', 'Sessions');
@@ -209,7 +212,8 @@ process.stdin.on('end', () => {
     }
 
     process.exit(0);
-  } catch {
+  } catch (e) {
+    log.error(HOOK, `crash: ${e.message}`);
     process.exit(0);
   }
 });

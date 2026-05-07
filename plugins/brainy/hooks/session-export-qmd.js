@@ -14,6 +14,9 @@ const { execSync } = require('child_process');
 const path = require('path');
 const os = require('os');
 const fs = require('fs');
+const log = require(path.join(__dirname, 'lib', 'hook-logger.js'));
+
+const HOOK = 'session-export-qmd';
 
 const VAULT_DIR = path.join(os.homedir(), 'Obsidian Vault');
 const TRANSCRIPTS_DIR = path.join(VAULT_DIR, '2. Areas', 'Sessions', 'Transcripts');
@@ -192,9 +195,11 @@ process.stdin.on('end', () => {
     // Update QMD index
     updateQmdIndex();
 
+    log.info(HOOK, `exported ${filename} (${messages.length} msgs) and reindexed QMD`);
     process.stderr.write(`Session exported: ${filename} (${messages.length} messages)\n`);
     process.exit(0);
   } catch (e) {
+    log.error(HOOK, `crash: ${e.message}`);
     // Don't block stop
     process.exit(0);
   }
