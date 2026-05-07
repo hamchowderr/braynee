@@ -16,6 +16,16 @@ This doc covers the *why* and the patterns.
 5. **Build** — work on the bd backlog in `~/code/<slug>/`
 6. **Evolve** — once MVP ships, ongoing planning moves to `2. Areas/Product Manager/Roadmaps/`. The PRD becomes a historical snapshot.
 
+## The MVP Definition gate
+
+Every PRD needs an `## MVP Definition` section locking three things before any acceptance criteria are written:
+
+- **Auth** — which provider, SSO needs, org/team scope
+- **Freemium** — free tier limits, paid pricing, where the paywall lives
+- **Core Features (3–5)** — the *minimum* set that defines success
+
+If you can't fill these in, you don't know enough yet to define a product. Stop and figure them out before writing AC. Acceptance Criteria should map back to the Core Features — if a criterion isn't in service of one of the 3–5 listed features, the feature list is incomplete or the criterion is out of scope.
+
 ## The folder field is the join key
 
 The PRD's `folder:` value MUST equal the directory name under `~/code/`.

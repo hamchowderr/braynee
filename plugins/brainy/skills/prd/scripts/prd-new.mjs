@@ -60,6 +60,26 @@ One-paragraph elevator pitch. What is being built, for whom, and why now.
 
 ---
 
+## MVP Definition
+
+> Lock these three before writing Acceptance Criteria. PRDs without this section are not seedable.
+
+### Auth
+
+<approach (Clerk / Supabase / custom), SSO needs, org/team support>
+
+### Freemium
+
+<free tier limits, paid tier pricing, usage gates, signup-to-paywall path>
+
+### Core Features (3–5)
+
+1. ...
+2. ...
+3. ...
+
+---
+
 ## Triple-Purpose Asset
 
 - **Client / Revenue:** …
