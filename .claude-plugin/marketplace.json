@@ -34,7 +34,7 @@
       "name": "brainy",
       "source": "./plugins/brainy",
       "description": "Brainy turns Claude Code into your second brain — setup wizard, PARA vault scaffolding, company knowledge base, project detection, and daily workflow skills.",
-      "version": "1.19.0",
+      "version": "1.19.1",
       "author": {
         "name": "Otaku Solutions"
       },
