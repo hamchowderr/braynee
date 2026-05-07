@@ -51,9 +51,27 @@ process.stdin.on('end', () => {
       }
     } catch {}
 
+    // Stale-check: if the file is older than 12h, OR the bd issue says the work
+    // is already closed, treat the pointer as stale and auto-clear it.
+    if (activeIssue) {
+      const ageMs = Date.now() - new Date(activeIssue.startedAt || 0).getTime();
+      const isOld = ageMs > 12 * 60 * 60 * 1000;
+      let bdSaysClosed = false;
+      if (hasBeadsDir) {
+        const showJson = run(`bd show ${activeIssue.id} --json`, { cwd });
+        if (showJson) {
+          try { bdSaysClosed = JSON.parse(showJson).status === 'closed'; } catch {}
+        }
+      }
+      if (isOld || bdSaysClosed) {
+        try { fs.unlinkSync(ACTIVE_ISSUE_FILE); } catch {}
+        activeIssue = null;
+      }
+    }
+
     // Only warn about the active issue if it belongs to this session's project
     const activeProject = activeIssue?.project?.toLowerCase() || null;
-    const activeIsCurrentProject = hasBeadsDir && (!activeProject || activeProject === currentProject);
+    const activeIsCurrentProject = hasBeadsDir && activeProject && activeProject === currentProject;
     if (activeIssue && activeIsCurrentProject) {
       warnings.push(`Active issue not closed: [${activeIssue.id}] ${activeIssue.title}`);
     }
