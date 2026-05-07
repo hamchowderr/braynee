@@ -2,13 +2,15 @@
 /**
  * Monitor: Vault Inbox watcher.
  * Polls the vault Inbox/ directory every 60s. Emits a notification line
- * when the item count crosses accumulation thresholds (1, 5, 10, 20).
- * Emits once when the inbox clears.
+ * when STALE items (older than 7 days) cross thresholds (1, 5, 10, 20).
+ * Fresh captures (<7 days) don't nag.
  */
 
-import { existsSync, readdirSync, readFileSync } from 'fs';
+import { existsSync, readdirSync, statSync, readFileSync } from 'fs';
 import { homedir } from 'os';
 import { join } from 'path';
+
+const STALE_THRESHOLD_MS = 7 * 24 * 60 * 60 * 1000;
 
 function findVault() {
   const livePath = join(homedir(), '.claude', 'statusline-live.json');
@@ -35,7 +37,7 @@ if (!vault) process.exit(0);
 const inboxDir = join(vault, 'Inbox');
 const THRESHOLDS = [1, 5, 10, 20];
 
-let lastCount = -1;
+let lastStaleCount = -1;
 let lastNotifiedThreshold = -1;
 
 function check() {
@@ -43,24 +45,33 @@ function check() {
   let files;
   try { files = readdirSync(inboxDir).filter(f => f.endsWith('.md')); }
   catch { return; }
-  const count = files.length;
 
-  if (count === lastCount) return;
-  lastCount = count;
+  const now = Date.now();
+  let staleCount = 0;
+  for (const f of files) {
+    try {
+      const st = statSync(join(inboxDir, f));
+      if (now - st.mtimeMs >= STALE_THRESHOLD_MS) staleCount++;
+    } catch {}
+  }
 
-  if (count === 0 && lastNotifiedThreshold > 0) {
+  if (staleCount === lastStaleCount) return;
+  lastStaleCount = staleCount;
+
+  if (staleCount === 0 && lastNotifiedThreshold > 0) {
     lastNotifiedThreshold = -1;
-    process.stdout.write('Vault inbox is now clear\n');
+    process.stdout.write('Vault inbox: no stale items (everything is fresh or processed)\n');
     return;
   }
 
   for (const t of THRESHOLDS) {
-    if (count >= t && lastNotifiedThreshold < t) {
+    if (staleCount >= t && lastNotifiedThreshold < t) {
       lastNotifiedThreshold = t;
-      if (count === 1) {
-        process.stdout.write('Vault inbox has 1 unprocessed item — run /brainy:recall or /brainy:daily to process it\n');
+      const total = files.length;
+      if (staleCount === 1) {
+        process.stdout.write(`Vault inbox has 1 STALE item (>7d old, ${total} total) — process with /brainy:recall or /brainy:daily\n`);
       } else {
-        process.stdout.write(`Vault inbox has ${count} items — consider processing with /brainy:recall or /brainy:daily\n`);
+        process.stdout.write(`Vault inbox has ${staleCount} STALE items (>7d old, ${total} total) — process with /brainy:recall or /brainy:daily\n`);
       }
     }
   }
