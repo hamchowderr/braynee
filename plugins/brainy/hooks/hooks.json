@@ -184,7 +184,7 @@
           {
             "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/commit-cadence-nudge.js\"",
-            "if": "Bash(bd claim *) || Bash(bd update * --claim) || Bash(bd close *) || Bash(bd update * --status closed)",
+            "if": "Bash(bd close *) || Bash(bd update * --status closed)",
             "async": true
           }
         ]
