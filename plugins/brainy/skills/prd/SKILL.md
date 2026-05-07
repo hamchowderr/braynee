@@ -57,17 +57,41 @@ tags: [prd, ...]
 ### Body section order (canonical)
 
 1. Hero / Tagline
-2. Triple-Purpose Asset
-3. North Star Metric (with Activation Moment + OKRs table)
-4. Lean Canvas
-5. Personas / JTBD
-6. User Journeys
-7. Scope (In / Out / Future)
-8. Architecture
-9. Milestones
-10. **Acceptance Criteria** ← seed source
-11. Risks & Open Questions
-12. Appendix / Links
+2. **MVP Definition** ← Auth, Freemium, 3–5 Core Features (forcing function)
+3. Triple-Purpose Asset
+4. North Star Metric (with Activation Moment + OKRs table)
+5. Lean Canvas
+6. Personas / JTBD
+7. User Journeys
+8. Scope (In / Out / Future)
+9. Architecture
+10. Milestones
+11. **Acceptance Criteria** ← seed source
+12. Risks & Open Questions
+13. Appendix / Links
+
+### MVP Definition — the gate
+
+A PRD without this section is not ready to seed. Forces three decisions:
+
+```markdown
+## MVP Definition
+
+### Auth
+<approach: Clerk / Supabase / custom; SSO needs; org/team support>
+
+### Freemium
+<free tier limits, paid tier pricing, usage gates, signup-to-paywall path>
+
+### Core Features (3–5)
+1. <feature>
+2. <feature>
+3. <feature>
+```
+
+Acceptance Criteria should map back to the Core Features. If a criterion isn't
+in service of one of the 3–5 listed features, ask whether the feature list is
+incomplete or the criterion is out of scope.
 
 ### Acceptance Criteria format (seed contract)
 
