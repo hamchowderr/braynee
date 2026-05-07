@@ -450,13 +450,13 @@ process.stdin.on('end', () => {
           }
         }
         if (orphaned.length > 0) {
-          output.push('=== ORPHANED TIMERS DETECTED ===');
-          output.push(`Found ${orphaned.length} timer(s) running 4+ hours — likely from a crashed/killed session:`);
+          output.push('=== ORPHANED TIMERS AUTO-STOPPED ===');
+          output.push(`Found ${orphaned.length} timer(s) running 4+ hours — auto-stopping (likely crashed/killed session):`);
           for (const o of orphaned) {
-            output.push(`  - "${o.title}" — running for ${o.hours}h`);
-            output.push(`    Stop with: tasknotes.mjs timer stop "${o.id}"`);
+            const stopped = run(`node "${TASKNOTES}" timer stop ${JSON.stringify(o.id || o.title)}`);
+            output.push(`  - "${o.title}" — was ${o.hours}h, ${stopped !== null ? 'stopped' : 'STOP FAILED — run manually'}`);
+            log.info(HOOK, `auto-stopped orphan timer "${o.title}" (${o.hours}h)`);
           }
-          output.push('ACTION: Stop these orphaned timers before starting new work.');
           output.push('=== END ORPHANED TIMERS ===');
           output.push('');
         } else if (sessions.length > 0) {
