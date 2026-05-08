@@ -1,12 +1,12 @@
 // check-beads-init.js
-// Hook: SessionStart — Ensures Beads is initialized for any code project.
-// If .beads/ is missing, runs `bd init` automatically with a clear explanation
-// of what's happening. Beads is mandatory for all code projects; this hook
-// removes the manual step.
+// Hook: SessionStart — Ensures Beads is installed and initialized for any code project.
+// Runs three checks in order:
+//   1. Is `bd` on PATH? If not, prompt Claude to ask the user before installing.
+//   2. Is the `beads` plugin installed? If not, prompt Claude to offer the slash command.
+//   3. Is `.beads/` present? If not, run `bd init` automatically.
 //
-// Output goes to stdout → injected into Claude's context so the user sees
-// what was done. Never hard-blocks (exit 0 always); init failures fall back
-// to the prior warn-and-instruct behavior.
+// Output goes to stdout → injected into Claude's context so Claude can act on it
+// (asking the user, running an install with permission, etc.). Never hard-blocks.
 
 const fs = require('fs');
 const path = require('path');
@@ -16,6 +16,28 @@ const log = require(path.join(__dirname, 'lib', 'hook-logger.js'));
 
 const HOOK = 'check-beads-init';
 const CODE_DIR = path.join(os.homedir(), 'code');
+const PLUGINS_CACHE = path.join(os.homedir(), '.claude', 'plugins', 'cache');
+
+function isBdOnPath() {
+  try {
+    execSync('bd --version', { encoding: 'utf8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function isBeadsPluginInstalled() {
+  if (!fs.existsSync(PLUGINS_CACHE)) return false;
+  try {
+    for (const marketplace of fs.readdirSync(PLUGINS_CACHE, { withFileTypes: true })) {
+      if (!marketplace.isDirectory()) continue;
+      const beadsDir = path.join(PLUGINS_CACHE, marketplace.name, 'beads');
+      if (fs.existsSync(beadsDir)) return true;
+    }
+  } catch {}
+  return false;
+}
 
 function findBeadsAncestor(startDir) {
   let dir = startDir;
@@ -65,12 +87,40 @@ process.stdin.on('end', () => {
 
     log.info(HOOK, `start cwd=${projectName}`);
 
+    // Step 1: bd CLI present?
+    if (!isBdOnPath()) {
+      log.warn(HOOK, `bd not on PATH`);
+      process.stdout.write(
+        `# Beads CLI Missing\n\n` +
+        `The \`bd\` CLI is not installed, but Beads is mandatory for all code projects in \`~/code/*\`.\n\n` +
+        `**Ask the user once:** "Install \`bd\` now? (Y/n)"\n\n` +
+        `On yes, run the platform-appropriate install:\n` +
+        `- Windows (PowerShell): \`irm https://raw.githubusercontent.com/gastownhall/beads/main/install.ps1 | iex\`\n` +
+        `- npm (cross-platform): \`npm install -g @beads/bd\`\n\n` +
+        `Also recommend installing the official slash-command plugin: \`/plugin install beads@beads-marketplace\`\n\n` +
+        `After install, this session needs no further action — the next session will pick up Beads automatically.\n`
+      );
+      process.exit(0);
+    }
+
+    // Step 2: beads plugin present? (recommended, not required)
+    if (!isBeadsPluginInstalled()) {
+      log.info(HOOK, `bd present but beads plugin not installed — recommending`);
+      process.stdout.write(
+        `# Beads Plugin Recommendation\n\n` +
+        `\`bd\` CLI is installed but the official \`beads\` Claude Code plugin is not. ` +
+        `It provides slash commands (\`/ready\`, \`/create\`, \`/show\`), the canonical \`beads\` skill, and the autonomous \`task-agent\`.\n\n` +
+        `**Ask the user once:** "Install the beads plugin? (Y/n)" — on yes, run \`/plugin install beads@beads-marketplace\`.\n\n`
+      );
+      // Continue — plugin is optional, init still proceeds.
+    }
+
     if (findBeadsAncestor(cwd)) {
       log.info(HOOK, `beads already initialized — nothing to do`);
       process.exit(0);
     }
 
-    // No .beads/ found. Try to auto-init.
+    // Step 3: No .beads/ found. Try to auto-init.
     log.warn(HOOK, `no .beads/ found in ${projectName} — running bd init`);
     process.stdout.write(
       `# Beads Auto-Initializing\n\n` +
