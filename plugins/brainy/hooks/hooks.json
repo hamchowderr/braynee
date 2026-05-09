@@ -105,6 +105,14 @@
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/memory-reminder.js\""
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/beads-nudge.js\""
+          }
+        ]
       }
     ],
     "Stop": [
