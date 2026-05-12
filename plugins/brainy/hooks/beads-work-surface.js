@@ -54,6 +54,17 @@ process.stdin.on('end', () => {
 
     log.info(HOOK, `start cwd=${projectName}`);
 
+    // Pull all open counts up front so the banner is accurate regardless of
+    // which surface path we take below.
+    let openCount = 0;
+    const openRaw = run('bd list --status open --json', { cwd: beadsRoot });
+    if (openRaw) {
+      try {
+        const open = JSON.parse(openRaw);
+        if (Array.isArray(open)) openCount = open.length;
+      } catch {}
+    }
+
     // In-progress check first — if something is claimed, no surface needed.
     const inProgressRaw = run('bd list --status in_progress --json', { cwd: beadsRoot });
     if (inProgressRaw) {
@@ -67,6 +78,11 @@ process.stdin.on('end', () => {
             list + `\n\n` +
             `Resume work on the most relevant one. Use \`bd show <id>\` for full context.\n`
           );
+          // Banner visible to the user in the terminal.
+          const firstTitle = inProgress[0].title.length > 60 ? inProgress[0].title.slice(0, 57) + '...' : inProgress[0].title;
+          process.stderr.write(
+            `[brainy] ${projectName}: ${inProgress.length} in_progress, ${openCount} open — resume "${firstTitle}"\n`
+          );
           process.exit(0);
         }
       } catch {}
@@ -74,11 +90,15 @@ process.stdin.on('end', () => {
 
     // Nothing in_progress — surface ready work.
     const readyRaw = run('bd ready --json --limit 5', { cwd: beadsRoot });
+    let readyCount = 0;
     let readyList = null;
+    let topReady = null;
     if (readyRaw) {
       try {
         const ready = JSON.parse(readyRaw);
         if (Array.isArray(ready) && ready.length > 0) {
+          readyCount = ready.length;
+          topReady = ready[0];
           readyList = ready
             .map(i => `  [${i.id}] (P${i.priority ?? '?'}) ${i.title}`)
             .join('\n');
@@ -94,12 +114,19 @@ process.stdin.on('end', () => {
         `**Before changing any code:** ask the user which to claim, or offer to invoke the beads \`task-agent\` to autonomously work the queue. ` +
         `Claim atomically with \`bd update <id> --claim\`. Do not start coding without a claimed issue.\n`
       );
+      const firstTitle = topReady.title.length > 60 ? topReady.title.slice(0, 57) + '...' : topReady.title;
+      process.stderr.write(
+        `[brainy] ${projectName}: 0 in_progress, ${readyCount} ready, ${openCount} open — top: [${topReady.id}] ${firstTitle}\n`
+      );
     } else {
       process.stdout.write(
         `## Beads — No Ready Work\n\n` +
         `\`${projectName}\` has no in_progress and no ready issues.\n\n` +
         `**Before changing any code:** ask the user what to work on. Once they answer, \`bd create "..."\` and \`bd update <id> --claim\`. ` +
         `Do not invent work or start coding without a claimed issue.\n`
+      );
+      process.stderr.write(
+        `[brainy] ${projectName}: 0 in_progress, 0 ready, ${openCount} open — queue empty, ask user for next step\n`
       );
     }
 
