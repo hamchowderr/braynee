@@ -1,16 +1,19 @@
 // session-auto-close.js
-// Hook: Stop — Automatically updates and closes the active session note
-// Runs BEFORE the Haiku evaluator so the note is always written
+// Hook: Stop — Snapshots progress to the active session note after every turn.
+// Runs BEFORE the Haiku evaluator so the note is always up to date.
 //
 // What it does:
 // 1. Finds active session note for current project
-// 2. Reads recent git commits to build a progress summary
-// 3. Updates ## Progress with commit history
-// 4. Adds ## Session Summary
-// 5. Sets status: done, ended: timestamp
+// 2. Reads recent git commits since `started:` and refreshes ## Progress
+// 3. Auto-fills ## Goal from the JSONL transcript if still a placeholder
+// 4. Writes/refreshes ## Session Summary with a `Last update:` timestamp
 //
-// This guarantees the session note is always up-to-date for next-day pickup,
-// even if Claude forgets, gets interrupted, or stop hooks time out.
+// What it deliberately does NOT do:
+//   It does NOT mark the session done or write `ended:`. Stop fires after
+//   every assistant turn — closing here would force SessionStart to spawn
+//   a fresh empty scaffold on the very next prompt. The actual close lives
+//   in session-end.js (SessionEnd hook) and the stale-session GC in
+//   session-auto-track.js (SessionStart hook).
 
 const { execSync } = require('child_process');
 const path = require('path');
@@ -305,7 +308,7 @@ process.stdin.on('end', () => {
       }
     }
     summaryParts.push('');
-    summaryParts.push(`Closed: ${now}`);
+    summaryParts.push(`Last update: ${now}`);
 
     const summaryBlock = `## Session Summary\n${summaryParts.join('\n')}\n`;
 
@@ -316,28 +319,21 @@ process.stdin.on('end', () => {
       content = content.trimEnd() + '\n\n' + summaryBlock;
     }
 
-    // ─── Update frontmatter (handle CRLF on Windows) ─────────────
+    // ─── Frontmatter touch-ups (handle CRLF on Windows) ─────────────
+    // Do NOT flip status or write `ended:` here — Stop fires on every turn.
+    // The actual close lives in session-end.js (SessionEnd) and the stale GC
+    // in session-auto-track.js (SessionStart).
     content = content.replace(/\r\n/g, '\n');
-    content = content.replace(/^status:\s*active\s*$/m, 'status: done');
-    content = content.replace(/^ended:\s*null\s*$/m, `ended: ${now}`);
-    // Ensure ended field exists if not present
-    if (!/^ended:/m.test(content)) {
-      content = content.replace(/^(started:\s*[^\n]+)/m, `$1\nended: ${now}`);
-    }
     if (branch) {
       content = content.replace(/^branch:\s*".*"/m, `branch: "${branch}"`);
     }
 
     // Write
     fs.writeFileSync(session.filepath, content, 'utf-8');
-    log.info(HOOK, `wrote ${session.filename} (commits=${commits.length}, duration=${duration})`);
-
-    // Clean up nudge state so next session starts fresh
-    const nudgeState = path.join(os.homedir(), '.claude', 'session-nudge-state.json');
-    try { fs.unlinkSync(nudgeState); } catch {}
+    log.info(HOOK, `snapshot ${session.filename} (commits=${commits.length}, duration=${duration})`);
 
     process.stderr.write(
-      `Session note auto-closed: ${session.filename}\n` +
+      `Session note snapshot: ${session.filename}\n` +
       `  Duration: ${duration}, Commits: ${commits.length}, Branch: ${branch}`
     );
 
