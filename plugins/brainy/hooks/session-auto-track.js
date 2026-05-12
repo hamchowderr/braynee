@@ -602,6 +602,32 @@ process.stdin.on('end', () => {
       // ─── Session: find or create ────────────────────────────────────
       session = findActiveSession(projectName);
 
+      // Stale-session GC: if the active session is older than 12h, close
+      // it and fall through to create a fresh one. Handles crashes /
+      // missed SessionEnd hooks that leave `status: active` stuck on.
+      if (session) {
+        const startedMatch = session.content.match(/^started:\s*(.+)$/m);
+        if (startedMatch) {
+          const startedMs = Date.parse(startedMatch[1].trim());
+          const ageHours = (Date.now() - startedMs) / 3600000;
+          const STALE_HOURS = 12;
+          if (Number.isFinite(ageHours) && ageHours > STALE_HOURS) {
+            log.info(HOOK, `stale session (${ageHours.toFixed(1)}h old) — closing and creating fresh`);
+            try {
+              const nowIso = new Date().toISOString();
+              let closed = session.content.replace(/\r\n/g, '\n');
+              closed = closed.replace(/^status:\s*active\s*$/m, 'status: done');
+              closed = closed.replace(/^ended:\s*null\s*$/m, `ended: ${nowIso}`);
+              if (!/^ended:/m.test(closed)) {
+                closed = closed.replace(/^(started:\s*[^\n]+)/m, `$1\nended: ${nowIso}`);
+              }
+              fs.writeFileSync(session.filepath, closed, 'utf-8');
+            } catch (e) { log.warn(HOOK, `stale-close failed: ${e.message}`); }
+            session = null;
+          }
+        }
+      }
+
       if (session) {
         // Existing active session — inject its content
         output.push('');
