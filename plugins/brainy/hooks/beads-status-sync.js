@@ -180,15 +180,42 @@ process.stdin.on('end', () => {
 
     // ─── bd create: mirror new issue to mtn at planning time ─────────
     if (/^bd\s+create\s/.test(cmd)) {
-      // The new issue ID + title are in the bd create response.
+      // The new issue ID is in the bd create response. Real beads output is
+      // `✓ Created issue: <workspace-prefixed-id> — <title>`, so we can't
+      // assume a literal `bd-` prefix; the prefix is whatever the workspace
+      // is configured to use. Fall back to the legacy `bd-...` form for
+      // older installs.
       const stdout = data.tool_response?.stdout || data.tool_response?.output || '';
-      const idMatch = stdout.match(/(?:Created|created issue|bd-)\s*[:#]?\s*(bd-[\w-]+)/i)
+      const idMatch = stdout.match(/Created\s+issue:?\s*([A-Za-z][\w-]+)/i)
                    || stdout.match(/\b(bd-[\w-]+)\b/);
-      const titleArg = cmd.match(/bd\s+create\s+(?:"([^"]+)"|'([^']+)'|(\S.*?))(?:\s+--|\s+-[a-z]|$)/);
-      const title = titleArg ? (titleArg[1] || titleArg[2] || titleArg[3] || '').trim() : '';
-      const prioMatch = cmd.match(/-p\s+(P[0-4]|critical|high|medium|low)/i);
-      const priority = prioMatch
-        ? (PRIORITY_MAP[parseInt(prioMatch[1].replace(/^P/i, ''))] || prioMatch[1].toLowerCase())
+
+      // Title can be supplied as either a positional argument
+      // (`bd create "Title"`) or as a --title flag
+      // (`bd create --title="Title"` / `bd create --title Title`).
+      // Try the flag form first since that's what newer beads + agents use.
+      let title = '';
+      const flagDouble = cmd.match(/--title\s*=\s*"([^"]+)"/);
+      const flagSingle = cmd.match(/--title\s*=\s*'([^']+)'/);
+      const flagBare   = cmd.match(/--title\s*=\s*([^\s"'][^\s"']*)/);
+      const flagSpaceDouble = cmd.match(/--title\s+"([^"]+)"/);
+      const flagSpaceSingle = cmd.match(/--title\s+'([^']+)'/);
+      if (flagDouble) title = flagDouble[1];
+      else if (flagSingle) title = flagSingle[1];
+      else if (flagSpaceDouble) title = flagSpaceDouble[1];
+      else if (flagSpaceSingle) title = flagSpaceSingle[1];
+      else if (flagBare) title = flagBare[1];
+      else {
+        const posArg = cmd.match(/bd\s+create\s+(?:"([^"]+)"|'([^']+)')/);
+        if (posArg) title = posArg[1] || posArg[2] || '';
+      }
+      title = title.trim();
+
+      const prioMatch = cmd.match(/(?:--priority\s*=\s*|-p\s+)(P[0-4]|critical|high|medium|low|[0-4])/i);
+      const prioRaw = prioMatch ? prioMatch[1] : null;
+      const priority = prioRaw
+        ? (/^[0-4]$/.test(prioRaw) ? PRIORITY_MAP[parseInt(prioRaw)]
+           : /^P[0-4]$/i.test(prioRaw) ? (PRIORITY_MAP[parseInt(prioRaw.replace(/^P/i, ''))] || 'medium')
+           : prioRaw.toLowerCase())
         : 'medium';
       if (idMatch && title) {
         const folderName = path.basename(cwd);
