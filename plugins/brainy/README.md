@@ -78,8 +78,6 @@ Zettelkasten/        → atomic permanent notes
 | `sessions` | `/sessions` | Export Claude Code sessions to Obsidian markdown, list, and annotate |
 | `tasks` | `/tasks` | Create, complete, and query tasks via Obsidian TaskNotes |
 | `clients` | `/clients` | Client relationship management — context, engagement logs, call prep |
-| `granola` | `/granola` | Sync Granola meeting notes to vault transcripts |
-| `wispr` | `/wispr` | Voice dictation history, stats, and search via Wispr Flow local SQLite |
 | `health` | `/health` | System health check — Four Cs audit (Context, Connections, Capabilities, Cadence) |
 | `zettelkasten` | `/zettelkasten` | Create, find, and link atomic notes — permanent knowledge distillation |
 

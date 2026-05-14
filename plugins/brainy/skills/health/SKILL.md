@@ -61,7 +61,6 @@ The same self-test runs in CI on every push to master across Ubuntu, macOS, and 
 
 **Connections** — Are live integrations actually reachable?
 - Beads (issue tracking)
-- Granola meeting cache
 - ProtonMail CLI
 - QMD index
 

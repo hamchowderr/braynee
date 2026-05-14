@@ -52,10 +52,15 @@ function findBeadsAncestor(startDir) {
 }
 
 function tryBdInit(cwd, projectName) {
-  // Use --shared-server to avoid port conflicts when many projects are open.
+  // --shared-server + --external is the canonical pair: the shared Dolt
+  // server is a user-machine singleton managed outside bd's per-project
+  // lifecycle. Without --external, bd may try to start a second server on
+  // the already-bound port and fail (especially on Windows, where the
+  // process-detection probe is non-deterministic).
   // --skip-agents and --skip-hooks keep init non-interactive and minimal —
   // we install our own integration via brainy hooks elsewhere.
-  const cmd = `bd init --shared-server -p "${projectName}" --skip-agents --skip-hooks`;
+  // --non-interactive avoids stdin prompts when bd runs under the hook.
+  const cmd = `bd init --shared-server --external -p "${projectName}" --skip-agents --skip-hooks --non-interactive`;
   try {
     execSync(cmd, {
       cwd,
@@ -127,7 +132,7 @@ process.stdin.on('end', () => {
       `Beads issue tracking is mandatory for all code projects, but \`${projectName}\` ` +
       `did not have it initialized. brainy is running:\n\n` +
       `\`\`\`\n` +
-      `bd init --shared-server -p "${projectName}" --skip-agents --skip-hooks\n` +
+      `bd init --shared-server --external -p "${projectName}" --skip-agents --skip-hooks --non-interactive\n` +
       `\`\`\`\n\n`
     );
 

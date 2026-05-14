@@ -34,7 +34,7 @@ python3 {baseDir}/scripts/sessions.py resume --pick
 python3 {baseDir}/scripts/sessions.py note "figured out the auth bug"
 
 # Close session with summary
-python3 {baseDir}/scripts/sessions.py close "scaffold complete, moving to wispr skill"
+python3 {baseDir}/scripts/sessions.py close "scaffold complete, moving to next task"
 ```
 
 ## Output Format

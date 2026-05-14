@@ -114,7 +114,7 @@ if (!fm.folder) { console.error(`PRD has no folder field — cannot determine ta
 const repoDir = path.join(CODE_DIR, fm.folder);
 if (!fs.existsSync(path.join(repoDir, '.beads'))) {
   console.error(`Target repo has no .beads dir: ${repoDir}`);
-  console.error(`Run \`bd init --shared-server -p "${fm.folder}"\` there first, or open a session in that folder so brainy auto-inits beads.`);
+  console.error(`Run \`bd init --shared-server --external -p "${fm.folder}"\` there first, or open a session in that folder so brainy auto-inits beads.`);
   process.exit(1);
 }
 

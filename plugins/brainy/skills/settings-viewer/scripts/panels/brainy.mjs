@@ -44,8 +44,6 @@ export function renderBrainyPanel(d) {
           ${[
             ['/setup',        'Onboarding wizard — vault scaffolding + hook install'],
             ['/daily',        'Open or create today\'s daily note'],
-            ['/wispr',        'Import latest voice dictation from Wispr Flow'],
-            ['/granola',      'Import latest meeting notes from Granola'],
             ['/tasks',        'Task management via TaskNotes'],
             ['/clients',      'Client CRM — context, logs, call prep'],
             ['/recall',       'Search past sessions via QMD'],
