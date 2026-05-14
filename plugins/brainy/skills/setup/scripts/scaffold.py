@@ -205,7 +205,6 @@ def claude_md(name: str, company: str, projects: list[dict],
         - Search: `/query` or `qmd search "query"` (qmd is in PATH via brainy plugin)
         - Sessions: `/sessions`
         - Recall: `/recall yesterday`
-        - Meetings: `/granola`
         - Zettelkasten: `/zettelkasten`
 
         ## Vault Structure
@@ -385,10 +384,8 @@ def main():
         f"| Domain | Tool | Status | Notes |\n|---|---|---|---|\n"
         f"| Revenue | TaskNotes API (http://127.0.0.1:8090) | | |\n"
         f"| Customer | 2. Areas/Business/Clients/ | | |\n"
-        f"| Calendar | Granola local cache | | |\n"
         f"| Comms | obsidian CLI | | |\n"
         f"| Tasks | Beads (bd) | | |\n"
-        f"| Meetings | Granola → Sessions/ | | |\n"
         f"| Knowledge | QMD search index | | |\n"
     )
 
