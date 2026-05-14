@@ -74,7 +74,18 @@ async function main() {
       process.exit(0);
     }
     console.log('Obsidian is not running — launching it now...');
-    spawn(exe, [], { detached: true, stdio: 'ignore' }).unref();
+    // On Windows, use `start ""` so Windows shell handles Obsidian's
+    // single-instance lock correctly. A direct detached spawn (the old
+    // approach) leaves a windowless zombie process behind because the
+    // second-instance helper can't exit cleanly when its stdio is
+    // detached — Windows then routes user taskbar clicks to the zombie
+    // (most-recent PID) instead of the real visible window.
+    // On macOS/Linux, detached spawn behaves correctly.
+    if (platform() === 'win32') {
+      execSync(`start "" "${exe}"`, { stdio: 'ignore', windowsHide: true });
+    } else {
+      spawn(exe, [], { detached: true, stdio: 'ignore' }).unref();
+    }
   } else {
     console.log('Obsidian is running but CLI not yet ready — waiting...');
   }
