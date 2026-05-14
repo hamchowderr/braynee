@@ -25,8 +25,14 @@ const CLAUDE_PROJECTS_DIR = path.join(os.homedir(), '.claude', 'projects');
 const QMD_WRAPPER = path.join(__dirname, '..', 'scripts', 'qmd-wrapper.mjs');
 
 function encodeCwd(cwd) {
-  // Claude Code encodes CWD: C:\Users\HamCh\code\workspace -> C--Users-HamCh-code-workspace
-  return cwd.replace(/[:\\\/]/g, '-').replace(/^-+/, '');
+  // Claude Code encodes CWD by replacing every non-word/non-hyphen char with `-`.
+  // Examples:
+  //   C:\Users\HamCh\code\workspace        -> C--Users-HamCh-code-workspace
+  //   C:\Users\HamCh\Obsidian Vault         -> C--Users-HamCh-Obsidian-Vault (space too)
+  //   C:\Users\HamCh\Obsidian Vault\1. Projects -> C--Users-HamCh-Obsidian-Vault-1--Projects
+  // The old regex only handled : \ / and missed spaces + periods, so paths like
+  // "Obsidian Vault" silently failed JSONL lookup.
+  return cwd.replace(/[^\w-]/g, '-').replace(/^-+/, '');
 }
 
 function findCurrentSessionJsonl(cwd) {
