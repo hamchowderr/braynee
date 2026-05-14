@@ -25,8 +25,14 @@ const CLAUDE_PROJECTS_DIR = path.join(os.homedir(), '.claude', 'projects');
 const QMD_WRAPPER = path.join(__dirname, '..', 'scripts', 'qmd-wrapper.mjs');
 
 function encodeCwd(cwd) {
-  // Claude Code encodes CWD: C:\Users\HamCh\code\workspace -> C--Users-HamCh-code-workspace
-  return cwd.replace(/[:\\\/]/g, '-').replace(/^-+/, '');
+  // Claude Code encodes CWD by replacing every non-word/non-hyphen char with `-`.
+  // Examples:
+  //   C:\Users\HamCh\code\workspace        -> C--Users-HamCh-code-workspace
+  //   C:\Users\HamCh\Obsidian Vault         -> C--Users-HamCh-Obsidian-Vault (space too)
+  //   C:\Users\HamCh\Obsidian Vault\1. Projects -> C--Users-HamCh-Obsidian-Vault-1--Projects
+  // The old regex only handled : \ / and missed spaces + periods, so paths like
+  // "Obsidian Vault" silently failed JSONL lookup.
+  return cwd.replace(/[^\w-]/g, '-').replace(/^-+/, '');
 }
 
 function findCurrentSessionJsonl(cwd) {
@@ -158,17 +164,21 @@ process.stdin.on('end', () => {
     // Find current session JSONL
     const jsonlFile = findCurrentSessionJsonl(cwd);
     if (!jsonlFile) {
+      log.info(HOOK, `skipped: no JSONL found at ~/.claude/projects/${encodeCwd(cwd)}/ (cwd-encoding mismatch?)`);
       process.exit(0);
     }
 
     // Parse
     const { messages, meta } = parseJsonl(jsonlFile.path);
     if (!messages.length || !meta) {
+      log.info(HOOK, `skipped: parsed ${messages.length} messages, meta=${meta ? 'set' : 'null'} from ${jsonlFile.name}`);
       process.exit(0);
     }
 
-    // Skip tiny sessions (less than 4 messages = probably just a quick question)
-    if (messages.length < 4) {
+    // Skip empty / single-turn sessions only — anything 2+ messages is worth
+    // preserving. The old <4 threshold silently dropped useful Q&As.
+    if (messages.length < 2) {
+      log.info(HOOK, `skipped: only ${messages.length} message(s) — below 2-msg minimum`);
       process.exit(0);
     }
 
@@ -180,17 +190,18 @@ process.stdin.on('end', () => {
       fs.mkdirSync(TRANSCRIPTS_DIR, { recursive: true });
     }
 
-    // Write transcript
-    const filename = `${date}-${slug}.md`;
+    // Filename includes session ID prefix to prevent same-day same-slug
+    // collisions across different sessions (the old `${date}-${slug}.md`
+    // pattern caused every default-slug session to clobber the previous one
+    // because slug defaults to "session" when entry.slug is unset).
+    const sidPrefix = (meta.sessionId || '').slice(0, 8) || 'nosid000';
+    const filename = `${date}-${slug}-${sidPrefix}.md`;
     const filepath = path.join(TRANSCRIPTS_DIR, filename);
 
-    // Don't overwrite if already exported (e.g., multiple stops)
-    if (fs.existsSync(filepath)) {
-      // Update in place — session may have continued
-      fs.writeFileSync(filepath, content, 'utf8');
-    } else {
-      fs.writeFileSync(filepath, content, 'utf8');
-    }
+    // Same-session re-Stop (compact, resume, multi-turn): overwrite the file
+    // since session ID is now in the filename, this only ever matches the
+    // SAME session — never a different session's transcript.
+    fs.writeFileSync(filepath, content, 'utf8');
 
     // Update QMD index
     updateQmdIndex();
