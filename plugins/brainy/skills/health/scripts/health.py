@@ -121,7 +121,7 @@ def cmd_setup(args, vault: Path):
         warn("settings.json not found")
 
     plugin_root = Path(__file__).parent.parent.parent
-    for skill in ["setup", "daily", "wispr", "granola", "tasks", "recall",
+    for skill in ["setup", "daily", "tasks", "recall",
                   "sessions", "clients", "query", "health", "zettelkasten", "settings-viewer"]:
         skill_md = plugin_root / skill / "SKILL.md"
         if skill_md.exists():
@@ -147,15 +147,6 @@ def cmd_connections(args, vault: Path):
         ok("Beads (bd) available")
     else:
         warn("Beads (bd) not found")
-
-    granola_cache = Path.home() / "Library" / "Application Support" / "Granola" / "cache-v3.json"
-    if sys.platform != "darwin":
-        ok("Granola (macOS only, skipped)")
-    elif granola_cache.exists():
-        age = (date.today() - date.fromtimestamp(granola_cache.stat().st_mtime)).days
-        ok(f"Granola cache ({age}d old)")
-    else:
-        warn("Granola cache not found (open Granola app)")
 
     if check_tool("obsidian"):
         ok("obsidian CLI available")

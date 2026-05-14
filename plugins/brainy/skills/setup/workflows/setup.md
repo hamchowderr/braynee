@@ -305,8 +305,11 @@ git -C "{vault_path}" init
 git -C "{vault_path}" add .gitignore
 git -C "{vault_path}" commit -m "initial vault setup via second-brain plugin"
 
-# Beads (issue tracker)
-cd "{vault_path}" && bd init
+# Beads (issue tracker) — --shared-server + --external is the canonical pair
+# (the shared Dolt server is a user-machine singleton, managed outside bd's
+# per-project lifecycle). Omitting --external can cause init to try starting
+# a second server on the bound port and fail.
+cd "{vault_path}" && bd init --shared-server --external --skip-agents --skip-hooks --non-interactive
 
 # QMD (search index — rebuild after scaffold)
 node ${CLAUDE_PLUGIN_ROOT}/scripts/qmd-wrapper.mjs index
