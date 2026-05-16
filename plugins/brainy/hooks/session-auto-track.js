@@ -16,6 +16,7 @@ const fs = require('fs');
 const { findSessionViaQmd } = require('./lib/qmd-search');
 const log = require(path.join(__dirname, 'lib', 'hook-logger.js'));
 const { findCodeRoot, sessionDir } = require(path.join(__dirname, 'lib', 'is-code-context.js'));
+const { findTranscriptDir } = require(path.join(__dirname, 'lib', 'transcript-dir.js'));
 
 const HOOK = 'session-auto-track';
 
@@ -367,15 +368,16 @@ function formatSessionContext(content, filename) {
   return lines.join('\n');
 }
 
-// Find the most recent JSONL transcript for this project folder
-function getRecentTranscriptContext(folderName) {
-  const projectsDir = path.join(os.homedir(), '.claude', 'projects');
-  if (!fs.existsSync(projectsDir)) return null;
-
-  // Transcript dirs use pattern: C--Users-HamCh-code-{folder}
-  const dirName = `C--Users-HamCh-code-${folderName}`;
-  const transcriptDir = path.join(projectsDir, dirName);
-  if (!fs.existsSync(transcriptDir)) return null;
+// Find the most recent JSONL transcript for the SESSION's actual cwd.
+// Derives the transcript dir by encoding `cwd` via the shared
+// lib/transcript-dir helper — NOT a hardcoded C--Users-<user>-code-<folder>
+// string, which only worked for one machine (one username + repos under
+// ~/code). For any other user, a non-~/code project location, or a
+// differently-cased path, the old hardcode missed the dir entirely and no
+// prior-session context was ever recalled (cp-d9g / S-1).
+function getRecentTranscriptContext(cwd) {
+  const transcriptDir = findTranscriptDir(cwd);
+  if (!transcriptDir) return null;
 
   // Find most recent JSONL file
   const jsonlFiles = fs.readdirSync(transcriptDir)
@@ -710,8 +712,11 @@ process.stdin.on('end', () => {
         output.push('5. Before session ends: vault-query.mjs session close --summary "..."');
       }
 
-      // Load recent transcript from last Claude Code session
-      const transcript = getRecentTranscriptContext(folderName);
+      // Load recent transcript from last Claude Code session (project/code
+      // mode only — this block is the `else` of the vault/workspace branch, so
+      // vault & workspace sessions never reach here and keep getting vault
+      // context, not transcript context). Encoded from the real cwd.
+      const transcript = getRecentTranscriptContext(cwd);
       if (transcript) {
         output.push('');
         output.push(`── LAST SESSION TRANSCRIPT (${transcript.slug || transcript.sessionId}) ──`);
