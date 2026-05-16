@@ -18,8 +18,54 @@ Do not show output to user yet.
 
 **Branch on vault detection:**
 
-- **No vault found** → proceed to Step 2 (full wizard — fresh install path)
-- **Vault found** → jump to **Step 1B** (existing vault path)
+- **No vault found** → proceed to **Step 1A** then Step 2 (full wizard — fresh install path)
+- **Vault found** → run **Step 1A** then jump to **Step 1B** (existing vault path)
+
+---
+
+## Step 1A: Verify Required Toolchain
+
+Brainy has hard dependencies — **do not assume any of them exist**. Setup itself
+uses every one: `git` (vault git init + the Obsidian Git auto-backup the plugin
+configures), `node` (every hook/monitor/bundled script), `python3` (these setup
+scripts), `bd` (Beads is mandatory for all code projects), and QMD (search index).
+
+Run silently:
+
+```bash
+python3 {baseDir}/scripts/detect-env.py --toolchain --json
+```
+
+This returns `{ toolchain: { found, missing, install, all_present } }` with
+**OS-appropriate install commands** for anything missing.
+
+**If `all_present` is true** → continue (also confirm QMD: `node ${CLAUDE_PLUGIN_ROOT}/scripts/qmd-wrapper.mjs status` — if it errors, treat QMD as missing below).
+
+**If anything is missing**, do not silently proceed — the wizard will fail later
+(Step 9 runs `git init` and `bd init`; hooks need `node`). Show the user one
+consolidated prompt listing each missing tool with its install command, e.g.:
+
+```
+Brainy needs these before setup can run. The following are missing:
+
+  • git    → winget install --id Git.Git -e
+  • bd     → irm https://raw.githubusercontent.com/gastownhall/beads/main/install.ps1 | iex
+
+Install them now? [Yes, install / I'll do it myself / Skip checks (not recommended)]
+```
+
+- **Yes, install** → run each install command (one at a time, surfacing output),
+  then re-run `detect-env.py --toolchain --json` to confirm. Repeat once if a
+  PATH refresh is needed (tell the user to reopen the shell if a command is
+  still not found after install).
+- **I'll do it myself** → stop the wizard with the list above; tell the user to
+  re-run `/setup` once the tools are installed.
+- **Skip checks** → continue but warn that Step 9 (Git/Beads init) and hooks
+  will fail for any missing tool.
+
+git is **not optional** — the vault is a git repo and the plugin configures
+auto-commit/auto-push via Obsidian Git. Treat a missing `git` exactly like a
+missing `node` or `bd`: block or guide, never skip silently.
 
 ---
 

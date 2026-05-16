@@ -14,12 +14,15 @@ const { execSync } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { findBeadsRoot } = require(path.join(__dirname, 'lib', 'is-code-context.js'));
 
 const HOME = os.homedir();
 const VAULT_DIR = path.join(HOME, 'Obsidian Vault');
 const SESSIONS_DIR = path.join(VAULT_DIR, '2. Areas', 'Sessions');
-const CODE_DIR = path.join(HOME, 'code');
 const ACTIVE_ISSUE_FILE = path.join(HOME, '.claude', 'beads-active-issue.json');
+// Bundled dashboard generator (F-5.3): use the plugin's own copy, not a
+// hardcoded ~/.claude/scripts/ path that may not exist on a fresh install.
+const DASHBOARD_SCRIPT = path.join(__dirname, '..', 'scripts', 'beads-dashboard.js');
 
 const PRIORITY_MAP = { 0: 'critical', 1: 'high', 2: 'medium', 3: 'low', 4: 'low' };
 
@@ -172,11 +175,18 @@ process.stdin.setEncoding('utf8');
 process.stdin.on('data', c => { input += c; });
 process.stdin.on('end', () => {
   try {
-    const data = JSON.parse(input);
+    let data = {};
+    try { data = JSON.parse(input); } catch { data = {}; }
     const cmd = (data.tool_input?.command || '').trim();
-    const cwd = data.cwd || process.cwd();
+    const eventCwd = data.cwd || process.cwd();
 
-    if (!fs.existsSync(path.join(cwd, '.beads'))) process.exit(0);
+    // F-3.2a: this is a per-command PostToolUse sync (reacts to the bd command
+    // that just ran), so it correctly keys off the event cwd — but resolve the
+    // .beads root by walking up, EXCLUDING the global ~/.beads from
+    // `bd init --shared-server` (findBeadsRoot). Run bd at that root.
+    const beadsRoot = findBeadsRoot(eventCwd);
+    if (!beadsRoot) process.exit(0);
+    const cwd = beadsRoot;
 
     // ─── bd create: mirror new issue to mtn at planning time ─────────
     if (/^bd\s+create\s/.test(cmd)) {
@@ -289,9 +299,10 @@ process.stdin.on('end', () => {
       } catch {}
     }
 
-    // Regenerate shared dashboard (all active sessions)
+    // Regenerate shared dashboard (all active sessions). F-5.3: use the
+    // bundled generator, consistent with beads-dashboard-refresh.js.
     const dashPath = path.join(HOME, '.claude', 'beads-dashboard.html');
-    run(`node "${path.join(HOME, '.claude', 'scripts', 'beads-dashboard.js')}" --sessions-only --output "${dashPath}"`, { cwd });
+    run(`node "${DASHBOARD_SCRIPT}" --sessions-only --output "${dashPath}"`, { cwd });
 
     process.exit(0);
   } catch {

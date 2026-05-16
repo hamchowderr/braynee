@@ -12,11 +12,10 @@
 
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
 const log = require(path.join(__dirname, 'lib', 'hook-logger.js'));
+const { findCodeRoot, sessionDir } = require(path.join(__dirname, 'lib', 'is-code-context.js'));
 
 const HOOK = 'check-testing-setup';
-const CODE_DIR = path.join(os.homedir(), 'code');
 
 function fileExists(p) { try { return fs.existsSync(p); } catch { return false; } }
 
@@ -46,9 +45,16 @@ process.stdin.setEncoding('utf8');
 process.stdin.on('data', c => { input += c; });
 process.stdin.on('end', () => {
   try {
-    const data = input ? JSON.parse(input) : {};
-    const cwd = data.cwd || process.cwd();
-    if (!cwd.toLowerCase().startsWith(CODE_DIR.toLowerCase())) process.exit(0);
+    let data = {};
+    if (input) {
+      try { data = JSON.parse(input); } catch { data = {}; }
+    }
+
+    // F-3.2a + F-3.2b: act only in a code context, detected structurally on
+    // the SESSION's working dir — not a ~/code prefix. findCodeRoot already
+    // resolves to the project root, which is where package.json lives.
+    const cwd = findCodeRoot(sessionDir(data));
+    if (!cwd) process.exit(0);
     if (path.basename(cwd).toLowerCase() === 'workspace') process.exit(0);
 
     const has = checkProject(cwd);
