@@ -40,10 +40,18 @@ process.stdin.on('end', () => {
     const sections = [];
 
     // ── In-progress issues ────────────────────────────────────────────
-    const raw = run('bd list --json --all', { cwd });
+    // cp-o4g: NEVER use `--all`. On the shared Dolt server `--all` overrides
+    // the default per-repo filter and spans EVERY project's namespace, so the
+    // Stop hook would surface unrelated projects' issues. `bd list` without
+    // `--all`, run with cwd=beadsRoot, auto-discovers THIS repo's .beads/ and
+    // is scoped to its namespace only. We further constrain to in_progress
+    // (the only status this section cares about) so closed issues from any
+    // project can never leak in regardless of server-side filter behavior.
+    const raw = run('bd list --json --status in_progress', { cwd });
     if (raw) {
       try {
-        const issues = JSON.parse(raw);
+        const parsed = JSON.parse(raw);
+        const issues = Array.isArray(parsed) ? parsed : [];
         const inProgress = issues.filter(i => i.status === 'in_progress');
         if (inProgress.length > 0) {
           const list = inProgress.map(i => `  [${i.id}] ${i.title}`).join('\n');
@@ -56,7 +64,11 @@ process.stdin.on('end', () => {
     }
 
     // ── Stale issues ──────────────────────────────────────────────────
-    const staleOut = run('bd stale --days 14 --limit 5', { cwd });
+    // cp-o4g: `bd stale` has no `--all`; run with cwd=beadsRoot it
+    // auto-discovers THIS repo's .beads/ and is scoped to its namespace.
+    // Constrain to open issues so a stale closed/parked issue from another
+    // project can't surface even if server-side scoping ever changes.
+    const staleOut = run('bd stale --days 14 --limit 5 --status open', { cwd });
     if (staleOut && staleOut.includes('stale') && !staleOut.includes('No stale')) {
       sections.push(
         `## Stale Beads Issues (14+ days)\n\n${staleOut.trim()}\n\n` +
