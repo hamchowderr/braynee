@@ -42,7 +42,7 @@ Brainy declares its hooks in the plugin's `hooks/hooks.json` — they run automa
 |-------|-------|-------------|
 | **SessionStart** | `ensure-obsidian.js`, `reinject-after-compact.js`, `session-auto-track.js`, `settings-viewer/generate.mjs`, `check-beads-init.js`, `beads-work-surface.js`, `check-git-init.js`, `check-testing-setup.js` | Launch Obsidian, open/update the session note, regenerate the dashboard, ensure beads + git are initialized, surface the ready beads queue, flag a missing test stack, and re-inject vault context after a compaction |
 | **UserPromptSubmit** | `memory-reminder.js`, `beads-nudge.js` | Remind Claude to search vault memory before guessing and to keep the beads workflow current |
-| **PreToolUse** | `check-no-main-push.js`, `branch-name-check.js` | On `git push`, block pushes to `main`/`master` and enforce branch naming |
+| **PreToolUse** | `check-no-main-push.js`, `branch-name-check.js` | Protect `main`/`master`: block pushing to it, committing on it, or `--orphan`-ing onto it (opt out with `BRAINY_ALLOW_MAIN_COMMITS=1`), and enforce branch naming |
 | **PostToolUse** | `memory-index-sync.js`, `session-note-nudge.js`, `statusline-state.js`, `commit-cadence-nudge.js`, `beads-claim-to-branch.js`, `beads-status-sync.js`, `beads-todo-reminder.js`, `beads-dashboard-refresh.js`, `mtn-to-beads-sync.js` | Keep `MEMORY.md` indexed, nudge session-note updates and commit cadence, branch on `bd … --claim`, and mirror beads ⇄ Claude todos ⇄ TaskNotes |
 | **PreCompact** | `pre-compact-snapshot.js` | Snapshot context before a compaction |
 | **PostCompact** | `post-compact.js` | Restore and re-inject context after a compaction |
