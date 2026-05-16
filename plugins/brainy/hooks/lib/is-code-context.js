@@ -141,11 +141,40 @@ function isExcludedRoot(dir) {
   return false;
 }
 
+// An Obsidian vault is NOT a code project, even though users routinely
+// git-back their vault (auto-commit backups) and may have stray manifests in
+// it. A directory containing `.obsidian/` is unambiguously a vault root;
+// anything at or below it is vault content. Without this, findCodeRoot()
+// latches onto the vault's `.git` corroborating signal and classifies EVERY
+// vault session as a code session — exactly the failure the ~/code removal was
+// meant to prevent for the primary (vault-centric) user.
+function isInsideObsidianVault(startDir) {
+  let dir;
+  try {
+    dir = path.resolve(startDir);
+  } catch {
+    return false;
+  }
+  const root = path.parse(dir).root;
+  while (dir && dir !== root) {
+    try {
+      if (fs.existsSync(path.join(dir, '.obsidian'))) return true;
+    } catch {}
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  try {
+    if (fs.existsSync(path.join(root, '.obsidian'))) return true;
+  } catch {}
+  return false;
+}
+
 /**
  * Walk up from startDir. Return the first ancestor that looks like a project
  * root (manifest present, or a corroborating .git/.beads dir, or — at the
- * start dir only — bare source files). $HOME and the filesystem root are
- * excluded. Returns null if none found.
+ * start dir only — bare source files). $HOME, the filesystem root, and any
+ * path inside an Obsidian vault are excluded. Returns null if none found.
  */
 function findCodeRoot(startDir) {
   if (!startDir) return null;
@@ -155,6 +184,11 @@ function findCodeRoot(startDir) {
   } catch {
     return null;
   }
+
+  // An Obsidian vault (even a git-backed one) is never a code project.
+  // Short-circuit before any manifest/corroborating check so the vault's
+  // own `.git`/stray manifests can't classify a vault session as code.
+  if (isInsideObsidianVault(dir)) return null;
 
   // Start dir gets the most permissive check (bare source files count here),
   // unless it is $HOME / fs root (a stray package.json in $HOME is not a
