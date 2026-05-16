@@ -13,9 +13,9 @@ const path = require('path');
 const os = require('os');
 const { execSync } = require('child_process');
 const log = require(path.join(__dirname, 'lib', 'hook-logger.js'));
+const { findCodeRoot } = require(path.join(__dirname, 'lib', 'is-code-context.js'));
 
 const HOOK = 'check-beads-init';
-const CODE_DIR = path.join(os.homedir(), 'code');
 const PLUGINS_CACHE = path.join(os.homedir(), '.claude', 'plugins', 'cache');
 
 function isBdOnPath() {
@@ -79,13 +79,25 @@ process.stdin.setEncoding('utf8');
 process.stdin.on('data', chunk => { input += chunk; });
 process.stdin.on('end', () => {
   try {
-    const data = input ? JSON.parse(input) : {};
+    let data = {};
+    if (input) {
+      try {
+        data = JSON.parse(input);
+      } catch (parseErr) {
+        log.warn(HOOK, `unparseable stdin, using empty payload: ${parseErr.message}`);
+        data = {};
+      }
+    }
     const cwd = data.cwd || process.cwd();
 
-    if (!cwd.toLowerCase().startsWith(CODE_DIR.toLowerCase())) {
+    // Detect a code context structurally instead of a hardcoded ~/code prefix
+    // (brainy is universal — most users have no ~/code). The detected root is
+    // also the correct project name source: basename(cwd) would be a subdir.
+    const codeRoot = findCodeRoot(cwd);
+    if (!codeRoot) {
       process.exit(0);
     }
-    const projectName = path.basename(cwd);
+    const projectName = path.basename(codeRoot);
     if (projectName.toLowerCase() === 'workspace') {
       process.exit(0);
     }
@@ -97,7 +109,7 @@ process.stdin.on('end', () => {
       log.warn(HOOK, `bd not on PATH`);
       process.stdout.write(
         `# Beads CLI Missing\n\n` +
-        `The \`bd\` CLI is not installed, but Beads is mandatory for all code projects in \`~/code/*\`.\n\n` +
+        `The \`bd\` CLI is not installed, but Beads is mandatory for all code projects.\n\n` +
         `**Ask the user once:** "Install \`bd\` now? (Y/n)"\n\n` +
         `On yes, run the platform-appropriate install:\n` +
         `- Windows (PowerShell): \`irm https://raw.githubusercontent.com/gastownhall/beads/main/install.ps1 | iex\`\n` +
@@ -120,7 +132,7 @@ process.stdin.on('end', () => {
       // Continue — plugin is optional, init still proceeds.
     }
 
-    if (findBeadsAncestor(cwd)) {
+    if (findBeadsAncestor(codeRoot)) {
       log.info(HOOK, `beads already initialized — nothing to do`);
       process.exit(0);
     }
@@ -136,7 +148,7 @@ process.stdin.on('end', () => {
       `\`\`\`\n\n`
     );
 
-    const result = tryBdInit(cwd, projectName);
+    const result = tryBdInit(codeRoot, projectName);
     if (result.ok) {
       log.info(HOOK, `bd init succeeded for ${projectName}`);
       process.stdout.write(
