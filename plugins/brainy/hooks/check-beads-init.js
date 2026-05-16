@@ -46,8 +46,25 @@ function tryBdInit(cwd, projectName) {
   // lifecycle. Without --external, bd may try to start a second server on
   // the already-bound port and fail (especially on Windows, where the
   // process-detection probe is non-deterministic).
-  // --skip-agents and --skip-hooks keep init non-interactive and minimal —
-  // we install our own integration via brainy hooks elsewhere.
+  //
+  // --skip-agents: bd init's default agent-doc generation writes AGENTS.md,
+  // CLAUDE.md AND .claude/settings.json. The CLAUDE.md / settings.json writes
+  // would clobber a real project's own files (settings.json carries the
+  // project's Claude Code config; CLAUDE.md its agent context). We keep this
+  // skip and instead write a minimal AGENTS.md ourselves below, only when the
+  // project has no agent doc at all (see finishBdSetup) — never overwriting.
+  //
+  // --skip-hooks: bd init's hook step is interactive-ish and we want a single
+  // explicit, idempotent install. We run `bd hooks install` separately below.
+  // NOTE: bd's *git* hooks (pre-commit/post-merge/pre-push/post-checkout/
+  // prepare-commit-msg, installed into .git/hooks/) only keep
+  // .beads/issues.jsonl in sync with the Dolt DB. They are completely
+  // distinct from brainy's Claude-Code *event* hooks (SessionStart,
+  // PreCompact, etc., wired via the plugin's hooks.json) — different
+  // mechanism, different files, no conflict. Skipping bd's git hooks at
+  // init time was the ROOT CAUSE of the recurring .beads/issues.jsonl
+  // merge conflicts on PRs, so we now install them right after.
+  //
   // --non-interactive avoids stdin prompts when bd runs under the hook.
   const cmd = `bd init --shared-server --external -p "${projectName}" --skip-agents --skip-hooks --non-interactive`;
   try {
@@ -61,6 +78,80 @@ function tryBdInit(cwd, projectName) {
   } catch (err) {
     return { ok: false, cmd, error: err.stderr?.toString() || err.message };
   }
+}
+
+// Run after a successful `bd init` to leave the project CLEAN in `bd doctor`:
+//   1. `bd hooks install` — installs bd's git hooks (.git/hooks/) that keep
+//      .beads/issues.jsonl synced. Idempotent: bd uses section markers and a
+//      re-run just rewrites its own block, preserving any user hook content.
+//   2. Minimal AGENTS.md — ONLY when the project has neither AGENTS.md nor
+//      CLAUDE.md (bd doctor accepts either). Never overwrites an existing one,
+//      so a project's own agent doc is left untouched.
+//   3. `bd vc commit` — commits the freshly-written bd Dolt config so the
+//      project doesn't come up with an uncommitted "config: modified" change.
+//      "Nothing to commit" (exit 0) on a re-run, so it's a safe no-op.
+// Every step is best-effort and guarded: a failure in one never aborts the
+// others or the hook. Re-running on an already-set-up project is a clean
+// no-op (the SessionStart guard normally prevents re-entry anyway).
+function finishBdSetup(cwd) {
+  const steps = [];
+
+  // 1. git hooks (.git/hooks/) — only meaningful inside a git repo.
+  if (fs.existsSync(path.join(cwd, '.git'))) {
+    try {
+      execSync('bd hooks install', {
+        cwd,
+        encoding: 'utf8',
+        timeout: 20_000,
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+      steps.push({ step: 'git-hooks', ok: true });
+    } catch (err) {
+      steps.push({ step: 'git-hooks', ok: false, error: err.stderr?.toString() || err.message });
+    }
+  }
+
+  // 2. Agent doc — write a minimal AGENTS.md only if NOTHING exists yet.
+  try {
+    const hasAgents = fs.existsSync(path.join(cwd, 'AGENTS.md'));
+    const hasClaude = fs.existsSync(path.join(cwd, 'CLAUDE.md'));
+    if (!hasAgents && !hasClaude) {
+      const doc =
+        '## Issue Tracking\n\n' +
+        'This project uses **bd (beads)** for issue tracking.\n' +
+        'Run `bd prime` for full workflow context, or install hooks ' +
+        '(`bd hooks install`) for auto-injection.\n\n' +
+        '**Quick reference:**\n' +
+        '- `bd ready` — Find unblocked work\n' +
+        '- `bd create "Title" --type task --priority 2` — Create issue\n' +
+        '- `bd update <id> --claim` — Claim work atomically\n' +
+        '- `bd close <id>` — Complete work\n' +
+        '- `bd dolt push` — Push beads data to remote\n\n' +
+        'For full workflow details: `bd prime`\n';
+      fs.writeFileSync(path.join(cwd, 'AGENTS.md'), doc, 'utf8');
+      steps.push({ step: 'agents-md', ok: true, wrote: true });
+    } else {
+      steps.push({ step: 'agents-md', ok: true, wrote: false });
+    }
+  } catch (err) {
+    steps.push({ step: 'agents-md', ok: false, error: err.message });
+  }
+
+  // 3. Commit the bd Dolt config so the project isn't left "config: modified".
+  try {
+    execSync('bd vc commit -m "brainy auto-init: commit initial bd config"', {
+      cwd,
+      encoding: 'utf8',
+      timeout: 20_000,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    steps.push({ step: 'vc-commit', ok: true });
+  } catch (err) {
+    // "Nothing to commit" exits 0, so a non-zero here is a real failure.
+    steps.push({ step: 'vc-commit', ok: false, error: err.stderr?.toString() || err.message });
+  }
+
+  return steps;
 }
 
 let input = '';
@@ -138,14 +229,26 @@ process.stdin.on('end', () => {
       `did not have it initialized. brainy is running:\n\n` +
       `\`\`\`\n` +
       `bd init --shared-server --external -p "${projectName}" --skip-agents --skip-hooks --non-interactive\n` +
+      `bd hooks install            # git hooks that keep .beads/issues.jsonl synced\n` +
+      `bd vc commit -m "..."       # commit the initial bd config\n` +
       `\`\`\`\n\n`
     );
 
     const result = tryBdInit(codeRoot, projectName);
     if (result.ok) {
       log.info(HOOK, `bd init succeeded for ${projectName}`);
+      // Leave the project CLEAN in `bd doctor`: install bd's git hooks,
+      // ensure an agent doc exists, and commit the initial bd config.
+      const finish = finishBdSetup(codeRoot);
+      for (const s of finish) {
+        if (s.ok) log.info(HOOK, `finishBdSetup ${s.step}: ok${s.wrote === false ? ' (skipped, doc exists)' : ''}`);
+        else log.warn(HOOK, `finishBdSetup ${s.step} failed: ${(s.error || '').split('\n')[0]}`);
+      }
       process.stdout.write(
         `**Done.** Beads is now initialized in \`${projectName}\`. ` +
+        `Brainy also installed bd's git hooks (keep \`.beads/issues.jsonl\` synced, ` +
+        `preventing merge conflicts on PRs), ensured an agent doc exists, and committed ` +
+        `the initial bd config — the project comes up clean in \`bd doctor\`.\n\n` +
         `Use \`bd create\`, \`bd list\`, \`bd update <id> --status in_progress\` to track work. ` +
         `Brainy hooks will sync bd status changes to TaskNotes and the project session note automatically.\n`
       );
