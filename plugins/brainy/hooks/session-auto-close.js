@@ -22,6 +22,7 @@ const fs = require('fs');
 const log = require(path.join(__dirname, 'lib', 'hook-logger.js'));
 
 const { findCodeRoot, sessionDir } = require(path.join(__dirname, 'lib', 'is-code-context.js'));
+const { findTranscriptDir } = require(path.join(__dirname, 'lib', 'transcript-dir.js'));
 
 const HOOK = 'session-auto-close';
 
@@ -142,12 +143,10 @@ function getBranch(cwd) {
 // Extract goal from JSONL — use the EXACT session_id passed by Claude Code,
 // not whichever JSONL was most recently touched. Aggregates per project can
 // span many sessions; we want this session's first prompt only.
+// Delegates to the shared lib/transcript-dir helper so the cwd→transcript-dir
+// encoding has a single source of truth (was duplicated inline; see cp-d9g).
 function findCwdProjectsDir(cwd) {
-  // Claude Code encodes cwd by replacing path separators with dashes.
-  // E.g. C:\Users\HamCh\code\foreman → C--Users-HamCh-code-foreman
-  const encoded = cwd.replace(/[:\\\/]+/g, '-').replace(/^-+|-+$/g, '');
-  const dir = path.join(os.homedir(), '.claude', 'projects', encoded);
-  return fs.existsSync(dir) ? dir : null;
+  return findTranscriptDir(cwd);
 }
 
 function extractGoalFromJSONL(cwd, sessionId) {
