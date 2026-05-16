@@ -9,9 +9,10 @@ const path = require('path');
 const os = require('os');
 const fs = require('fs');
 
+const { findCodeRoot, sessionDir } = require(path.join(__dirname, 'lib', 'is-code-context.js'));
+
 const VAULT_QUERY = path.join(__dirname, '..', 'scripts', 'vault-query.mjs');
 const VAULT_DIR = path.join(os.homedir(), 'Obsidian Vault');
-const CODE_DIR = path.join(os.homedir(), 'code');
 
 function findProjectName(folderName) {
   const projectsDir = path.join(VAULT_DIR, '1. Projects');
@@ -47,13 +48,19 @@ process.stdin.setEncoding('utf8');
 process.stdin.on('data', chunk => { input += chunk; });
 process.stdin.on('end', () => {
   try {
-    const cwd = process.cwd();
-    const folderName = path.basename(cwd);
-    const isInCodeDir = cwd.toLowerCase().startsWith(CODE_DIR.toLowerCase());
+    let data = {};
+    if (input) {
+      try { data = JSON.parse(input); } catch { data = {}; }
+    }
 
-    if (!isInCodeDir) {
+    // F-3.2a + F-3.2b: gate on the SESSION's code root (anchored at
+    // SessionStart, detected structurally) — not process.cwd() / a ~/code
+    // prefix. Off ~/code this previously never reminded to close the session.
+    const codeRoot = findCodeRoot(sessionDir(data));
+    if (!codeRoot) {
       process.exit(0);
     }
+    const folderName = path.basename(codeRoot);
 
     // Determine project name
     let projectName;

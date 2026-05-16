@@ -13,9 +13,9 @@ const path = require('path');
 const os = require('os');
 const { execSync } = require('child_process');
 const log = require(path.join(__dirname, 'lib', 'hook-logger.js'));
+const { findCodeRoot, findBeadsRoot, sessionDir } = require(path.join(__dirname, 'lib', 'is-code-context.js'));
 
 const HOOK = 'check-beads-init';
-const CODE_DIR = path.join(os.homedir(), 'code');
 const PLUGINS_CACHE = path.join(os.homedir(), '.claude', 'plugins', 'cache');
 
 function isBdOnPath() {
@@ -39,17 +39,6 @@ function isBeadsPluginInstalled() {
   return false;
 }
 
-function findBeadsAncestor(startDir) {
-  let dir = startDir;
-  const root = path.parse(dir).root;
-  while (dir !== root) {
-    if (fs.existsSync(path.join(dir, '.beads'))) return dir;
-    const parent = path.dirname(dir);
-    if (parent === dir) break;
-    dir = parent;
-  }
-  return null;
-}
 
 function tryBdInit(cwd, projectName) {
   // --shared-server + --external is the canonical pair: the shared Dolt
@@ -79,13 +68,26 @@ process.stdin.setEncoding('utf8');
 process.stdin.on('data', chunk => { input += chunk; });
 process.stdin.on('end', () => {
   try {
-    const data = input ? JSON.parse(input) : {};
-    const cwd = data.cwd || process.cwd();
-
-    if (!cwd.toLowerCase().startsWith(CODE_DIR.toLowerCase())) {
+    let data = {};
+    if (input) {
+      try {
+        data = JSON.parse(input);
+      } catch (parseErr) {
+        log.warn(HOOK, `unparseable stdin, using empty payload: ${parseErr.message}`);
+        data = {};
+      }
+    }
+    // F-3.2a + F-3.2b: gate on the SESSION's working dir (anchored at
+    // SessionStart), detected structurally — not this event's transient cwd
+    // and not a hardcoded ~/code prefix (brainy is universal — most users have
+    // no ~/code). A vault-rooted session must not auto-init beads or nag about
+    // the bd CLI just because a subprocess cd'd into a code project. The
+    // detected root is also the correct project-name source.
+    const codeRoot = findCodeRoot(sessionDir(data));
+    if (!codeRoot) {
       process.exit(0);
     }
-    const projectName = path.basename(cwd);
+    const projectName = path.basename(codeRoot);
     if (projectName.toLowerCase() === 'workspace') {
       process.exit(0);
     }
@@ -97,7 +99,7 @@ process.stdin.on('end', () => {
       log.warn(HOOK, `bd not on PATH`);
       process.stdout.write(
         `# Beads CLI Missing\n\n` +
-        `The \`bd\` CLI is not installed, but Beads is mandatory for all code projects in \`~/code/*\`.\n\n` +
+        `The \`bd\` CLI is not installed, but Beads is mandatory for all code projects.\n\n` +
         `**Ask the user once:** "Install \`bd\` now? (Y/n)"\n\n` +
         `On yes, run the platform-appropriate install:\n` +
         `- Windows (PowerShell): \`irm https://raw.githubusercontent.com/gastownhall/beads/main/install.ps1 | iex\`\n` +
@@ -120,7 +122,10 @@ process.stdin.on('end', () => {
       // Continue — plugin is optional, init still proceeds.
     }
 
-    if (findBeadsAncestor(cwd)) {
+    // Excludes the global ~/.beads (`bd init --shared-server`) so a project
+    // without its own .beads/ still auto-inits instead of being mistaken for
+    // already-initialized.
+    if (findBeadsRoot(codeRoot)) {
       log.info(HOOK, `beads already initialized — nothing to do`);
       process.exit(0);
     }
@@ -136,7 +141,7 @@ process.stdin.on('end', () => {
       `\`\`\`\n\n`
     );
 
-    const result = tryBdInit(cwd, projectName);
+    const result = tryBdInit(codeRoot, projectName);
     if (result.ok) {
       log.info(HOOK, `bd init succeeded for ${projectName}`);
       process.stdout.write(

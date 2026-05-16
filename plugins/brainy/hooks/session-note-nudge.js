@@ -12,12 +12,12 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const log = require(path.join(__dirname, 'lib', 'hook-logger.js'));
+const { findCodeRoot, sessionDir } = require(path.join(__dirname, 'lib', 'is-code-context.js'));
 
 const HOOK = 'session-note-nudge';
 
 const VAULT_DIR = path.join(os.homedir(), 'Obsidian Vault');
 const SESSIONS_DIR = path.join(VAULT_DIR, '2. Areas', 'Sessions');
-const CODE_DIR = path.join(os.homedir(), 'code');
 const STATE_FILE = path.join(os.homedir(), '.claude', 'session-nudge-state.json');
 
 const NUDGE_INTERVAL_TOOLS = 5;
@@ -151,11 +151,20 @@ process.stdin.setEncoding('utf8');
 process.stdin.on('data', chunk => { input += chunk; });
 process.stdin.on('end', () => {
   try {
-    const cwd = process.cwd();
-    const folderName = path.basename(cwd);
-    const isInCodeDir = cwd.toLowerCase().startsWith(CODE_DIR.toLowerCase());
+    let data = {};
+    if (input) {
+      try { data = JSON.parse(input); } catch { data = {}; }
+    }
 
-    if (!isInCodeDir || folderName.toLowerCase() === 'workspace') {
+    // F-3.2a + F-3.2b: gate on the SESSION's code root (anchored at
+    // SessionStart, detected structurally) — not process.cwd() / a ~/code
+    // prefix.
+    const codeRoot = findCodeRoot(sessionDir(data));
+    if (!codeRoot) {
+      process.exit(0);
+    }
+    const folderName = path.basename(codeRoot);
+    if (folderName.toLowerCase() === 'workspace') {
       process.exit(0);
     }
 

@@ -92,6 +92,63 @@ def check_tools() -> dict:
     return tools
 
 
+# ── Required Toolchain ────────────────────────────────────────────────────────
+
+# Brainy hard dependencies. Setup uses every one of these directly:
+#   git    — vault git init + the Obsidian Git auto-backup the plugin configures
+#   node   — runs every brainy hook, monitor, and bundled script (qmd-wrapper …)
+#   python3— runs the setup/migration/scaffold scripts
+#   bd     — Beads is mandatory for all code projects
+# QMD is required too but ships via the bundled qmd-wrapper, so it is verified
+# separately in the workflow (node scripts/qmd-wrapper.mjs status), not here.
+def check_toolchain() -> dict:
+    """Return required-tool presence + per-OS install guidance for any missing."""
+
+    def present(*cmds: str) -> bool:
+        return any(shutil.which(c) is not None for c in cmds)
+
+    if IS_MAC:
+        plat = "mac"
+        install = {
+            "git":     "brew install git   (or: xcode-select --install)",
+            "node":    "brew install node",
+            "python3": "brew install python",
+            "bd":      "npm install -g @beads/bd",
+        }
+    elif IS_WIN:
+        plat = "windows"
+        install = {
+            "git":     "winget install --id Git.Git -e   (or: https://git-scm.com/download/win)",
+            "node":    "winget install --id OpenJS.NodeJS.LTS -e",
+            "python3": "winget install --id Python.Python.3.12 -e",
+            "bd":      "irm https://raw.githubusercontent.com/gastownhall/beads/main/install.ps1 | iex   (or: npm install -g @beads/bd)",
+        }
+    else:
+        plat = "linux"
+        install = {
+            "git":     "sudo apt install git   (or your distro's package manager)",
+            "node":    "sudo apt install nodejs npm   (or: https://nodejs.org)",
+            "python3": "sudo apt install python3",
+            "bd":      "npm install -g @beads/bd",
+        }
+
+    found = {
+        "git":     present("git"),
+        "node":    present("node"),
+        "python3": present("python3", "python", "py"),
+        "bd":      present("bd"),
+    }
+    missing = [name for name, ok in found.items() if not ok]
+    return {
+        "platform": plat,
+        "required": list(found.keys()),
+        "found": found,
+        "missing": missing,
+        "install": {name: install[name] for name in missing},
+        "all_present": len(missing) == 0,
+    }
+
+
 # ── Note Apps ─────────────────────────────────────────────────────────────────
 
 def check_note_apps() -> dict:
@@ -250,6 +307,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--vault",   action="store_true")
     parser.add_argument("--tools",   action="store_true")
+    parser.add_argument("--toolchain", action="store_true",
+                        help="Required-tool presence + per-OS install guidance")
     parser.add_argument("--notes",   action="store_true")
     parser.add_argument("--claude",  action="store_true")
     parser.add_argument("--all",     action="store_true")
@@ -265,6 +324,9 @@ def main():
 
     if args.all or args.tools:
         result["tools"] = check_tools()
+
+    if args.all or args.toolchain:
+        result["toolchain"] = check_toolchain()
 
     if args.all or args.notes:
         result["note_apps"] = check_note_apps()

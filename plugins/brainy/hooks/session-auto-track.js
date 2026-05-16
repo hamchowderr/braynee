@@ -15,6 +15,7 @@ const os = require('os');
 const fs = require('fs');
 const { findSessionViaQmd } = require('./lib/qmd-search');
 const log = require(path.join(__dirname, 'lib', 'hook-logger.js'));
+const { findCodeRoot, sessionDir } = require(path.join(__dirname, 'lib', 'is-code-context.js'));
 
 const HOOK = 'session-auto-track';
 
@@ -24,7 +25,6 @@ const TASKNOTES = path.join(PLUGIN_ROOT, 'scripts', 'tasknotes.mjs');
 const VAULT_DIR = path.join(os.homedir(), 'Obsidian Vault');
 const SESSIONS_DIR = path.join(VAULT_DIR, '2. Areas', 'Sessions');
 const PRD_DIR = path.join(VAULT_DIR, '2. Areas', 'Product Manager', 'PRDs');
-const CODE_DIR = path.join(os.homedir(), 'code');
 
 function findPrdForFolder(folderName) {
   if (!fs.existsSync(PRD_DIR)) return null;
@@ -449,16 +449,30 @@ process.stdin.setEncoding('utf8');
 process.stdin.on('data', chunk => { input += chunk; });
 process.stdin.on('end', () => {
   try {
-    const data = JSON.parse(input);
-    const cwd = data.cwd || process.cwd();
-    const folderName = path.basename(cwd);
+    let data = {};
+    if (input) {
+      try { data = JSON.parse(input); } catch { data = {}; }
+    }
+    const eventCwd = data.cwd || process.cwd();
     const sessionId = data.session_id || null;
 
     // Normalize paths to forward slashes for consistent comparison on Windows
     const norm = (p) => p.toLowerCase().replace(/\\/g, '/');
-    const isInCodeDir = norm(cwd).startsWith(norm(CODE_DIR));
+
+    // This hook INTENTIONALLY runs in three modes — code, vault, workspace —
+    // (see the `if (!isInCodeDir && !isWorkspace && !isVault)` guard below). We
+    // only universalize the *code* detection: F-3.2a + F-3.2b replace the
+    // ~/code prefix with a structural code-context check on the SESSION's
+    // working dir (anchored at SessionStart). The vault check stays a real
+    // VAULT_DIR path test (not a ~/code assumption) and is left as-is.
+    const codeRoot = findCodeRoot(sessionDir(data));
+    const isInCodeDir = codeRoot !== null;
+    // In code mode, derive the project folder + git cwd from the detected
+    // code root, not a possibly-nested transient cwd.
+    const cwd = codeRoot || eventCwd;
+    const folderName = path.basename(cwd);
     const isWorkspace = folderName.toLowerCase() === 'workspace';
-    const isVault = norm(cwd).startsWith(norm(VAULT_DIR));
+    const isVault = norm(eventCwd).startsWith(norm(VAULT_DIR));
 
     log.info(HOOK, `start cwd=${folderName} session=${sessionId || 'unknown'} mode=${isInCodeDir ? 'code' : isVault ? 'vault' : isWorkspace ? 'workspace' : 'other'}`);
 

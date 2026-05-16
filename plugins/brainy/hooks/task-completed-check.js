@@ -1,23 +1,25 @@
 // Hook: TaskCompleted — fires when a task is marked complete
 // Complement to task-created-check.js
-const { execSync } = require('child_process');
-const fs = require('fs');
 const path = require('path');
-const os = require('os');
-
-const CODE_DIR = path.join(os.homedir(), 'code');
+const { findCodeRoot, findBeadsRoot, sessionDir } = require(path.join(__dirname, 'lib', 'is-code-context.js'));
 
 let input = '';
 process.stdin.setEncoding('utf8');
 process.stdin.on('data', c => { input += c; });
 process.stdin.on('end', () => {
   try {
-    const data = JSON.parse(input);
-    const cwd = data.cwd || process.cwd();
+    let data = {};
+    if (input) {
+      try { data = JSON.parse(input); } catch { data = {}; }
+    }
     const taskName = data.task_name || data.task_subject || '';
 
-    if (!cwd.toLowerCase().startsWith(CODE_DIR.toLowerCase())) process.exit(0);
-    if (!fs.existsSync(path.join(cwd, '.beads'))) process.exit(0);
+    // F-3.2a + F-3.2b: only act in a beads code context, detected
+    // structurally on the SESSION's working dir — not a ~/code prefix.
+    // findBeadsRoot excludes the global ~/.beads (bd init --shared-server).
+    const codeRoot = findCodeRoot(sessionDir(data));
+    if (!codeRoot) process.exit(0);
+    if (!findBeadsRoot(codeRoot)) process.exit(0);
 
     process.stdout.write(`Task completed: ${taskName}`);
   } catch {}

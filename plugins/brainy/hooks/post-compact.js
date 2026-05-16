@@ -11,9 +11,10 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
+const { findCodeRoot, sessionDir } = require(path.join(__dirname, 'lib', 'is-code-context.js'));
+
 const VAULT_DIR = path.join(os.homedir(), 'Obsidian Vault');
 const SESSIONS_DIR = path.join(VAULT_DIR, '2. Areas', 'Sessions');
-const CODE_DIR = path.join(os.homedir(), 'code');
 
 function findProjectName(folderName) {
   const projectsDir = path.join(VAULT_DIR, '1. Projects');
@@ -80,16 +81,22 @@ process.stdin.setEncoding('utf8');
 process.stdin.on('data', chunk => { input += chunk; });
 process.stdin.on('end', () => {
   try {
-    const data = JSON.parse(input);
+    let data = {};
+    if (input) {
+      try { data = JSON.parse(input); } catch { data = {}; }
+    }
     const compactSummary = data.compact_summary;
     const trigger = data.trigger || 'auto';
 
     if (!compactSummary || !compactSummary.trim()) process.exit(0);
 
-    const cwd = data.cwd || process.cwd();
-    const folderName = path.basename(cwd);
-    const isInCodeDir = cwd.toLowerCase().startsWith(CODE_DIR.toLowerCase());
-    if (!isInCodeDir || folderName.toLowerCase() === 'workspace') process.exit(0);
+    // F-3.2a + F-3.2b: gate on the SESSION's code root (anchored at
+    // SessionStart, detected structurally) — not a ~/code prefix on the
+    // transient cwd.
+    const codeRoot = findCodeRoot(sessionDir(data));
+    if (!codeRoot) process.exit(0);
+    const folderName = path.basename(codeRoot);
+    if (folderName.toLowerCase() === 'workspace') process.exit(0);
 
     const projectName = findProjectName(folderName);
     if (!projectName) process.exit(0);

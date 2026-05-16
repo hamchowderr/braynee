@@ -16,16 +16,34 @@ disable-model-invocation: true
 Onboarding wizard that turns an empty machine into a fully wired second brain.
 User types 4 things. Everything else is auto-detected, researched, or confirmed with a Yes/No popup.
 
+## Required Toolchain
+
+Brainy has hard dependencies. Setup verifies all of them up front (Step 1A) and
+guides cross-platform installation for any that are missing — **none are assumed
+to exist**:
+
+| Tool | Why it's required |
+|---|---|
+| `git` | Vault is a git repo; the plugin configures Obsidian Git auto-commit/push |
+| `node` | Runs every brainy hook, monitor, and bundled script |
+| `python3` | Runs the setup, scaffold, and migration scripts |
+| `bd` | Beads issue tracking is mandatory for all code projects |
+| QMD | Search index (ships via the bundled `qmd-wrapper.mjs`) |
+
+If any are missing, setup offers to install them (OS-appropriate commands) or
+stops with instructions — it never silently proceeds and fails later.
+
 ## What It Does
 
-1. Collects 4 inputs: name, company, website, social handle
-2. Scans filesystem for git repos (all folder names, not just ~/code)
-3. Runs web research sub-agent to seed company knowledge
-4. Scaffolds PARA vault + company structure + PRD section + Development section
-5. Installs Obsidian community plugins
-6. Initializes Git, Beads, QMD
-7. Migrates notes from detected source apps (Apple Notes, Notion, OneNote)
-8. Writes CLAUDE.md seeded with user context
+1. Verifies required toolchain (git, node, python3, bd, QMD) — installs/guides if missing
+2. Collects 4 inputs: name, company, website, social handle
+3. Scans filesystem for git repos (all folder names, not just ~/code)
+4. Runs web research sub-agent to seed company knowledge
+5. Scaffolds PARA vault + company structure + PRD section + Development section
+6. Installs Obsidian community plugins
+7. Initializes Git, Beads, QMD
+8. Migrates notes from detected source apps (Apple Notes, Notion, OneNote)
+9. Writes CLAUDE.md seeded with user context
 
 ## Workflow
 

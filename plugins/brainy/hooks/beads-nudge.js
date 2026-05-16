@@ -1,31 +1,29 @@
 // beads-nudge.js
 // Hook: UserPromptSubmit — periodic reminder about the beads workflow.
 // Fires every N prompts (default 7, override with BRAINY_BEADS_NUDGE_EVERY)
-// when cwd is in ~/code/* AND there is no in_progress beads issue.
+// when the session is working on code AND there is no in_progress beads issue.
 // Silent otherwise. Counter resets per session and per nudge.
+//
+// "Working on code" is detected structurally via lib/is-code-context.js
+// (a language/project manifest or source files in an ancestor) — NOT a
+// hardcoded ~/code path, since brainy is a universal plugin.
+//
+// The per-event cwd is transient: skill base dirs and `bash cd` flip it
+// mid-session. The gate keys off the SESSION's working directory via
+// lib/is-code-context.js sessionDir() (anchored at SessionStart, cached per
+// session_id), so a vault-rooted session stays silent for the whole session
+// regardless of where a subprocess cd's.
 
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { execSync } = require('child_process');
 const log = require(path.join(__dirname, 'lib', 'hook-logger.js'));
+const { findCodeRoot, findBeadsRoot, sessionDir } = require(path.join(__dirname, 'lib', 'is-code-context.js'));
 
 const HOOK = 'beads-nudge';
-const CODE_DIR = path.join(os.homedir(), 'code');
 const STATE_FILE = path.join(os.homedir(), '.claude', 'beads-nudge-state.json');
 const THRESHOLD = Math.max(1, parseInt(process.env.BRAINY_BEADS_NUDGE_EVERY || '7', 10));
-
-function findBeadsAncestor(startDir) {
-  let dir = startDir;
-  const root = path.parse(dir).root;
-  while (dir !== root) {
-    if (fs.existsSync(path.join(dir, '.beads'))) return dir;
-    const parent = path.dirname(dir);
-    if (parent === dir) break;
-    dir = parent;
-  }
-  return null;
-}
 
 function readState() {
   try {
@@ -59,21 +57,48 @@ process.stdin.setEncoding('utf8');
 process.stdin.on('data', chunk => { input += chunk; });
 process.stdin.on('end', () => {
   try {
-    const data = input ? JSON.parse(input) : {};
-    const cwd = data.cwd || process.cwd();
+    // F-3.4: a malformed/over-escaped stdin payload must not silently kill the
+    // nudge for the rest of the session. Guard the parse and fall back to {}
+    // so the remaining logic (cwd default, state, threshold) still runs.
+    let data = {};
+    if (input) {
+      try {
+        data = JSON.parse(input);
+      } catch (parseErr) {
+        log.warn(HOOK, `unparseable stdin, using empty payload: ${parseErr.message}`);
+        data = {};
+      }
+    }
+
     const sessionId = data.session_id || null;
 
-    if (!cwd.toLowerCase().startsWith(CODE_DIR.toLowerCase())) process.exit(0);
-
-    const beadsRoot = findBeadsAncestor(cwd);
-    if (!beadsRoot) process.exit(0); // check-beads-init handles missing init
+    // F-3.2a + F-3.2b: gate on the SESSION's working directory, not this
+    // event's transient cwd. sessionDir() anchors the cwd seen at SessionStart
+    // and returns it for every later hook in the session — so a vault-rooted
+    // session stays silent even if a subprocess cd'd into a code project.
+    // findCodeRoot() then detects a code context structurally (no ~/code).
+    const sessDir = sessionDir(data);
+    const codeRoot = findCodeRoot(sessDir);
 
     const state = readState();
 
-    // Reset counter on new session boundary.
+    // Reset counter on a new session boundary.
     if (state.sessionId !== sessionId) {
       state.counter = 0;
       state.sessionId = sessionId;
+    }
+
+    if (!codeRoot) {
+      writeState(state);
+      process.exit(0); // not a code session — stay silent
+    }
+
+    // Resolve the .beads/ root from the session's code root (excludes the
+    // global ~/.beads from `bd init --shared-server`).
+    const beadsRoot = findBeadsRoot(codeRoot);
+    if (!beadsRoot) {
+      writeState(state);
+      process.exit(0); // check-beads-init handles missing init
     }
 
     state.counter += 1;

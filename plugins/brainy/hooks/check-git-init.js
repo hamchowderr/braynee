@@ -1,29 +1,16 @@
 // check-git-init.js
 // Hook: SessionStart — Ensures git is initialized for any code project.
-// Mirror of check-beads-init.js: if .git/ is missing, runs `git init` automatically
-// with a clear explanation. Skipped if cwd is outside ~/code or is the workspace root.
-// Exit 0 always (non-blocking).
+// Mirror of check-beads-init.js: if .git/ is missing, runs `git init`
+// automatically with a clear explanation. Acts only when the SESSION is a
+// code context (detected structurally, not a ~/code prefix) and not the
+// workspace root. Exit 0 always (non-blocking).
 
-const fs = require('fs');
 const path = require('path');
-const os = require('os');
 const { execSync } = require('child_process');
 const log = require(path.join(__dirname, 'lib', 'hook-logger.js'));
+const { findCodeRoot, findGitRoot, sessionDir } = require(path.join(__dirname, 'lib', 'is-code-context.js'));
 
 const HOOK = 'check-git-init';
-const CODE_DIR = path.join(os.homedir(), 'code');
-
-function findGitAncestor(startDir) {
-  let dir = startDir;
-  const root = path.parse(dir).root;
-  while (dir !== root) {
-    if (fs.existsSync(path.join(dir, '.git'))) return dir;
-    const parent = path.dirname(dir);
-    if (parent === dir) break;
-    dir = parent;
-  }
-  return null;
-}
 
 function tryGitInit(cwd) {
   try {
@@ -39,16 +26,25 @@ process.stdin.setEncoding('utf8');
 process.stdin.on('data', c => { input += c; });
 process.stdin.on('end', () => {
   try {
-    const data = input ? JSON.parse(input) : {};
-    const cwd = data.cwd || process.cwd();
-    if (!cwd.toLowerCase().startsWith(CODE_DIR.toLowerCase())) process.exit(0);
-    const projectName = path.basename(cwd);
+    let data = {};
+    if (input) {
+      try { data = JSON.parse(input); } catch { data = {}; }
+    }
+
+    // F-3.2a + F-3.2b: act only in a code context, detected structurally on
+    // the SESSION's working dir — not a ~/code prefix on the transient cwd.
+    const codeRoot = findCodeRoot(sessionDir(data));
+    if (!codeRoot) process.exit(0);
+    const projectName = path.basename(codeRoot);
     if (projectName.toLowerCase() === 'workspace') process.exit(0);
 
-    if (findGitAncestor(cwd)) {
+    // findGitRoot excludes a dotfiles ~/.git so a project without its own
+    // repo still auto-inits instead of looking already-initialized.
+    if (findGitRoot(codeRoot)) {
       log.info(HOOK, `git already initialized — nothing to do`);
       process.exit(0);
     }
+    const cwd = codeRoot;
 
     log.warn(HOOK, `no .git/ found in ${projectName} — running git init`);
     process.stdout.write(
