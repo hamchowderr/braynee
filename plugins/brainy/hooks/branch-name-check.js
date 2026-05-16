@@ -22,7 +22,14 @@ process.stdin.on('end', () => {
     const cwd = data.cwd || process.cwd();
     let branch = null;
     try {
-      branch = execSync('git rev-parse --abbrev-ref HEAD', { cwd, encoding: 'utf8' }).trim();
+      // cp-16u: ignore git's stderr so `fatal: not a git repository` (and any
+      // other git diagnostic) never leaks to this hook's stderr in non-git
+      // dirs. stdin=pipe, stdout=pipe, stderr=ignore.
+      branch = execSync('git rev-parse --abbrev-ref HEAD', {
+        cwd,
+        encoding: 'utf8',
+        stdio: ['pipe', 'pipe', 'ignore'],
+      }).trim();
     } catch { process.exit(0); }
 
     // Main/master is handled by check-no-main-push; this hook only cares about other oddly-named branches.
