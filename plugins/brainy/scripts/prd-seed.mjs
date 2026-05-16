@@ -24,6 +24,10 @@ import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
 const { getProjectsDir, isProjectsDirConfigured } = require('./lib/projects-root.js');
+// cp-8ru: prd-seed creates issues via internal execSync, so the PostToolUse
+// beads-status-sync hook never sees them and seeded backlogs got zero
+// TaskNotes. Mirror them here using the SAME shared implementation.
+const TN = require('../hooks/lib/tasknotes-mirror.js');
 
 const VAULT = path.join(os.homedir(), 'Obsidian Vault');
 const PRD_DIR = path.join(VAULT, '2. Areas', 'Product Manager', 'PRDs');
@@ -141,6 +145,36 @@ function persistedTitles(prdLabel, repoDir) {
   return titles;
 }
 
+// cp-8ru: mirror every persisted PRD issue to TaskNotes via the shared
+// tasknotes-mirror lib (same impl the PostToolUse hook uses, so a seeded
+// backlog now lands in TaskNotes just like hand-typed `bd create`s).
+// Best-effort: never fail the seed over a mirror hiccup. Idempotent —
+// ensureMtnTask dedupes by #<issueId>, so re-runs create no duplicates.
+function mirrorSeededToTasknotes(prdLabel, repoDir) {
+  let parsed;
+  try {
+    const out = execSync(
+      `bd list -l ${JSON.stringify(prdLabel)} --all -n 0 --json`,
+      { cwd: repoDir, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] },
+    );
+    parsed = JSON.parse(out.trim() || '[]');
+  } catch {
+    console.error(`(TaskNotes mirror skipped: could not re-query target beads.)`);
+    return { mirrored: 0, total: 0 };
+  }
+  const issues = (Array.isArray(parsed) ? parsed : []).filter(i => i && i.id && typeof i.title === 'string');
+  const projectSlug = TN.projectSlugFrom(path.basename(repoDir));
+  let mirrored = 0;
+  for (const issue of issues) {
+    try {
+      const existed = TN.findTasknoteForIssueId(issue.id);
+      TN.ensureMtnTask(issue.id, issue.title, TN.normalizePriority(issue.priority), projectSlug);
+      if (!existed) mirrored++;
+    } catch { /* best-effort per issue */ }
+  }
+  return { mirrored, total: issues.length };
+}
+
 const prdPath = resolvePrd(target);
 if (!prdPath) { console.error(`PRD not found: ${target}`); process.exit(1); }
 
@@ -228,6 +262,10 @@ if (after === null) {
   process.exit(1);
 }
 const verifiedCount = items.filter(it => after.has(it.title.trim())).length;
+
+// cp-8ru: mirror persisted issues to TaskNotes (full or partial seed alike).
+const tn = mirrorSeededToTasknotes(prdLabel, repoDir);
+console.log(`TaskNotes: ${tn.mirrored} new mirrored, ${tn.total} total tracked.`);
 
 if (verifiedCount === items.length) {
   const updated = updateFrontmatter(content, {
