@@ -1,7 +1,14 @@
 import { execSync } from 'child_process';
 import { existsSync, readdirSync } from 'fs';
-import { homedir } from 'os';
 import { join } from 'path';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
+// Shared projects-root resolver: plugins/brainy/scripts/lib/. This file is at
+// plugins/brainy/skills/settings-viewer/scripts/data/ → up 4 to plugin root.
+const { getProjectsDir } = require(
+  join(import.meta.dirname, '..', '..', '..', '..', 'scripts', 'lib', 'projects-root.js')
+);
 
 function parseBdLine(line) {
   const statusChar = line[0];
@@ -22,7 +29,7 @@ function parseBdLine(line) {
 }
 
 export async function loadBeadsStats() {
-  const codeDir = join(homedir(), 'code');
+  const codeDir = getProjectsDir();
   let workspaces = 0, totalOpen = 0, assignedToMe = 0;
   const projectsData = [];
 

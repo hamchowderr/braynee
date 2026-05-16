@@ -6,7 +6,9 @@
 //   - type: prd
 //   - name: non-empty string
 //   - project: "[[1. Projects/<X>]]" — must resolve to a real file
-//   - folder: <slug> — must exist as ~/code/<slug>/ (warn-only if missing)
+//   - folder: <slug> — the project repo dir name inside the configured
+//                       projects root (BRAINY_PROJECTS_DIR, default ~/code);
+//                       warn-only if missing
 //   - status: draft | active | shipped | archived
 //   - build_status: not-started | planning | drafting | in-progress | blocked | shipped
 //   - seeded: boolean (NEW — added by this schema; reported as missing)
@@ -17,11 +19,16 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
+const { getProjectsDir, isProjectsDirConfigured } = require('./lib/projects-root.js');
 
 const VAULT = process.argv.includes('--vault')
   ? process.argv[process.argv.indexOf('--vault') + 1]
   : path.join(os.homedir(), 'Obsidian Vault');
-const CODE_DIR = path.join(os.homedir(), 'code');
+// Projects root: BRAINY_PROJECTS_DIR > BEADS_CODE_DIR > ~/code (back-compat).
+const CODE_DIR = getProjectsDir();
 const PRD_DIR = path.join(VAULT, '2. Areas', 'Product Manager', 'PRDs');
 const PROJECTS_DIR = path.join(VAULT, '1. Projects');
 const ARCHIVED_PROJECTS_DIR = path.join(VAULT, '4. Archives', 'Projects');
@@ -99,7 +106,10 @@ function audit(file) {
   else if (!projectFileExists(fm.project)) issues.push(`project backlink does not resolve: ${fm.project}`);
   if (!fm.folder) issues.push('folder missing');
   else if (!fs.existsSync(path.join(CODE_DIR, fm.folder))) {
-    warnings.push(`folder "${fm.folder}" not found at ~/code/${fm.folder} (PRD may predate the build)`);
+    const hint = isProjectsDirConfigured()
+      ? ''
+      : ' (set BRAINY_PROJECTS_DIR if your repos are not under ~/code)';
+    warnings.push(`folder "${fm.folder}" not found at ${path.join(CODE_DIR, fm.folder)} (PRD may predate the build)${hint}`);
   }
   if (!VALID_STATUS.has(fm.status)) issues.push(`status invalid (got "${fm.status ?? 'missing'}", expected one of ${[...VALID_STATUS].join('|')})`);
   if (fm.build_status && !VALID_BUILD.has(fm.build_status)) issues.push(`build_status invalid (got "${fm.build_status}")`);

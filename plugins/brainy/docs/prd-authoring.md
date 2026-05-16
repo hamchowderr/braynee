@@ -13,7 +13,7 @@ This doc covers the *why* and the patterns.
 2. **Draft PRD** at `2. Areas/Product Manager/PRDs/<Name>.md` — `node prd-new.mjs <Name>` scaffolds it
 3. **Audit** — `node prd-audit.mjs` confirms schema is clean
 4. **Seed** — `node prd-seed.mjs <Name>` creates one bd issue per acceptance criterion
-5. **Build** — work on the bd backlog in `~/code/<slug>/`
+5. **Build** — work on the bd backlog in the project repo (`<projects-root>/<slug>/`)
 6. **Evolve** — once MVP ships, ongoing planning moves to `2. Areas/Product Manager/Roadmaps/`. The PRD becomes a historical snapshot.
 
 ## The MVP Definition gate
@@ -28,9 +28,19 @@ If you can't fill these in, you don't know enough yet to define a product. Stop 
 
 ## The folder field is the join key
 
-The PRD's `folder:` value MUST equal the directory name under `~/code/`.
+The PRD's `folder:` value MUST equal the **project repo directory name**.
 Brainy joins vault PRDs to code repos on this field — get it wrong and
 nothing wires up.
+
+The repo is resolved inside the configured **projects root**:
+
+1. `BRAINY_PROJECTS_DIR` — set this if your repos are not under `~/code`
+2. `BEADS_CODE_DIR` — legacy override, still honored
+3. `~/code` — default only when neither is set (back-compat)
+
+`folder:` is a directory **name**, never a path, and never assumed to live
+under `~/code`. Set `BRAINY_PROJECTS_DIR` once and `prd-audit`, `prd-seed`,
+and the beads dashboard all resolve repos from there.
 
 ## Acceptance Criteria — write them right
 

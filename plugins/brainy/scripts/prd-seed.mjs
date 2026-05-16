@@ -11,10 +11,15 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { execSync } from 'node:child_process';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
+const { getProjectsDir, isProjectsDirConfigured } = require('./lib/projects-root.js');
 
 const VAULT = path.join(os.homedir(), 'Obsidian Vault');
 const PRD_DIR = path.join(VAULT, '2. Areas', 'Product Manager', 'PRDs');
-const CODE_DIR = path.join(os.homedir(), 'code');
+// Projects root: BRAINY_PROJECTS_DIR > BEADS_CODE_DIR > ~/code (back-compat).
+const CODE_DIR = getProjectsDir();
 
 const args = process.argv.slice(2);
 if (!args[0]) {
@@ -112,6 +117,15 @@ if (fm.seeded === true && !dryRun) {
 if (!fm.folder) { console.error(`PRD has no folder field — cannot determine target repo`); process.exit(1); }
 
 const repoDir = path.join(CODE_DIR, fm.folder);
+if (!fs.existsSync(repoDir)) {
+  console.error(`Target repo not found: ${repoDir}`);
+  if (!isProjectsDirConfigured()) {
+    console.error(`If your repos are not under ~/code, set BRAINY_PROJECTS_DIR to your projects root (e.g. export BRAINY_PROJECTS_DIR=/path/to/repos).`);
+  } else {
+    console.error(`(projects root resolved from BRAINY_PROJECTS_DIR/BEADS_CODE_DIR: ${CODE_DIR})`);
+  }
+  process.exit(1);
+}
 if (!fs.existsSync(path.join(repoDir, '.beads'))) {
   console.error(`Target repo has no .beads dir: ${repoDir}`);
   console.error(`Run \`bd init --shared-server --external -p "${fm.folder}"\` there first, or open a session in that folder so brainy auto-inits beads.`);

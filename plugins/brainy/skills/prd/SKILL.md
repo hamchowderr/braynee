@@ -40,7 +40,7 @@ node {pluginRoot}/scripts/prd-seed.mjs "<Name>" [--dry-run]
 type: prd
 name: <Name> PRD
 project: "[[1. Projects/<Name>]]"      # backlink to project file
-folder: <slug>                         # MUST match ~/code/<slug>/ — the join key
+folder: <slug>                         # project repo dir name — the join key (see note below)
 version: "1.0"
 created: YYYY-MM-DD
 updated: YYYY-MM-DD
@@ -122,4 +122,19 @@ incomplete or the criterion is out of scope.
 2. **Draft PRD** → `node prd-new.mjs <Name>` scaffolds the file → fill in sections
 3. **Audit** → `node prd-audit.mjs` confirms schema is clean
 4. **Seed** → `node prd-seed.mjs <Name>` creates bd issues, flips `seeded: true`
-5. **Build** → in `~/code/<slug>/`, `bd ready` shows the seeded backlog
+5. **Build** → in the project repo (`<projects-root>/<slug>/`), `bd ready` shows the seeded backlog
+
+## The `folder:` join key
+
+`folder:` is the **name of the project repo directory**, not a path. It joins
+the PRD to its code repo. The repo is looked up inside the configured
+**projects root**, resolved in this order:
+
+1. `BRAINY_PROJECTS_DIR` — set this if your repos are not under `~/code`
+2. `BEADS_CODE_DIR` — legacy override, still honored
+3. `~/code` — default only when neither is set (back-compat)
+
+So a PRD with `folder: my-app` joins to `$BRAINY_PROJECTS_DIR/my-app` (or
+`~/code/my-app` by default). Brainy never assumes `~/code` exists — set
+`BRAINY_PROJECTS_DIR` once and `prd-audit`, `prd-seed`, and the beads
+dashboard all resolve repos from there.
