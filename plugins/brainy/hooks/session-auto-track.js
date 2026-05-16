@@ -225,6 +225,46 @@ function walkMdFiles(dir) {
   return results;
 }
 
+// Global reconciliation: close any `status: active` session note whose last
+// activity (file mtime) is older than STALE_HOURS, regardless of project.
+// Claude Code does not fire SessionEnd on crashes / killed windows, and the
+// per-project GC below only ever inspected the CURRENT project's session —
+// so abandoned sessions in projects you don't revisit stayed `active`
+// forever (cp-re1). mtime is the right signal: a long but live session is
+// kept fresh by the Stop-hook note updates, so it is never swept; only a
+// session with no writes for STALE_HOURS is treated as abandoned.
+function sweepStaleActiveSessions(staleHours) {
+  const result = { closed: 0, names: [] };
+  if (!fs.existsSync(SESSIONS_DIR)) return result;
+  const cutoffMs = Date.now() - staleHours * 3600000;
+  for (const filepath of walkMdFiles(SESSIONS_DIR)) {
+    try {
+      const st = fs.statSync(filepath);
+      if (st.mtimeMs >= cutoffMs) continue; // recent activity — leave it
+      const content = fs.readFileSync(filepath, 'utf8');
+      // Only touch session notes that are still flagged active.
+      if (!/^status:\s*active\s*$/m.test(content)) continue;
+      if (!/^started:\s*/m.test(content)) continue; // sanity: it's a session note
+      const endedIso = new Date(st.mtimeMs).toISOString();
+      let closed = content.replace(/\r\n/g, '\n');
+      closed = closed.replace(/^status:\s*active\s*$/m, 'status: done');
+      closed = closed.replace(/^ended:\s*null\s*$/m, `ended: ${endedIso}`);
+      if (!/^ended:/m.test(closed)) {
+        closed = closed.replace(/^(started:\s*[^\n]+)/m, `$1\nended: ${endedIso}`);
+      }
+      fs.writeFileSync(filepath, closed, 'utf-8');
+      result.closed++;
+      result.names.push(path.basename(filepath, '.md'));
+    } catch (e) {
+      log.warn(HOOK, `stale-sweep skip ${path.basename(filepath)}: ${e.message}`);
+    }
+  }
+  if (result.closed > 0) {
+    log.info(HOOK, `reconciled ${result.closed} abandoned session(s): ${result.names.join(', ')}`);
+  }
+  return result;
+}
+
 // Find active session note for a project, returns { filename, filepath, content, relPath } or null
 function findActiveSession(projectName) {
   if (!fs.existsSync(SESSIONS_DIR)) return null;
@@ -488,6 +528,17 @@ process.stdin.on('end', () => {
     let session = null;
 
     const output = [];
+
+    // ─── Global stale-session reconciliation (cp-re1) ────────────────
+    // Runs on every SessionStart, every mode — closes abandoned `active`
+    // session notes vault-wide, not just the current project's.
+    try {
+      const swept = sweepStaleActiveSessions(12);
+      if (swept.closed > 0) {
+        output.push(`Reconciled ${swept.closed} abandoned session(s) (no activity >12h): ${swept.names.join(', ')}`);
+        output.push('');
+      }
+    } catch (e) { log.warn(HOOK, `stale sweep failed: ${e.message}`); }
 
     // ─── Orphaned timer check ────────────────────────────────────────
     const activeTimers = run(`node "${TASKNOTES}" timer active --json`);
