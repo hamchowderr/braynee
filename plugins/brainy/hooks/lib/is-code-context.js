@@ -8,11 +8,24 @@
 // `.beads` ancestor corroborates the signal but is NEVER required (the user
 // may not use git at all).
 //
-// Exports:
-//   findCodeRoot(startDir)   → absolute path of the detected project root, or null
-//   isCodeContext(startDir)  → boolean (findCodeRoot !== null)
+// The per-event cwd a hook receives is TRANSIENT: a skill base dir or a
+// `bash cd` inside the session flips it. Keying any gate off that cwd makes
+// e.g. the beads Stop/SessionStart hooks fire inside a pure *vault* session
+// just because one subprocess cd'd into ~/code. The stable signal is the
+// SESSION's working directory — the cwd at SessionStart, before anything
+// moved. Claude Code hook stdin only exposes { session_id, cwd } (no
+// workspace/project_dir field), so we anchor the first cwd seen for a
+// session_id and reuse it for every later hook in that session.
 //
-// Pure, synchronous, no external deps. Safe to require from any hook.
+// Exports:
+//   findCodeRoot(startDir)         → absolute path of detected project root, or null
+//   isCodeContext(startDir)        → boolean (findCodeRoot !== null)
+//   sessionDir({session_id, cwd})  → the stable session working dir (anchored
+//                                     + cached per session_id)
+//   isSessionCodeContext(stdin)    → boolean: is the SESSION (not this event)
+//                                     working on code?
+//
+// Pure, synchronous, no external deps beyond fs. Safe to require from any hook.
 
 'use strict';
 
@@ -164,4 +177,82 @@ function isCodeContext(startDir) {
   return findCodeRoot(startDir) !== null;
 }
 
-module.exports = { findCodeRoot, isCodeContext };
+// ── Session-anchored working directory ───────────────────────────────────────
+
+// Tiny per-session cache: { "<session_id>": "<first-seen cwd>" }. The first
+// hook of a session (SessionStart) writes the anchor; every later hook reads
+// it. Bounded so it can't grow without limit across many sessions.
+const ANCHOR_FILE = (() => {
+  try {
+    return path.join(os.homedir(), '.claude', 'brainy-session-anchor.json');
+  } catch {
+    return null;
+  }
+})();
+const ANCHOR_MAX = 200;
+
+function readAnchors() {
+  if (!ANCHOR_FILE) return {};
+  try {
+    const j = JSON.parse(fs.readFileSync(ANCHOR_FILE, 'utf8'));
+    return j && typeof j === 'object' ? j : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeAnchors(map) {
+  if (!ANCHOR_FILE) return;
+  try {
+    // Cap size: drop oldest insertion-order keys if over the limit.
+    const keys = Object.keys(map);
+    if (keys.length > ANCHOR_MAX) {
+      for (const k of keys.slice(0, keys.length - ANCHOR_MAX)) delete map[k];
+    }
+    fs.mkdirSync(path.dirname(ANCHOR_FILE), { recursive: true });
+    fs.writeFileSync(ANCHOR_FILE, JSON.stringify(map));
+  } catch {}
+}
+
+/**
+ * Resolve the STABLE session working directory from hook stdin.
+ *
+ * The first time a session_id is seen, the supplied cwd is recorded as that
+ * session's anchor (this is SessionStart, where cwd is the true session home).
+ * Every later hook in the same session gets that same anchor back, regardless
+ * of where the per-event cwd has since wandered.
+ *
+ * Falls back to the event cwd (or process.cwd()) when no session_id is present
+ * (e.g. self-test / manual invocation).
+ */
+function sessionDir(stdin) {
+  const data = stdin && typeof stdin === 'object' ? stdin : {};
+  const eventCwd = data.cwd || process.cwd();
+  const sid = data.session_id;
+  if (!sid) return eventCwd;
+
+  const anchors = readAnchors();
+  const existing = anchors[sid];
+  if (existing && typeof existing === 'string') {
+    return existing;
+  }
+  // First hook for this session — anchor on the current (session-home) cwd.
+  anchors[sid] = eventCwd;
+  writeAnchors(anchors);
+  return eventCwd;
+}
+
+/**
+ * Is the SESSION (not this individual event) a code context?
+ * Resolves the stable session dir, then applies structural detection.
+ */
+function isSessionCodeContext(stdin) {
+  return findCodeRoot(sessionDir(stdin)) !== null;
+}
+
+module.exports = {
+  findCodeRoot,
+  isCodeContext,
+  sessionDir,
+  isSessionCodeContext,
+};

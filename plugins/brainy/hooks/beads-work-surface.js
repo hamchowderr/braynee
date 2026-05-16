@@ -1,6 +1,7 @@
 // beads-work-surface.js
-// Hook: SessionStart — When in a `~/code/*` project with `.beads/` initialized
-// and no in_progress issue, surface `bd ready` results and remind Claude that
+// Hook: SessionStart — When the SESSION is working on a code project (detected
+// structurally, not by a ~/code prefix) with `.beads/` initialized and no
+// in_progress issue, surface `bd ready` results and remind Claude that
 // the only valid sources of work are: (a) a claimed in_progress issue, or
 // (b) a new issue the user explicitly asks for.
 //
@@ -10,12 +11,11 @@
 
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
 const { execSync } = require('child_process');
 const log = require(path.join(__dirname, 'lib', 'hook-logger.js'));
+const { findCodeRoot, sessionDir } = require(path.join(__dirname, 'lib', 'is-code-context.js'));
 
 const HOOK = 'beads-work-surface';
-const CODE_DIR = path.join(os.homedir(), 'code');
 
 function findBeadsAncestor(startDir) {
   let dir = startDir;
@@ -42,14 +42,21 @@ process.stdin.setEncoding('utf8');
 process.stdin.on('data', chunk => { input += chunk; });
 process.stdin.on('end', () => {
   try {
-    const data = input ? JSON.parse(input) : {};
-    const cwd = data.cwd || process.cwd();
+    let data = {};
+    if (input) {
+      try { data = JSON.parse(input); } catch { data = {}; }
+    }
 
-    if (!cwd.toLowerCase().startsWith(CODE_DIR.toLowerCase())) process.exit(0);
-    const projectName = path.basename(cwd);
+    // F-3.2a + F-3.2b: gate on the SESSION's working dir (anchored at
+    // SessionStart), detected structurally — not this event's transient cwd
+    // and not a hardcoded ~/code. Keeps this SessionStart hook silent for a
+    // vault-rooted session regardless of subprocess cd.
+    const codeRoot = findCodeRoot(sessionDir(data));
+    if (!codeRoot) process.exit(0);
+    const projectName = path.basename(codeRoot);
     if (projectName.toLowerCase() === 'workspace') process.exit(0);
 
-    const beadsRoot = findBeadsAncestor(cwd);
+    const beadsRoot = findBeadsAncestor(codeRoot);
     if (!beadsRoot) process.exit(0); // check-beads-init handles this case
 
     log.info(HOOK, `start cwd=${projectName}`);

@@ -1,13 +1,26 @@
 // beads-stop-check.js
 // Hook: Stop — surfaces in_progress and stale beads issues before session ends.
 // Never hard-blocks. Outputs text that Claude sees and can act on.
+// Gates on the SESSION's working dir (anchored at SessionStart via
+// lib/is-code-context.js), detected structurally — so a pure vault session
+// never dumps global beads state just because a subprocess cd'd into ~/code.
 
 const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
+const { findCodeRoot, sessionDir } = require(path.join(__dirname, 'lib', 'is-code-context.js'));
 
-const CODE_DIR = path.join(os.homedir(), 'code');
+function findBeadsAncestor(startDir) {
+  let dir = startDir;
+  const root = path.parse(dir).root;
+  while (dir !== root) {
+    if (fs.existsSync(path.join(dir, '.beads'))) return dir;
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return null;
+}
 
 function run(cmd, opts = {}) {
   try {
@@ -20,11 +33,22 @@ process.stdin.setEncoding('utf8');
 process.stdin.on('data', chunk => { input += chunk; });
 process.stdin.on('end', () => {
   try {
-    const data = JSON.parse(input || '{}');
-    const cwd = data.cwd || process.cwd();
+    // Guard the parse (F-3.4 class): a malformed payload must not be the only
+    // thing standing between the user and their in-progress/stale reminders.
+    let data = {};
+    if (input) {
+      try { data = JSON.parse(input); } catch { data = {}; }
+    }
 
-    if (!cwd.toLowerCase().startsWith(CODE_DIR.toLowerCase())) process.exit(0);
-    if (!fs.existsSync(path.join(cwd, '.beads'))) process.exit(0);
+    // F-3.2a + F-3.2b: gate on the SESSION's working dir (anchored at
+    // SessionStart), detected structurally — not this event's transient cwd
+    // and not a hardcoded ~/code. A vault-rooted session never dumps global
+    // beads state just because a subprocess cd'd into a code project.
+    const codeRoot = findCodeRoot(sessionDir(data));
+    if (!codeRoot) process.exit(0);
+    const beadsRoot = findBeadsAncestor(codeRoot);
+    if (!beadsRoot) process.exit(0);
+    const cwd = beadsRoot;
 
     const sections = [];
 

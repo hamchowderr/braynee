@@ -9,16 +9,17 @@
 // hardcoded ~/code path, since brainy is a universal plugin.
 //
 // The per-event cwd is transient: skill base dirs and `bash cd` flip it
-// mid-session. To stay stable we resolve the session's code root once and
-// cache it in the state file; later prompts reuse the established root even
-// if the current cwd has wandered into a skill dir or unrelated subtree.
+// mid-session. The gate keys off the SESSION's working directory via
+// lib/is-code-context.js sessionDir() (anchored at SessionStart, cached per
+// session_id), so a vault-rooted session stays silent for the whole session
+// regardless of where a subprocess cd's.
 
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { execSync } = require('child_process');
 const log = require(path.join(__dirname, 'lib', 'hook-logger.js'));
-const { findCodeRoot } = require(path.join(__dirname, 'lib', 'is-code-context.js'));
+const { findCodeRoot, sessionDir } = require(path.join(__dirname, 'lib', 'is-code-context.js'));
 
 const HOOK = 'beads-nudge';
 const STATE_FILE = path.join(os.homedir(), '.claude', 'beads-nudge-state.json');
@@ -40,7 +41,7 @@ function readState() {
   try {
     return JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
   } catch {
-    return { counter: 0, sessionId: null, codeRoot: null };
+    return { counter: 0, sessionId: null };
   }
 }
 
@@ -81,30 +82,22 @@ process.stdin.on('end', () => {
       }
     }
 
-    const cwd = data.cwd || process.cwd();
     const sessionId = data.session_id || null;
+
+    // F-3.2a + F-3.2b: gate on the SESSION's working directory, not this
+    // event's transient cwd. sessionDir() anchors the cwd seen at SessionStart
+    // and returns it for every later hook in the session — so a vault-rooted
+    // session stays silent even if a subprocess cd'd into a code project.
+    // findCodeRoot() then detects a code context structurally (no ~/code).
+    const sessDir = sessionDir(data);
+    const codeRoot = findCodeRoot(sessDir);
 
     const state = readState();
 
-    // Reset counter + cached code root on a new session boundary.
+    // Reset counter on a new session boundary.
     if (state.sessionId !== sessionId) {
       state.counter = 0;
-      state.codeRoot = null;
       state.sessionId = sessionId;
-    }
-
-    // F-3.2a + F-3.2b: detect a code context structurally instead of a
-    // hardcoded ~/code prefix, and prefer the session's stable code root over
-    // the transient per-event cwd. The cwd flips when a skill sets its base
-    // dir or `bash cd` moves around; the established root does not.
-    let codeRoot = findCodeRoot(cwd);
-    if (codeRoot) {
-      // Found a code root from the current cwd — record it as the session's.
-      state.codeRoot = codeRoot;
-    } else if (state.codeRoot && fs.existsSync(state.codeRoot)) {
-      // cwd wandered out of any project (skill base dir, temp dir, …) but the
-      // session already established a code root earlier — keep using it.
-      codeRoot = state.codeRoot;
     }
 
     if (!codeRoot) {
@@ -112,8 +105,8 @@ process.stdin.on('end', () => {
       process.exit(0); // not a code session — stay silent
     }
 
-    // Prefer a .beads/ ancestor of the code root; fall back to the code root.
-    const beadsRoot = findBeadsAncestor(codeRoot) || findBeadsAncestor(cwd);
+    // Resolve the .beads/ root from the session's code root.
+    const beadsRoot = findBeadsAncestor(codeRoot);
     if (!beadsRoot) {
       writeState(state);
       process.exit(0); // check-beads-init handles missing init

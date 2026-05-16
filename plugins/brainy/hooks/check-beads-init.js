@@ -13,7 +13,7 @@ const path = require('path');
 const os = require('os');
 const { execSync } = require('child_process');
 const log = require(path.join(__dirname, 'lib', 'hook-logger.js'));
-const { findCodeRoot } = require(path.join(__dirname, 'lib', 'is-code-context.js'));
+const { findCodeRoot, sessionDir } = require(path.join(__dirname, 'lib', 'is-code-context.js'));
 
 const HOOK = 'check-beads-init';
 const PLUGINS_CACHE = path.join(os.homedir(), '.claude', 'plugins', 'cache');
@@ -88,12 +88,13 @@ process.stdin.on('end', () => {
         data = {};
       }
     }
-    const cwd = data.cwd || process.cwd();
-
-    // Detect a code context structurally instead of a hardcoded ~/code prefix
-    // (brainy is universal — most users have no ~/code). The detected root is
-    // also the correct project name source: basename(cwd) would be a subdir.
-    const codeRoot = findCodeRoot(cwd);
+    // F-3.2a + F-3.2b: gate on the SESSION's working dir (anchored at
+    // SessionStart), detected structurally — not this event's transient cwd
+    // and not a hardcoded ~/code prefix (brainy is universal — most users have
+    // no ~/code). A vault-rooted session must not auto-init beads or nag about
+    // the bd CLI just because a subprocess cd'd into a code project. The
+    // detected root is also the correct project-name source.
+    const codeRoot = findCodeRoot(sessionDir(data));
     if (!codeRoot) {
       process.exit(0);
     }
