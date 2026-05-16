@@ -8,7 +8,7 @@
 //   - project: "[[1. Projects/<X>]]" — must resolve to a real file
 //   - folder: <slug> — must exist as ~/code/<slug>/ (warn-only if missing)
 //   - status: draft | active | shipped | archived
-//   - build_status: not-started | in-progress | blocked | shipped
+//   - build_status: not-started | planning | drafting | in-progress | blocked | shipped
 //   - seeded: boolean (NEW — added by this schema; reported as missing)
 //   - acceptance_criteria_count: count of `- [ ] **[Pn] ...**` lines in body
 //
@@ -28,7 +28,7 @@ const ARCHIVED_PROJECTS_DIR = path.join(VAULT, '4. Archives', 'Projects');
 const JSON_MODE = process.argv.includes('--json');
 
 const VALID_STATUS = new Set(['draft', 'active', 'shipped', 'archived']);
-const VALID_BUILD = new Set(['not-started', 'planning', 'in-progress', 'blocked', 'shipped']);
+const VALID_BUILD = new Set(['not-started', 'planning', 'drafting', 'in-progress', 'blocked', 'shipped']);
 
 function parseFrontmatter(content) {
   const normalized = content.replace(/^﻿/, '').replace(/\r\n/g, '\n');
