@@ -241,9 +241,12 @@ for (const s of scripts) {
   }
 }
 
-// ── 7. Unit tests (scripts/lib/*.test.js) ────────────────────────────────────
+// ── 7. Unit tests (lib/*.test.js under hooks/ and scripts/) ──────────────────
 log('\n=== 7. Unit tests ===');
-const testFiles = listFiles(path.join(PLUGIN_ROOT, 'scripts', 'lib'), ['.test.js', '.test.mjs']);
+const testFiles = [
+  ...listFiles(path.join(PLUGIN_ROOT, 'hooks', 'lib'), ['.test.js', '.test.mjs']),
+  ...listFiles(path.join(PLUGIN_ROOT, 'scripts', 'lib'), ['.test.js', '.test.mjs']),
+];
 if (testFiles.length === 0) {
   log('  (no unit tests found)');
 }
