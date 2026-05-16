@@ -21,6 +21,8 @@
 //   findCodeRoot(startDir)         → absolute path of detected project root, or null
 //   findBeadsRoot(startDir)        → nearest ancestor with .beads/, excluding
 //                                     $HOME/fs-root, or null
+//   findGitRoot(startDir)          → nearest ancestor with .git, excluding
+//                                     $HOME/fs-root, or null
 //   isCodeContext(startDir)        → boolean (findCodeRoot !== null)
 //   sessionDir({session_id, cwd})  → the stable session working dir (anchored
 //                                     + cached per session_id)
@@ -180,13 +182,14 @@ function isCodeContext(startDir) {
 }
 
 /**
- * Find the nearest ancestor (inclusive) that contains a `.beads/` directory,
- * EXCLUDING $HOME and the filesystem root. `bd init --shared-server` drops a
- * global `.beads/` in $HOME; without this exclusion every per-project beads
- * check would walk up, hit ~/.beads, and wrongly conclude the project itself
- * is beads-initialized. Returns the dir, or null if none below $HOME.
+ * Find the nearest ancestor (inclusive) that contains `marker`, EXCLUDING
+ * $HOME and the filesystem root. Global markers live in $HOME — e.g.
+ * `bd init --shared-server` drops a global `.beads/`, and a user may keep a
+ * dotfiles `.git` in $HOME. Without excluding $HOME, every per-project check
+ * would walk up, hit the global one, and wrongly conclude the project itself
+ * is initialized. Returns the dir, or null if none below $HOME.
  */
-function findBeadsRoot(startDir) {
+function findMarkerRoot(startDir, marker) {
   if (!startDir) return null;
   let dir;
   try {
@@ -198,7 +201,7 @@ function findBeadsRoot(startDir) {
   while (dir && dir !== root) {
     if (!isExcludedRoot(dir)) {
       try {
-        if (fs.existsSync(path.join(dir, '.beads'))) return dir;
+        if (fs.existsSync(path.join(dir, marker))) return dir;
       } catch {}
     }
     const parent = path.dirname(dir);
@@ -206,6 +209,16 @@ function findBeadsRoot(startDir) {
     dir = parent;
   }
   return null;
+}
+
+// Nearest ancestor with `.beads/`, excluding the global ~/.beads.
+function findBeadsRoot(startDir) {
+  return findMarkerRoot(startDir, '.beads');
+}
+
+// Nearest ancestor with `.git`, excluding a dotfiles ~/.git.
+function findGitRoot(startDir) {
+  return findMarkerRoot(startDir, '.git');
 }
 
 // ── Session-anchored working directory ───────────────────────────────────────
@@ -284,6 +297,7 @@ function isSessionCodeContext(stdin) {
 module.exports = {
   findCodeRoot,
   findBeadsRoot,
+  findGitRoot,
   isCodeContext,
   sessionDir,
   isSessionCodeContext,
