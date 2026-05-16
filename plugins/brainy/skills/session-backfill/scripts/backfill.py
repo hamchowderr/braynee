@@ -3,9 +3,16 @@
 Backfill structured session summaries from Claude Code .jsonl transcripts
 into the vault's per-project Sessions folder.
 
-Reads each CC session JSONL, filters out tool-call noise, sends the
-conversation skeleton to Claude API, and writes a structured summary
-matching the brainy session-note format.
+Reads each CC session JSONL, filters out tool-call noise, distills the
+conversation into a structured summary matching the brainy session-note
+format, and writes it to `2. Areas/Sessions/<Project>/<note>.md`.
+
+Distillation uses `claude -p` by default — the local Claude Code OAuth
+subscription, NO API credits and NO API key required. `--use-api` opts
+into the raw Anthropic API (Console billing) only if the user asks for it.
+
+Universal: no hardcoded user, OS, or code-directory paths. Works wherever
+the vault and `~/.claude/projects/` live, on Windows / macOS / Linux.
 
 Idempotent: skips sessions whose target note already exists.
 """
@@ -15,8 +22,8 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import re
 import sys
+import tempfile
 from datetime import datetime
 from pathlib import Path
 
@@ -31,18 +38,52 @@ except ImportError:
 
 
 # ── Paths ─────────────────────────────────────────────────────────────────
-VAULT = Path.home() / "Obsidian Vault"
-CC_PROJECTS = Path.home() / ".claude" / "projects"
-SESSIONS_DIR = VAULT / "2. Areas" / "Sessions"
+HOME = Path.home()
+CC_PROJECTS = HOME / ".claude" / "projects"
 SCRIPT_DIR = Path(__file__).resolve().parent
 MAP_FILE = SCRIPT_DIR / "project_map.json"
 
-CC_PREFIX = "C--Users-HamCh-code-"
+
+def find_vault(explicit: str | None = None) -> Path | None:
+    """Resolve the Obsidian vault universally.
+
+    Priority: --vault arg → $BRAINY_VAULT → $OBSIDIAN_VAULT → common
+    locations probed for a `.obsidian` directory. Mirrors the resolution
+    used by brainy's sessions / setup skills so behaviour is consistent
+    for every user regardless of where their vault lives.
+    """
+    if explicit:
+        p = Path(explicit).expanduser()
+        return p if p.is_dir() else None
+
+    for env_var in ("BRAINY_VAULT", "OBSIDIAN_VAULT"):
+        val = os.environ.get(env_var)
+        if val:
+            p = Path(val).expanduser()
+            if p.is_dir():
+                return p
+
+    candidates = [
+        HOME / "Obsidian Vault",
+        HOME / "vault",
+        HOME / "ObsidianVault",
+        HOME / "Documents" / "Obsidian Vault",
+        HOME / "Documents" / "vault",
+        HOME / "OneDrive" / "Obsidian Vault",
+        HOME / "iCloud Drive" / "Obsidian Vault",
+    ]
+    for candidate in candidates:
+        if (candidate / ".obsidian").is_dir():
+            return candidate
+    # Last resort: the conventional default even without .obsidian, so a
+    # brand-new vault still works.
+    return HOME / "Obsidian Vault"
+
 
 # Sessions shorter than this many filtered chars are skipped as trivial.
 MIN_FILTERED_CHARS = 400
 
-# Cap on input length sent to the API (chars). Sonnet's window is huge,
+# Cap on input length sent to the model (chars). The context window is huge,
 # but ~80KB filtered conversation is plenty of signal for a summary.
 MAX_INPUT_CHARS = 80_000
 
@@ -60,38 +101,75 @@ def load_overrides() -> dict[str, str]:
 
 OVERRIDES = load_overrides()
 
-
-SPECIAL_DIRS = {
-    "C--Users-HamCh-Obsidian-Vault": "_vault",
-    "C--Users-HamCh": "_home",
-    "C--Users-HamCh-Obsidian-Vault-1--Projects": "_vault-projects",
-    "C--Users-HamCh-code": "_code",
-    "C--FXServer-txData-FiveMBasicServerCFXDefault-B89B02-base-resources--local-": "_fxserver",
+# Common parent-directory tokens. When a CC folder encodes
+# .../<parent>/<project>, the project is the segment AFTER the last of
+# these. This is a heuristic only — overrides win, and a wrong guess just
+# yields a slightly longer slug, never data loss.
+PARENT_TOKENS = {
+    "code", "src", "repos", "repo", "work", "projects", "project",
+    "dev", "git", "workspace", "sources", "developer", "documents",
 }
 
 
 def cc_dir_to_kebab(cc_dir_name: str) -> str:
-    """`C--Users-HamCh-code-sophon-webapp` → `sophon-webapp`"""
-    if cc_dir_name in SPECIAL_DIRS:
-        return SPECIAL_DIRS[cc_dir_name]
-    if cc_dir_name.startswith(CC_PREFIX):
-        return cc_dir_name[len(CC_PREFIX):]
-    return cc_dir_name
+    """Derive a project slug from a Claude Code project folder name.
+
+    CC encodes the project's absolute path by replacing every path
+    separator (and the Windows drive colon) with ``-``. Examples:
+
+      C:\\Users\\jane\\code\\my-app   -> C--Users-jane-code-my-app
+      /home/jane/work/my-app          -> -home-jane-work-my-app
+      /Users/jane/dev/api-server      -> -Users-jane-dev-api-server
+
+    There is no portable way to recover original casing or to know how
+    many trailing ``-`` belong to the dir name vs. were separators. The
+    universal heuristic: split on ``-``, drop empty tokens and a leading
+    one-letter Windows drive letter, then take everything AFTER the last
+    recognised parent token (``code``/``src``/``work``/...). If no parent
+    token is present, fall back to the last token. project_map.json
+    overrides handle anything that needs a nicer wikilink.
+    """
+    raw = (cc_dir_name or "").strip("-")
+    if not raw:
+        return cc_dir_name or "unknown"
+
+    parts = [p for p in raw.split("-") if p != ""]
+    if not parts:
+        return cc_dir_name or "unknown"
+
+    # Drop a leading single-letter Windows drive token (C, D, ...).
+    if len(parts) > 1 and len(parts[0]) == 1 and parts[0].isalpha():
+        parts = parts[1:]
+
+    # Find the last parent token; the project is everything after it.
+    last_parent = -1
+    for i, tok in enumerate(parts):
+        if tok.lower() in PARENT_TOKENS:
+            last_parent = i
+    if last_parent >= 0 and last_parent < len(parts) - 1:
+        project_parts = parts[last_parent + 1:]
+    else:
+        # No parent token (or it's the final token) — use the last token.
+        project_parts = [parts[-1]]
+
+    slug = "-".join(project_parts)
+    return slug or (cc_dir_name or "unknown")
 
 
 def kebab_to_wikilink(kebab: str) -> str:
-    """`sophon-webapp` → `Sophon Webapp` (Title Case With Spaces)"""
+    """`sophon-webapp` → `Sophon Webapp` (Title Case With Spaces)."""
     if kebab in OVERRIDES:
         return OVERRIDES[kebab]
-    return " ".join(w.capitalize() for w in kebab.split("-"))
+    # Override may also key on just the last segment.
+    last = kebab.split("-")[-1]
+    if last in OVERRIDES:
+        return OVERRIDES[last]
+    return " ".join(w.capitalize() for w in kebab.split("-") if w)
 
 
 def kebab_to_folder(kebab: str) -> str:
-    """`sophon-webapp` → `Sophon-Webapp` (Title-Kebab; matches existing vault convention)"""
-    if kebab in OVERRIDES:
-        # Convert wikilink form back to folder form (spaces → dashes)
-        return OVERRIDES[kebab].replace(" ", "-")
-    return "-".join(w.capitalize() for w in kebab.split("-"))
+    """`sophon-webapp` → `Sophon-Webapp` (Title-Kebab; vault convention)."""
+    return kebab_to_wikilink(kebab).replace(" ", "-")
 
 
 # ── JSONL filtering ───────────────────────────────────────────────────────
@@ -205,29 +283,31 @@ RULES:
 
 
 # ── Distillation backends ─────────────────────────────────────────────────
-import tempfile
-
-
 def distill_via_cli(filtered: str) -> str:
     """Call `claude -p` — uses the user's CC subscription OAuth, no API credits.
 
     IMPORTANT: ANTHROPIC_API_KEY is stripped from the subprocess env. If the
-    var is set, `claude -p` will use it (API billing) instead of OAuth.
+    var is set, `claude -p` would otherwise use it (API billing) instead of
+    the OAuth subscription. We never want to silently bill API credits.
 
     Passes:
-      - system prompt via --append-system-prompt-file (avoids cmdline limit)
-      - user message via stdin (avoids Windows ~32KB cmdline cap)
+      - system prompt via --append-system-prompt-file (off the cmdline, so
+        no OS argument-length limits)
+      - user message via stdin (avoids the Windows ~32KB cmdline cap)
     """
     payload = filtered[:MAX_INPUT_CHARS]
     user_msg = f"Session transcript:\n\n{payload}"
     env = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"}
 
-    # System prompt to a temp file — keeps it off the cmdline.
-    with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".txt", delete=False) as sf:
+    # System prompt to a temp file — keeps it off the cmdline (length limits).
+    sf = tempfile.NamedTemporaryFile(
+        "w", encoding="utf-8", suffix=".txt", delete=False
+    )
+    try:
         sf.write(SYSTEM_PROMPT)
+        sf.close()
         sys_path = sf.name
 
-    try:
         result = subprocess.run(
             [
                 "claude", "-p",
@@ -243,14 +323,14 @@ def distill_via_cli(filtered: str) -> str:
         )
     finally:
         try:
-            os.unlink(sys_path)
+            os.unlink(sf.name)
         except OSError:
             pass
 
-    if result.returncode != 0 or "Credit balance is too low" in result.stdout:
-        err = result.stderr.strip() or result.stdout.strip()
+    if result.returncode != 0 or "Credit balance is too low" in (result.stdout or ""):
+        err = (result.stderr or "").strip() or (result.stdout or "").strip()
         raise RuntimeError(f"claude -p failed: {err[:500]}")
-    return result.stdout.strip()
+    return (result.stdout or "").strip()
 
 
 def distill_via_api(client, filtered: str, model: str = "claude-sonnet-4-6") -> str:
@@ -320,6 +400,8 @@ def existing_note_for_session(folder: Path, session_id: str) -> Path | None:
 def backfill_one(
     jsonl_path: Path,
     client,
+    sessions_dir: Path,
+    vault: Path,
     *,
     dry_run: bool = False,
     model: str = "claude-sonnet-4-6",
@@ -330,12 +412,16 @@ def backfill_one(
     project_wikilink = kebab_to_wikilink(kebab)
     folder_name = kebab_to_folder(kebab)
 
-    folder = SESSIONS_DIR / folder_name
+    folder = sessions_dir / folder_name
     session_id = jsonl_path.stem
 
     existing = existing_note_for_session(folder, session_id)
     if existing is not None:
-        return f"EXISTS: {existing.relative_to(VAULT)}"
+        try:
+            rel = existing.relative_to(vault)
+        except ValueError:
+            rel = existing
+        return f"EXISTS: {rel}"
 
     filtered = filter_jsonl(jsonl_path)
     if len(filtered) < MIN_FILTERED_CHARS:
@@ -347,8 +433,16 @@ def backfill_one(
     note_name = f"{date_str}-{kebab}-{session_type}-{session_id[:8]}.md"
     target = folder / note_name
 
+    try:
+        rel_target = target.relative_to(vault)
+    except ValueError:
+        rel_target = target
+
     if dry_run:
-        return f"WOULD CREATE: {target.relative_to(VAULT)} (filtered {len(filtered)} chars, type={session_type})"
+        return (
+            f"WOULD CREATE: {rel_target} "
+            f"(filtered {len(filtered)} chars, type={session_type})"
+        )
 
     if use_api:
         body = distill_via_api(client, filtered, model=model)
@@ -363,42 +457,71 @@ def backfill_one(
     )
     folder.mkdir(parents=True, exist_ok=True)
     target.write_text(note, encoding="utf-8")
-    return f"CREATED: {target.relative_to(VAULT)}"
+    return f"CREATED: {rel_target}"
 
 
 # ── Entry ─────────────────────────────────────────────────────────────────
 def iter_target_dirs(project: str | None, all_flag: bool) -> list[Path]:
+    """Resolve which CC project directories to process.
+
+    --project matches generically: a directory qualifies if its derived
+    project slug equals the requested name, or if its CC folder name ends
+    with the requested token. No hardcoded prefixes or per-user aliases.
+    """
+    if not CC_PROJECTS.is_dir():
+        return []
+    all_dirs = sorted(
+        [d for d in CC_PROJECTS.iterdir() if d.is_dir()],
+        key=lambda d: d.name,
+    )
     if project:
-        for cc_name, alias in SPECIAL_DIRS.items():
-            if project == alias:
-                return [CC_PROJECTS / cc_name]
-        return [CC_PROJECTS / f"{CC_PREFIX}{project}"]
+        want = project.strip().lower()
+        matched = [
+            d for d in all_dirs
+            if cc_dir_to_kebab(d.name).lower() == want
+            or d.name.lower().endswith(want)
+            or d.name.lower().endswith("-" + want)
+        ]
+        return matched
     if all_flag:
-        return sorted(
-            [d for d in CC_PROJECTS.iterdir() if d.is_dir()
-             and (d.name.startswith(CC_PREFIX) or d.name in SPECIAL_DIRS)],
-            key=lambda d: d.name,
-        )
+        return all_dirs
     return []
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--project", help="CC project folder kebab name (e.g., sophon-webapp)")
+    ap.add_argument("--project", help="Project name / CC folder suffix (e.g., sophon-webapp)")
     ap.add_argument("--all", action="store_true", help="Backfill every CC project")
     ap.add_argument("--limit", type=int, default=0, help="Cap on sessions per project (0 = unlimited)")
-    ap.add_argument("--dry-run", action="store_true", help="Show what would be created without calling the API")
+    ap.add_argument("--dry-run", action="store_true", help="Show what would be created without distilling")
+    ap.add_argument("--vault", help="Vault path (auto-detected via $BRAINY_VAULT / common locations if omitted)")
     ap.add_argument("--model", default="claude-sonnet-4-6", help="Claude model id (only used with --use-api)")
-    ap.add_argument("--use-api", action="store_true", help="Use the Anthropic API directly (costs Console credits). Default is `claude -p` (uses your CC subscription).")
+    ap.add_argument(
+        "--use-api",
+        action="store_true",
+        help="Use the Anthropic API directly (costs Console credits / needs ANTHROPIC_API_KEY). "
+        "Default is `claude -p`, which uses your Claude Code subscription with no API billing.",
+    )
     args = ap.parse_args()
 
     if not args.project and not args.all:
         ap.error("provide --project NAME or --all")
 
+    vault = find_vault(args.vault)
+    if vault is None:
+        sys.stderr.write(
+            "Obsidian vault not found. Set $BRAINY_VAULT or pass --vault PATH.\n"
+        )
+        return 1
+    sessions_dir = vault / "2. Areas" / "Sessions"
+
     client = None
     if args.use_api and not args.dry_run:
         if not os.environ.get("ANTHROPIC_API_KEY"):
-            sys.stderr.write("--use-api requires ANTHROPIC_API_KEY in env.\n")
+            sys.stderr.write(
+                "--use-api requires ANTHROPIC_API_KEY in env. Either export it "
+                "yourself, or drop --use-api to use `claude -p` (no API billing).\n"
+            )
             return 1
         if anthropic is None:
             sys.stderr.write("--use-api requires `pip install anthropic`.\n")
@@ -407,7 +530,9 @@ def main() -> int:
 
     dirs = iter_target_dirs(args.project, args.all)
     if not dirs:
-        sys.stderr.write("No CC project directories matched.\n")
+        sys.stderr.write(
+            f"No CC project directories matched under {CC_PROJECTS}.\n"
+        )
         return 1
 
     stats = {"created": 0, "exists": 0, "trivial": 0, "would_create": 0, "errors": 0}
@@ -425,7 +550,10 @@ def main() -> int:
         print(f"\n=== {d.name} ({len(jsonls)} sessions) ===")
         for j in jsonls:
             try:
-                msg = backfill_one(j, client, dry_run=args.dry_run, model=args.model, use_api=args.use_api)
+                msg = backfill_one(
+                    j, client, sessions_dir, vault,
+                    dry_run=args.dry_run, model=args.model, use_api=args.use_api,
+                )
             except Exception as e:
                 msg = f"ERROR: {j.name}: {e}"
                 stats["errors"] += 1
