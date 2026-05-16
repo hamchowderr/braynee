@@ -36,15 +36,22 @@ Brainy detects your calendar platform and wires it into daily notes:
 `scan-projects.py` walks your `~/code/` directory, finds git repos, detects the stack (Next.js, Convex, FastAPI, etc.), and writes a project map. The wizard surfaces these to Claude so it knows what you're building without you having to explain it.
 
 ### Claude Code hooks
-Three hooks are installed into `~/.claude/settings.json` — no manual editing required:
+Brainy declares its hooks in the plugin's `hooks/hooks.json` — they run automatically when the plugin is active, with nothing written into `~/.claude/settings.json`. **31 hooks across 10 Claude Code events** keep the vault, sessions, beads, and tasks in sync:
 
-| Hook | Event | What it does |
-|------|-------|-------------|
-| `vault-context.js` | SessionStart | Reads your vault `CLAUDE.md` and injects it as session context so Claude knows your businesses, clients, and conventions in every session |
-| `session-tracker.js` | Stop | Writes a timestamped entry to `2. Areas/Sessions/` when each session ends |
-| `qmd-sync.js` | Stop | Re-indexes your vault's QMD BM25 search index detached — vault search stays fresh after every session |
+| Event | Hooks | What they do |
+|-------|-------|-------------|
+| **SessionStart** | `ensure-obsidian.js`, `reinject-after-compact.js`, `session-auto-track.js`, `settings-viewer/generate.mjs`, `check-beads-init.js`, `beads-work-surface.js`, `check-git-init.js`, `check-testing-setup.js` | Launch Obsidian, open/update the session note, regenerate the dashboard, ensure beads + git are initialized, surface the ready beads queue, flag a missing test stack, and re-inject vault context after a compaction |
+| **UserPromptSubmit** | `memory-reminder.js`, `beads-nudge.js` | Remind Claude to search vault memory before guessing and to keep the beads workflow current |
+| **PreToolUse** | `check-no-main-push.js`, `branch-name-check.js` | On `git push`, block pushes to `main`/`master` and enforce branch naming |
+| **PostToolUse** | `memory-index-sync.js`, `session-note-nudge.js`, `statusline-state.js`, `commit-cadence-nudge.js`, `beads-claim-to-branch.js`, `beads-status-sync.js`, `beads-todo-reminder.js`, `beads-dashboard-refresh.js`, `mtn-to-beads-sync.js` | Keep `MEMORY.md` indexed, nudge session-note updates and commit cadence, branch on `bd … --claim`, and mirror beads ⇄ Claude todos ⇄ TaskNotes |
+| **PreCompact** | `pre-compact-snapshot.js` | Snapshot context before a compaction |
+| **PostCompact** | `post-compact.js` | Restore and re-inject context after a compaction |
+| **Stop** | `session-auto-close.js`, `session-export-qmd.js`, `session-stop-check.js`, `beads-stop-check.js`, `task-completion-check.js` | Close the session, export the transcript and refresh the QMD index, and run the session-close / beads / task checklists |
+| **SessionEnd** | `session-end.js` | Finalize the session note and clean up |
+| **TaskCreated** | `task-created-check.js` | Validate newly created tasks |
+| **TaskCompleted** | `task-completed-check.js` | Verify completed tasks |
 
-All three hooks detect existing equivalents and never duplicate them.
+Hooks that have stateful side effects detect existing equivalents and never duplicate them.
 
 ### Obsidian plugins
 `install-obsidian-plugins.py` installs and configures the following plugins into your vault:
@@ -106,7 +113,7 @@ If you already have an Obsidian vault, `/setup` detects it and runs a non-destru
 
 ## Search
 
-Brainy installs QMD (a local BM25 + semantic search engine) and keeps its index updated via the `qmd-sync.js` Stop hook. All brainy skills use QMD for vault search — never grep or filesystem scanning.
+Brainy installs QMD (a local BM25 + semantic search engine) and keeps its index fresh via the `session-export-qmd.js` Stop hook. All brainy skills use QMD for vault search — never grep or filesystem scanning.
 
 ```bash
 node ${CLAUDE_PLUGIN_ROOT}/scripts/qmd-wrapper.mjs search "query"    # exact terms
