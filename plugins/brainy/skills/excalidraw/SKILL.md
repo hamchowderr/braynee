@@ -15,7 +15,20 @@ description: >
 # Excalidraw Diagram Creator
 
 Generate Excalidraw diagrams using the ExcalidrawAutomate (EA) API. Output is a
-`.excalidraw` file saved directly to the Obsidian vault — Obsidian renders it natively.
+compressed-Markdown drawing file saved directly to the Obsidian vault — Obsidian
+renders it natively.
+
+> [!important] On-disk filename — read this first
+> `ea.create({ filename: "foo" })` does **not** write `foo.excalidraw`. It writes
+> **`foo.excalidraw.md`** (Excalidraw stores drawings as compressed Markdown).
+> Throughout this skill, when you call `ea.create({ filename: "name", ... })`:
+> - The actual file on disk is **`<foldername>/name.excalidraw.md`**.
+> - Embeds stay **`![[name.excalidraw]]`** — Obsidian resolves the `.excalidraw`
+>   basename to the real `name.excalidraw.md` file (do **not** write
+>   `![[name.excalidraw.md]]`).
+> - **Verify success by the on-disk path `name.excalidraw.md`, not
+>   `name.excalidraw`.** A headless agent that `stat`s `name.excalidraw` will
+>   never find it and will falsely report failure.
 
 **Before writing any diagram code**, read the bundled EA API reference at:
 `${CLAUDE_PLUGIN_ROOT}/skills/excalidraw/reference/excalidraw-api.md`
@@ -24,8 +37,8 @@ For the full upstream plugin source, clone https://github.com/zsviczian/obsidian
 
 This skill has **two modes** depending on the request:
 
-- **Single Diagram Mode** — user wants ONE diagram of a specific concept. Output: one `.excalidraw` file.
-- **Codebase Walkthrough Mode** — user wants to document an entire codebase visually. Output: 4-6 `.excalidraw` files + interlinked markdown notes.
+- **Single Diagram Mode** — user wants ONE diagram of a specific concept. Output: one `<name>.excalidraw.md` file.
+- **Codebase Walkthrough Mode** — user wants to document an entire codebase visually. Output: 4-6 `<name>.excalidraw.md` files + interlinked markdown notes.
 
 If the request mentions "document the codebase", "walk through this system", "map out this repo", or similar, jump to the **Codebase Walkthrough Mode** section. Otherwise stay in Single Diagram Mode.
 
@@ -47,8 +60,10 @@ For technical diagrams, use real names from the codebase — never "Service A" o
 
 ## How to Generate a Diagram
 
-Every diagram is a JavaScript script that uses the EA API. The script runs via
-Obsidian's Templater plugin, or can be saved as an EA script in the vault's scripts folder.
+Every diagram is a JavaScript script that uses the EA API. A **headless agent
+runs it via `obsidian eval`** (see "Headless Execution" below) — this is the
+default path for Claude. Templater or a vault EA script is only for a human
+running it interactively inside Obsidian; do not assume Templater is available.
 
 ### Script Pattern
 
@@ -74,13 +89,84 @@ ea.connectObjects(idA, "right", idB, "left", {
   endArrowHead: "arrow",
 });
 
-// Save to vault
+// Save to vault. NOTE: this writes "2. Areas/Excalidraw/diagram-name.excalidraw.md"
+// (filename has NO extension here; EA appends ".excalidraw.md"). ea.create() is
+// async — always `await` it, and verify the .excalidraw.md file on disk
+// afterward (see "Verifying a Diagram Was Written").
 await ea.create({
   filename: "diagram-name",
   foldername: "2. Areas/Excalidraw",
   onNewPane: true,
 });
 ```
+
+### Headless Execution (the default path for an agent)
+
+You do **not** have Templater. Run an EA script from the command line via the
+`obsidian` CLI's `eval` command. Obsidian must be running with the vault open
+(the plugin exposes `window.ExcalidrawAutomate`).
+
+**Procedure:**
+
+1. **Write the EA script body to a temp file** (not inline — the Obsidian CLI
+   arg parser silently fails on `word:` sequences and `[` / `]`, which appear
+   in any non-trivial script). Use a normal file write to e.g.
+   `${TMPDIR}/ea-diagram.js`. The file contains only the *body* — the code that
+   uses `ea` (and optionally `utils`), starting at `ea.reset()`. Do **not**
+   include `const ea = ExcalidrawAutomate;` (the wrapper injects `ea`).
+
+2. **Run it through `obsidian eval`** with an async `new Function` wrapper that
+   binds `ea` to `window.ExcalidrawAutomate` and awaits the script. Reading the
+   script from disk inside the eval avoids all CLI-arg-parser escaping issues:
+
+   ```bash
+   obsidian eval code="(async () => {
+     const fs = require('fs');
+     const body = fs.readFileSync('/abs/path/to/ea-diagram.js', 'utf8');
+     const ea = window.ExcalidrawAutomate;
+     const utils = this.app ? { app: this.app } : {};
+     const fn = new Function('ea', 'utils',
+       '\"use strict\"; return (async () => { ' + body + ' })();');
+     await fn(ea, utils);
+     return 'ea-script-done';
+   })()"
+   ```
+
+   - `new Function('ea','utils', ...)` gives the script body `ea` and `utils`
+     in scope, exactly like Templater would, without any Templater dependency.
+   - The body must `await ea.create({ filename, foldername, ... })` as its last
+     step. Because `ea.create()` is **async**, the outer IIFE must `await fn(...)`
+     — otherwise `obsidian eval` returns before the file is flushed and the
+     drawing is silently dropped (see "Verifying a Diagram Was Written").
+
+3. **For companion `.md` notes** (Codebase Walkthrough Mode index/architecture
+   pages): create them with `app.vault.create`, **not** the `obsidian create`
+   CLI. The CLI arg parser breaks on YAML frontmatter (`type: note`) and on
+   `[...]` (wikilinks, embeds, task checkboxes). Use:
+
+   ```bash
+   obsidian eval code="(async () => { await app.vault.create('3. Resources/Proj/index.md', 'CONTENT_HERE\n'); })()"
+   ```
+
+   Escaping inside `eval code="..."`: `'` → `\'`, `"` → `\"`, newline → `\n`,
+   backslash → `\\\\`. For multi-paragraph notes, write the content to a temp
+   file and `fs.readFileSync` it inside the eval (same trick as step 2).
+
+### Verifying a Diagram Was Written
+
+`ea.create()` is async and an `obsidian eval` can return **before** the promise
+flushes the file (this drops the drawing silently — observed in practice).
+**Never trust the eval return value as proof of success.** Verify by the
+filesystem instead:
+
+1. Confirm **`<foldername>/<filename>.excalidraw.md`** exists on disk (note the
+   `.excalidraw.md` suffix — `<filename>.excalidraw` does **not** exist).
+2. Confirm the file contains a `## Drawing` section (Excalidraw's
+   compressed-Markdown payload lives under that heading — its presence means
+   `ea.create()` actually completed, not just that an empty stub was touched).
+
+If either check fails, the diagram did not write — re-run the script (and make
+sure the outer eval `await`s `fn(...)`).
 
 ### Key EA Methods
 
@@ -157,7 +243,7 @@ See `references/color-palette.md` for the semantic color system. Quick reference
 
 **Step 4: Write the script** — Use `ea.connectObjects()` over manual `ea.addArrow()` when connecting named shapes — it handles positioning automatically.
 
-**Step 5: Save and review** — `await ea.create()` saves to the vault. Open the file in Obsidian to review. Adjust coordinates and re-run if layout needs fixing.
+**Step 5: Save and verify** — Run the script headless via `obsidian eval` (see "Headless Execution"). `await ea.create()` saves to the vault. Then **verify on disk**: confirm `<foldername>/<filename>.excalidraw.md` exists and contains a `## Drawing` section (see "Verifying a Diagram Was Written"). Adjust coordinates and re-run if the file is missing or layout needs fixing.
 
 ### Default Output Location
 
@@ -171,7 +257,8 @@ See `references/color-palette.md` for the semantic color system. Quick reference
 - [ ] Each major concept uses a different visual pattern
 - [ ] Real names used for technical diagrams (not "Service A")
 - [ ] Saved to `2. Areas/Excalidraw/` or appropriate subfolder
-- [ ] Reviewed in Obsidian after saving
+- [ ] Ran headless via `obsidian eval` with the outer IIFE `await`ing `fn(...)` (ea.create() is async — an un-awaited eval returns before the file flushes and silently drops the drawing)
+- [ ] Verified on disk: `<foldername>/<filename>.excalidraw.md` exists (NOT `.excalidraw`) and contains a `## Drawing` section — verify by filesystem existence, not the eval return value
 
 ---
 
@@ -193,14 +280,19 @@ You are a senior architect handed a codebase you've never seen. Your job: read t
   glossary.md
 
 2. Areas/Excalidraw/<project-name>/
-  project-architecture.excalidraw
-  project-data-model.excalidraw
-  project-flows-overview.excalidraw
-  project-flows-[name].excalidraw
-  project-integrations.excalidraw
+  project-architecture.excalidraw.md      (ea.create filename: "project-architecture")
+  project-data-model.excalidraw.md        (ea.create filename: "project-data-model")
+  project-flows-overview.excalidraw.md    (ea.create filename: "project-flows-overview")
+  project-flows-[name].excalidraw.md      (ea.create filename: "project-flows-[name]")
+  project-integrations.excalidraw.md      (ea.create filename: "project-integrations")
 ```
 
-Each markdown file embeds its diagram with `![[diagram-name.excalidraw]]`.
+The **on-disk** files end in `.excalidraw.md` (left column shows the literal
+filenames `ea.create` writes — note the `filename:` argument has **no**
+extension). The **embeds** stay `![[diagram-name.excalidraw]]` — Obsidian
+resolves the `.excalidraw` basename to the real `.excalidraw.md` file. Never
+write `![[...excalidraw.md]]`, and always verify a diagram exists by `stat`-ing
+`<name>.excalidraw.md`.
 
 ### Diagrams to Produce
 
@@ -248,7 +340,7 @@ Tell the user which flows you plan to diagram before producing output.
 
 ### Phase 3: Produce
 
-Generate each diagram script, run it (or provide it for the user to run via Templater), then write the markdown files. Each markdown file opens with its diagram embed.
+Generate each diagram script and run it headless via `obsidian eval` (see "Headless Execution" — do not assume Templater). Verify each `<name>.excalidraw.md` exists with a `## Drawing` section before moving on. Then write the markdown files with `app.vault.create` (the `obsidian create` CLI breaks on frontmatter/brackets). Each markdown file opens with its diagram embed.
 
 **index.md** — landing page with one-paragraph summary, tech stack table, `![[project-architecture.excalidraw]]` embed, and wikilinks to all other files.
 
@@ -273,6 +365,6 @@ Generate each diagram script, run it (or provide it for the user to run via Temp
 - [ ] Architecture: all major components, data flow direction, external services
 - [ ] Data model: actual column names + real relationships
 - [ ] At least 2 flow diagrams for key user paths
-- [ ] All diagrams saved to `2. Areas/Excalidraw/<project-name>/`
-- [ ] All markdown files embed diagrams with `![[filename.excalidraw]]`
+- [ ] Every diagram verified on disk: `2. Areas/Excalidraw/<project-name>/<name>.excalidraw.md` exists (NOT `.excalidraw`) and contains a `## Drawing` section — verified by filesystem existence, not the eval return value (ea.create() is async; the eval can return before the file flushes)
+- [ ] All markdown files embed diagrams with `![[filename.excalidraw]]` (embed keeps the `.excalidraw` basename even though the file is `.excalidraw.md`)
 - [ ] index.md stands alone and links to everything else
