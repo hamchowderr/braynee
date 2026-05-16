@@ -12,6 +12,19 @@ const { findCodeRoot, findGitRoot, sessionDir } = require(path.join(__dirname, '
 
 const HOOK = 'check-git-init';
 
+// Mirror of check-beads-init.js isBdOnPath(): probe the tool's presence
+// BEFORE attempting any operation. When git is absent, `git init` throws
+// ENOENT / "'git' is not recognized" and the hook would surface a confusing
+// ERROR instead of actionable install guidance (cp-h5a / R-1).
+function isGitOnPath() {
+  try {
+    execSync('git --version', { encoding: 'utf8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function tryGitInit(cwd) {
   try {
     execSync('git init -b main', { cwd, encoding: 'utf8', timeout: 10_000, stdio: ['pipe', 'pipe', 'pipe'] });
@@ -37,6 +50,28 @@ process.stdin.on('end', () => {
     if (!codeRoot) process.exit(0);
     const projectName = path.basename(codeRoot);
     if (projectName.toLowerCase() === 'workspace') process.exit(0);
+
+    // cp-h5a / R-1: git is a hard Brainy dependency. Probe its presence FIRST
+    // (mirror of check-beads-init.js Step 1). If git is missing, emit
+    // cross-platform install guidance and exit 0 cleanly — never attempt
+    // `git init` (which would throw ENOENT and surface a confusing hook error
+    // instead of the actionable "install git" message).
+    if (!isGitOnPath()) {
+      log.warn(HOOK, `git not on PATH — emitting install guidance, skipping init`);
+      process.stdout.write(
+        `# Git Not Installed\n\n` +
+        `\`git\` is not on PATH, but git is a required Brainy dependency ` +
+        `(\`${projectName}\` needs version control; Brainy also drives vault backup and push protection).\n\n` +
+        `**Ask the user once:** "Install \`git\` now? (Y/n)"\n\n` +
+        `On yes, run the platform-appropriate install:\n` +
+        `- Windows (PowerShell): \`winget install --id Git.Git -e\`\n` +
+        `- macOS (Homebrew): \`brew install git\`\n` +
+        `- Debian/Ubuntu: \`sudo apt-get update && sudo apt-get install -y git\`\n` +
+        `- Fedora/RHEL: \`sudo dnf install -y git\`\n\n` +
+        `After install, this session needs no further action — the next session will initialize git automatically.\n`
+      );
+      process.exit(0);
+    }
 
     // findGitRoot excludes a dotfiles ~/.git so a project without its own
     // repo still auto-inits instead of looking already-initialized.

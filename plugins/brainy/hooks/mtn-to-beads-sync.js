@@ -21,6 +21,39 @@ function run(cmd, opts = {}) {
   } catch { return null; }
 }
 
+// cp-5jm: beads issue IDs use a per-repo prefix set at `bd init` (e.g. `bd-`,
+// `cp-`, `myapp-`) — NEVER assume the literal `bd-`. The short-ID suffix is
+// alphanumeric, NOT purely numeric (real IDs in this repo: cp-h5a, cp-906,
+// cp-f54), so the original `bd-[\w-]+` shape is right except for the prefix.
+// Derive the prefix(es) actually in use from this repo's own issues so the
+// tag regex matches whatever the workspace uses. Falls back to the generic
+// beads ID shape (`<lowercase-alnum-prefix>-<alnum-suffix>`) if the probe
+// fails (e.g. bd unreachable from a PostToolUse hook).
+const GENERIC_ID_RE = /([a-z][a-z0-9]*-[a-z0-9]+)/i;
+
+function issueIdRegex(cwd) {
+  try {
+    const out = run('bd list --json', { cwd });
+    if (out) {
+      const issues = JSON.parse(out);
+      const prefixes = [...new Set(
+        (Array.isArray(issues) ? issues : [])
+          .map(i => String(i.id || '').match(/^([a-z][a-z0-9]*)-[a-z0-9]+$/i))
+          .filter(Boolean)
+          .map(mm => mm[1])
+      )];
+      if (prefixes.length > 0) {
+        const escaped = prefixes
+          .map(p => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+          .join('|');
+        // \b after the suffix so we don't grab a trailing word fragment.
+        return new RegExp(`((?:${escaped})-[a-z0-9]+)`, 'i');
+      }
+    }
+  } catch {}
+  return GENERIC_ID_RE;
+}
+
 let input = '';
 process.stdin.setEncoding('utf8');
 process.stdin.on('data', c => { input += c; });
@@ -56,16 +89,20 @@ process.stdin.on('end', () => {
 
     const target = m[1].replace(/^["']|["']$/g, '');
 
-    // If user passed the bd id directly (e.g. `mtn complete "#bd-42"` or `mtn complete bd-42`)
+    // cp-5jm: build the issue-ID matcher from the prefix(es) THIS repo's
+    // beads database actually uses (not a hardcoded `bd-`).
+    const idRe = issueIdRegex(cwd);
+
+    // If user passed the bd id directly (e.g. `mtn complete "#cp-42"` or `mtn complete cp-42`)
     let issueId = null;
-    const direct = target.match(/(bd-[\w-]+)/);
+    const direct = target.match(idRe);
     if (direct) {
       issueId = direct[1];
     } else {
       // Otherwise resolve via mtn show — its output includes the tags line.
       const showOut = run(`mtn show ${JSON.stringify(target)}`);
       if (showOut) {
-        const tagMatch = showOut.match(/(bd-[\w-]+)/);
+        const tagMatch = showOut.match(idRe);
         if (tagMatch) issueId = tagMatch[1];
       }
     }
