@@ -15,6 +15,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { findBeadsRoot } = require(path.join(__dirname, 'lib', 'is-code-context.js'));
+const TN = require(path.join(__dirname, 'lib', 'tasknotes-mirror.js'));
 
 const HOME = os.homedir();
 const VAULT_DIR = path.join(HOME, 'Obsidian Vault');
@@ -113,61 +114,9 @@ function getIssueDetails(issueId, cwd) {
   } catch { return { title: issueId, priority: 'medium' }; }
 }
 
-function sanitizeTitle(title) {
-  return title.replace(/:/g, ' -').replace(/[/\\*?"<>|]/g, '').replace(/\s+/g, ' ').trim().slice(0, 120);
-}
-
-const TASKNOTES_DIR = path.join(VAULT_DIR, '2. Areas', 'TaskNotes', 'Tasks');
-
-// Filesystem dedupe — scans tasknote files for one whose frontmatter `tags:`
-// array contains the bd issue ID. `mtn search` for a `#<tag>` query returned
-// empty on Windows even when the task existed (verified 2026-05-12 against
-// sophon-sdk-python-test-bb4). bd IDs are workspace-namespaced so this is a
-// unique key; scanning ~hundreds of small .md files is cheap enough.
-function findTasknoteForIssueId(issueId) {
-  if (!issueId) return null;
-  if (!fs.existsSync(TASKNOTES_DIR)) return null;
-  try {
-    for (const name of fs.readdirSync(TASKNOTES_DIR)) {
-      if (!name.endsWith('.md')) continue;
-      const filepath = path.join(TASKNOTES_DIR, name);
-      try {
-        const content = fs.readFileSync(filepath, 'utf8');
-        const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
-        if (!fmMatch) continue;
-        // tags appear either as a YAML flow array `tags: [a, b]` or as a
-        // block list of `  - tag` lines. Match both with a simple substring
-        // check inside the frontmatter block.
-        const fm = fmMatch[1];
-        const re = new RegExp(`(^|[\\s,\\[])${issueId.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\$&')}([\\s,\\]]|$)`, 'm');
-        if (re.test(fm)) return filepath;
-      } catch { continue; }
-    }
-  } catch {}
-  return null;
-}
-
-function findMtnTaskByIssueId(issueId) {
-  // Used by close-side to decide whether to call `mtn complete`.
-  // Returns a string mtn can resolve back to the task (the `#<issueId>` tag).
-  return findTasknoteForIssueId(issueId) ? '#' + issueId : null;
-}
-
-function completeMtnTaskByIssueId(issueId) {
-  run(`mtn complete ${JSON.stringify('#' + issueId)}`);
-}
-
-function ensureMtnTask(issueId, title, priority, projectSlug) {
-  // Dedupe by bd issue ID, not by title prefix. Workspaces with identical
-  // task titles (e.g. "Export audit report to PDF in ~/Downloads/") would
-  // otherwise collide on the first 40 chars and silently skip creation.
-  if (findTasknoteForIssueId(issueId)) return sanitizeTitle(title);
-
-  const safeTitle = sanitizeTitle(title);
-  const mtnText = `${safeTitle} +${projectSlug} [${priority}] #task #${issueId}`;
-  run(`mtn create ${JSON.stringify(mtnText)}`);
-  return safeTitle;
-}
+// TaskNotes mirror helpers live in lib/tasknotes-mirror.js (shared with
+// prd-seed.mjs — cp-8ru). Aliased so the call sites below read unchanged.
+const { findMtnTaskByIssueId, completeMtnTaskByIssueId, ensureMtnTask } = TN;
 
 // ─── Main ────────────────────────────────────────────────────────────────────
 let input = '';
