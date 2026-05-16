@@ -5,6 +5,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
+// Shared projects-root resolver lives at plugins/brainy/scripts/lib/.
+// This script is at plugins/brainy/skills/prd/scripts/ → up 3 to plugin root.
+const { getProjectsDir, isProjectsDirConfigured } = require(
+  path.join(import.meta.dirname, '..', '..', '..', 'scripts', 'lib', 'projects-root.js')
+);
 
 const args = process.argv.slice(2);
 if (!args[0] || args[0].startsWith('--')) {
@@ -191,5 +199,9 @@ The first time a user experiences the core value.
 fs.mkdirSync(PRD_DIR, { recursive: true });
 fs.writeFileSync(prdPath, fm + '\n' + body, 'utf-8');
 console.log(`Created: ${prdPath}`);
-console.log(`Folder join key: ${folder} → ~/code/${folder}/`);
+const projectsRoot = getProjectsDir();
+console.log(`Folder join key: ${folder} → ${path.join(projectsRoot, folder)}/`);
+if (!isProjectsDirConfigured()) {
+  console.log(`(projects root defaults to ~/code — set BRAINY_PROJECTS_DIR if your repos live elsewhere)`);
+}
 console.log(`Next: fill in sections, then run prd-seed.mjs "${slug}" to create bd issues.`);
