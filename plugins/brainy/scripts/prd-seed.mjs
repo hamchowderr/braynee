@@ -4,8 +4,17 @@
 //
 // Resolves the PRD by exact name, slug, or path. Locates the matching code
 // project via the `folder:` frontmatter field. Parses the Acceptance Criteria
-// section (see SKILL.md for the format) and runs `bd create` for each line.
-// On success, flips `seeded: true` and writes `seeded_at` + `seeded_count`.
+// section (see SKILL.md for the format).
+//
+// Seeding is idempotent and self-verifying:
+//   - Reconciles against the target repo's actual beads (label prd:<name>):
+//     creates only acceptance criteria not already persisted (match by title).
+//   - Verifies persistence by re-querying the target repo — never trusts
+//     `bd create` exit codes.
+//   - Flips `seeded: true` (+ seeded_at/seeded_count/updated) ONLY when the
+//     verified persisted count === number of acceptance criteria. A partial
+//     seed leaves `seeded: false` and exits non-zero, so a re-run safely
+//     fills only the gap with no duplicates. A fully-seeded re-run is a no-op.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -103,17 +112,44 @@ function updateFrontmatter(content, updates) {
   return m[1] + fmBody + m[3] + normalized.slice(m[0].length);
 }
 
+// Query the TARGET repo's beads for issues actually persisted under the PRD
+// label. This is the verification handle — we never trust `bd create` exit
+// codes for persistence (a create can exit 0 without durably landing in a
+// fresh project's shared-server/namespace state). Returns a Set of titles.
+function persistedTitles(prdLabel, repoDir) {
+  let out;
+  try {
+    out = execSync(
+      `bd list -l ${JSON.stringify(prdLabel)} --all -n 0 --json`,
+      { cwd: repoDir, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] },
+    );
+  } catch (err) {
+    console.error(`Failed to query target repo beads for label ${prdLabel}: ${(err.stderr?.toString() || err.message).split('\n')[0]}`);
+    return null;
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(out.trim() || '[]');
+  } catch {
+    console.error(`Could not parse \`bd list --json\` output from target repo.`);
+    return null;
+  }
+  const titles = new Set();
+  for (const issue of Array.isArray(parsed) ? parsed : []) {
+    if (issue && typeof issue.title === 'string') titles.add(issue.title.trim());
+  }
+  return titles;
+}
+
 const prdPath = resolvePrd(target);
 if (!prdPath) { console.error(`PRD not found: ${target}`); process.exit(1); }
 
 const content = fs.readFileSync(prdPath, 'utf-8');
 const { fm, body } = parseFrontmatter(content);
 if (!fm) { console.error(`No frontmatter in ${prdPath}`); process.exit(1); }
-if (fm.seeded === true && !dryRun) {
-  console.error(`PRD already seeded (seeded: true, seeded_count: ${fm.seeded_count}). Aborting to avoid duplicates.`);
-  console.error('To re-seed, manually flip seeded: false in the PRD frontmatter.');
-  process.exit(1);
-}
+// Note: no hard-abort on `seeded: true`. Seeding is idempotent and reconciles
+// against the target repo's actual beads state below — a fully-seeded PRD
+// re-run is a clean no-op; a partial one creates only the missing gap.
 if (!fm.folder) { console.error(`PRD has no folder field — cannot determine target repo`); process.exit(1); }
 
 const repoDir = path.join(CODE_DIR, fm.folder);
@@ -143,41 +179,69 @@ console.log(`PRD: ${prdPath}`);
 console.log(`Target repo: ${repoDir}`);
 console.log(`${items.length} acceptance criteria found.\n`);
 
-let createdCount = 0;
-for (const item of items) {
+const prdLabel = `prd:${path.basename(prdPath, '.md')}`;
+
+function buildCreateCmd(item) {
   const labels = [];
   if (item.milestone) labels.push(`milestone:${item.milestone.replace(/\s+/g, '_')}`);
-  labels.push(`prd:${path.basename(prdPath, '.md')}`);
+  labels.push(prdLabel);
   const labelArgs = labels.map(l => `-l ${JSON.stringify(l)}`).join(' ');
   const descFlag = item.description ? `-d ${JSON.stringify(item.description)}` : '';
-  const cmd = `bd create ${JSON.stringify(item.title)} -p ${PRIORITY_FLAG[item.priority]} ${descFlag} ${labelArgs}`.trim();
+  return `bd create ${JSON.stringify(item.title)} -p ${PRIORITY_FLAG[item.priority]} ${descFlag} ${labelArgs}`.trim();
+}
 
-  if (dryRun) {
-    console.log(`[dry-run] ${cmd}`);
-    createdCount++;
-    continue;
-  }
+if (dryRun) {
+  for (const item of items) console.log(`[dry-run] ${buildCreateCmd(item)}`);
+  console.log(`\nDone. ${items.length}/${items.length} issues would be created.`);
+  process.exit(0);
+}
 
+// --- Reconcile: only create acceptance criteria not already persisted ---
+const before = persistedTitles(prdLabel, repoDir);
+if (before === null) {
+  console.error(`\nAborting: could not verify existing seeded issues in target repo.`);
+  process.exit(1);
+}
+
+const missing = items.filter(it => !before.has(it.title.trim()));
+const alreadyPresent = items.length - missing.length;
+if (alreadyPresent > 0) {
+  console.log(`${alreadyPresent}/${items.length} acceptance criteria already present in target — reconciling, creating only the ${missing.length} missing.\n`);
+}
+
+for (const item of missing) {
+  const cmd = buildCreateCmd(item);
   try {
     const out = execSync(cmd, { cwd: repoDir, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
     console.log(`✓ ${item.priority} ${item.title}`);
     if (out) console.log(`    ${out.split('\n')[0]}`);
-    createdCount++;
   } catch (err) {
     console.log(`✗ ${item.priority} ${item.title}`);
     console.log(`    ${(err.stderr?.toString() || err.message).split('\n')[0]}`);
   }
 }
 
-if (!dryRun && createdCount > 0) {
+// --- Verify persistence: re-query the target repo, never trust exit codes ---
+const after = persistedTitles(prdLabel, repoDir);
+if (after === null) {
+  console.error(`\nAborting: created issues but could not re-verify persistence in target repo. Leaving PRD seeded: false so it stays re-runnable.`);
+  process.exit(1);
+}
+const verifiedCount = items.filter(it => after.has(it.title.trim())).length;
+
+if (verifiedCount === items.length) {
   const updated = updateFrontmatter(content, {
     seeded: true,
     seeded_at: new Date().toISOString(),
-    seeded_count: createdCount,
+    seeded_count: verifiedCount,
     updated: new Date().toISOString().slice(0, 10),
   });
   fs.writeFileSync(prdPath, updated, 'utf-8');
-  console.log(`\nUpdated PRD: seeded: true, seeded_count: ${createdCount}`);
+  console.log(`\nUpdated PRD: seeded: true, seeded_count: ${verifiedCount} (verified persisted in ${repoDir}).`);
+  console.log(`\nDone. ${verifiedCount}/${items.length} issues verified persisted.`);
+  process.exit(0);
 }
 
-console.log(`\nDone. ${createdCount}/${items.length} issues ${dryRun ? 'would be created' : 'created'}.`);
+console.error(`\n⚠ Partial seed: only ${verifiedCount}/${items.length} acceptance criteria verified persisted in the target repo.`);
+console.error(`  PRD left seeded: false so this command can be re-run safely — it will create only the ${items.length - verifiedCount} still-missing issue(s), no duplicates.`);
+process.exit(1);
