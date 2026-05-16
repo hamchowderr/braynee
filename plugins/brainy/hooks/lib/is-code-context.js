@@ -19,6 +19,8 @@
 //
 // Exports:
 //   findCodeRoot(startDir)         → absolute path of detected project root, or null
+//   findBeadsRoot(startDir)        → nearest ancestor with .beads/, excluding
+//                                     $HOME/fs-root, or null
 //   isCodeContext(startDir)        → boolean (findCodeRoot !== null)
 //   sessionDir({session_id, cwd})  → the stable session working dir (anchored
 //                                     + cached per session_id)
@@ -177,6 +179,35 @@ function isCodeContext(startDir) {
   return findCodeRoot(startDir) !== null;
 }
 
+/**
+ * Find the nearest ancestor (inclusive) that contains a `.beads/` directory,
+ * EXCLUDING $HOME and the filesystem root. `bd init --shared-server` drops a
+ * global `.beads/` in $HOME; without this exclusion every per-project beads
+ * check would walk up, hit ~/.beads, and wrongly conclude the project itself
+ * is beads-initialized. Returns the dir, or null if none below $HOME.
+ */
+function findBeadsRoot(startDir) {
+  if (!startDir) return null;
+  let dir;
+  try {
+    dir = path.resolve(startDir);
+  } catch {
+    return null;
+  }
+  const root = path.parse(dir).root;
+  while (dir && dir !== root) {
+    if (!isExcludedRoot(dir)) {
+      try {
+        if (fs.existsSync(path.join(dir, '.beads'))) return dir;
+      } catch {}
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return null;
+}
+
 // ── Session-anchored working directory ───────────────────────────────────────
 
 // Tiny per-session cache: { "<session_id>": "<first-seen cwd>" }. The first
@@ -252,6 +283,7 @@ function isSessionCodeContext(stdin) {
 
 module.exports = {
   findCodeRoot,
+  findBeadsRoot,
   isCodeContext,
   sessionDir,
   isSessionCodeContext,

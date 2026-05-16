@@ -6,21 +6,8 @@
 // never dumps global beads state just because a subprocess cd'd into ~/code.
 
 const { execSync } = require('child_process');
-const fs = require('fs');
 const path = require('path');
-const { findCodeRoot, sessionDir } = require(path.join(__dirname, 'lib', 'is-code-context.js'));
-
-function findBeadsAncestor(startDir) {
-  let dir = startDir;
-  const root = path.parse(dir).root;
-  while (dir !== root) {
-    if (fs.existsSync(path.join(dir, '.beads'))) return dir;
-    const parent = path.dirname(dir);
-    if (parent === dir) break;
-    dir = parent;
-  }
-  return null;
-}
+const { findCodeRoot, findBeadsRoot, sessionDir } = require(path.join(__dirname, 'lib', 'is-code-context.js'));
 
 function run(cmd, opts = {}) {
   try {
@@ -46,7 +33,7 @@ process.stdin.on('end', () => {
     // beads state just because a subprocess cd'd into a code project.
     const codeRoot = findCodeRoot(sessionDir(data));
     if (!codeRoot) process.exit(0);
-    const beadsRoot = findBeadsAncestor(codeRoot);
+    const beadsRoot = findBeadsRoot(codeRoot); // excludes the global ~/.beads
     if (!beadsRoot) process.exit(0);
     const cwd = beadsRoot;
 

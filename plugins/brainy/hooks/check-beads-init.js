@@ -13,7 +13,7 @@ const path = require('path');
 const os = require('os');
 const { execSync } = require('child_process');
 const log = require(path.join(__dirname, 'lib', 'hook-logger.js'));
-const { findCodeRoot, sessionDir } = require(path.join(__dirname, 'lib', 'is-code-context.js'));
+const { findCodeRoot, findBeadsRoot, sessionDir } = require(path.join(__dirname, 'lib', 'is-code-context.js'));
 
 const HOOK = 'check-beads-init';
 const PLUGINS_CACHE = path.join(os.homedir(), '.claude', 'plugins', 'cache');
@@ -39,17 +39,6 @@ function isBeadsPluginInstalled() {
   return false;
 }
 
-function findBeadsAncestor(startDir) {
-  let dir = startDir;
-  const root = path.parse(dir).root;
-  while (dir !== root) {
-    if (fs.existsSync(path.join(dir, '.beads'))) return dir;
-    const parent = path.dirname(dir);
-    if (parent === dir) break;
-    dir = parent;
-  }
-  return null;
-}
 
 function tryBdInit(cwd, projectName) {
   // --shared-server + --external is the canonical pair: the shared Dolt
@@ -133,7 +122,10 @@ process.stdin.on('end', () => {
       // Continue — plugin is optional, init still proceeds.
     }
 
-    if (findBeadsAncestor(codeRoot)) {
+    // Excludes the global ~/.beads (`bd init --shared-server`) so a project
+    // without its own .beads/ still auto-inits instead of being mistaken for
+    // already-initialized.
+    if (findBeadsRoot(codeRoot)) {
       log.info(HOOK, `beads already initialized — nothing to do`);
       process.exit(0);
     }

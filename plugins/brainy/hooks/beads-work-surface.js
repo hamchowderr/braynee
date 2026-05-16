@@ -9,25 +9,12 @@
 // `~/.claude/CLAUDE.md`. It does not block — it informs. Claude is expected to
 // ask the user before invoking the beads task-agent or claiming work.
 
-const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 const log = require(path.join(__dirname, 'lib', 'hook-logger.js'));
-const { findCodeRoot, sessionDir } = require(path.join(__dirname, 'lib', 'is-code-context.js'));
+const { findCodeRoot, findBeadsRoot, sessionDir } = require(path.join(__dirname, 'lib', 'is-code-context.js'));
 
 const HOOK = 'beads-work-surface';
-
-function findBeadsAncestor(startDir) {
-  let dir = startDir;
-  const root = path.parse(dir).root;
-  while (dir !== root) {
-    if (fs.existsSync(path.join(dir, '.beads'))) return dir;
-    const parent = path.dirname(dir);
-    if (parent === dir) break;
-    dir = parent;
-  }
-  return null;
-}
 
 function run(cmd, opts = {}) {
   try {
@@ -56,7 +43,7 @@ process.stdin.on('end', () => {
     const projectName = path.basename(codeRoot);
     if (projectName.toLowerCase() === 'workspace') process.exit(0);
 
-    const beadsRoot = findBeadsAncestor(codeRoot);
+    const beadsRoot = findBeadsRoot(codeRoot); // excludes the global ~/.beads
     if (!beadsRoot) process.exit(0); // check-beads-init handles this case
 
     log.info(HOOK, `start cwd=${projectName}`);

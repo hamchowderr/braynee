@@ -10,11 +10,10 @@
 const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
 const log = require(path.join(__dirname, 'lib', 'hook-logger.js'));
+const { findCodeRoot } = require(path.join(__dirname, 'lib', 'is-code-context.js'));
 
 const HOOK = 'mtn-to-beads-sync';
-const CODE_DIR = path.join(os.homedir(), 'code');
 
 function run(cmd, opts = {}) {
   try {
@@ -27,16 +26,33 @@ process.stdin.setEncoding('utf8');
 process.stdin.on('data', c => { input += c; });
 process.stdin.on('end', () => {
   try {
-    const data = JSON.parse(input || '{}');
+    let data = {};
+    try { data = JSON.parse(input || '{}'); } catch { data = {}; }
     const cmd = (data.tool_input?.command || '').trim();
-    const cwd = data.cwd || process.cwd();
+    const eventCwd = data.cwd || process.cwd();
 
     // Match `mtn complete <X>` or `mtn done <X>` (mtn's alias)
     const m = cmd.match(/^mtn\s+(?:complete|done)\s+(.+?)\s*$/);
     if (!m) process.exit(0);
 
-    if (!cwd.toLowerCase().startsWith(CODE_DIR.toLowerCase())) process.exit(0);
-    if (!fs.existsSync(path.join(cwd, '.beads'))) process.exit(0);
+    // F-3.2a: this is a per-command PostToolUse sync (not a session-wide
+    // gate), so it correctly keys off the cwd where `mtn complete` ran —
+    // detected structurally instead of a hardcoded ~/code prefix. bd runs at
+    // the .beads root (the code root or a .beads ancestor of it).
+    const codeRoot = findCodeRoot(eventCwd);
+    if (!codeRoot) process.exit(0);
+    let cwd = codeRoot;
+    if (!fs.existsSync(path.join(cwd, '.beads'))) {
+      let dir = codeRoot;
+      const fsRoot = path.parse(dir).root;
+      while (dir !== fsRoot && !fs.existsSync(path.join(dir, '.beads'))) {
+        const parent = path.dirname(dir);
+        if (parent === dir) break;
+        dir = parent;
+      }
+      if (!fs.existsSync(path.join(dir, '.beads'))) process.exit(0);
+      cwd = dir;
+    }
 
     const target = m[1].replace(/^["']|["']$/g, '');
 

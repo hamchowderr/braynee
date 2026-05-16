@@ -19,23 +19,11 @@ const path = require('path');
 const os = require('os');
 const { execSync } = require('child_process');
 const log = require(path.join(__dirname, 'lib', 'hook-logger.js'));
-const { findCodeRoot, sessionDir } = require(path.join(__dirname, 'lib', 'is-code-context.js'));
+const { findCodeRoot, findBeadsRoot, sessionDir } = require(path.join(__dirname, 'lib', 'is-code-context.js'));
 
 const HOOK = 'beads-nudge';
 const STATE_FILE = path.join(os.homedir(), '.claude', 'beads-nudge-state.json');
 const THRESHOLD = Math.max(1, parseInt(process.env.BRAINY_BEADS_NUDGE_EVERY || '7', 10));
-
-function findBeadsAncestor(startDir) {
-  let dir = startDir;
-  const root = path.parse(dir).root;
-  while (dir !== root) {
-    if (fs.existsSync(path.join(dir, '.beads'))) return dir;
-    const parent = path.dirname(dir);
-    if (parent === dir) break;
-    dir = parent;
-  }
-  return null;
-}
 
 function readState() {
   try {
@@ -105,8 +93,9 @@ process.stdin.on('end', () => {
       process.exit(0); // not a code session — stay silent
     }
 
-    // Resolve the .beads/ root from the session's code root.
-    const beadsRoot = findBeadsAncestor(codeRoot);
+    // Resolve the .beads/ root from the session's code root (excludes the
+    // global ~/.beads from `bd init --shared-server`).
+    const beadsRoot = findBeadsRoot(codeRoot);
     if (!beadsRoot) {
       writeState(state);
       process.exit(0); // check-beads-init handles missing init

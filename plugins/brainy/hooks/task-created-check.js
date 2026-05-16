@@ -4,42 +4,39 @@
 // Exit 0 = allow creation, Exit 2 = block with feedback to model
 // Only applies to projects in the code directory (not workspace or other dirs)
 
-const fs = require('fs');
 const path = require('path');
-const os = require('os');
-
-const CODE_DIR = path.join(os.homedir(), 'code');
+const { findCodeRoot, findBeadsRoot, sessionDir } = require(path.join(__dirname, 'lib', 'is-code-context.js'));
 
 let input = '';
 process.stdin.setEncoding('utf8');
 process.stdin.on('data', chunk => { input += chunk; });
 process.stdin.on('end', () => {
   try {
-    const data = JSON.parse(input);
-    const cwd = data.cwd || process.cwd();
+    // Guard the parse: this is an exit-2 ENFORCEMENT guard — a malformed
+    // payload must not be the thing that silently disables it. {} fallback
+    // means an undetectable session is treated as "not a code context" and
+    // the guard no-ops (fail-open is correct for an advisory block here).
+    let data = {};
+    if (input) {
+      try { data = JSON.parse(input); } catch { data = {}; }
+    }
 
-    // Only enforce for code projects, not workspace or other dirs
-    if (!cwd.toLowerCase().startsWith(CODE_DIR.toLowerCase())) {
+    // F-3.2a + F-3.2b: only enforce for code projects, detected structurally
+    // on the SESSION's working dir (anchored at SessionStart) — not a
+    // hardcoded ~/code prefix on the transient cwd. Before this fix the
+    // enforcement was silently disabled for every project outside ~/code.
+    const codeRoot = findCodeRoot(sessionDir(data));
+    if (!codeRoot) {
       process.exit(0);
     }
-    if (path.basename(cwd).toLowerCase() === 'workspace') {
+    if (path.basename(codeRoot).toLowerCase() === 'workspace') {
       process.exit(0);
     }
 
-    // Walk up from cwd looking for .beads/ directory (bd init creates it)
-    let dir = cwd;
-    const root = path.parse(dir).root;
-    let beadsFound = false;
-
-    while (dir !== root) {
-      if (fs.existsSync(path.join(dir, '.beads'))) {
-        beadsFound = true;
-        break;
-      }
-      const parent = path.dirname(dir);
-      if (parent === dir) break;
-      dir = parent;
-    }
+    // .beads/ from the code root, EXCLUDING the global ~/.beads that
+    // `bd init --shared-server` creates — otherwise every project would look
+    // beads-initialized and this enforcement guard would never fire.
+    const beadsFound = findBeadsRoot(codeRoot) !== null;
 
     if (!beadsFound) {
       process.stderr.write(

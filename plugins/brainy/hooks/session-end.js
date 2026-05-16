@@ -12,11 +12,11 @@ const path = require('path');
 const os = require('os');
 const fs = require('fs');
 const log = require(path.join(__dirname, 'lib', 'hook-logger.js'));
+const { findCodeRoot, sessionDir } = require(path.join(__dirname, 'lib', 'is-code-context.js'));
 
 const HOOK = 'session-end';
 const VAULT_DIR = path.join(os.homedir(), 'Obsidian Vault');
 const SESSIONS_DIR = path.join(VAULT_DIR, '2. Areas', 'Sessions');
-const CODE_DIR = path.join(os.homedir(), 'code');
 
 function findProjectName(folderName) {
   const projectsDir = path.join(VAULT_DIR, '1. Projects');
@@ -89,17 +89,24 @@ process.stdin.setEncoding('utf8');
 process.stdin.on('data', c => { input += c; });
 process.stdin.on('end', () => {
   try {
-    const data = input ? JSON.parse(input) : {};
-    const cwd = data.cwd || process.cwd();
-    const folderName = path.basename(cwd);
-    const isInCodeDir = cwd.toLowerCase().startsWith(CODE_DIR.toLowerCase());
-
-    // bd prime so the next session inherits context (unchanged behavior)
-    if (isInCodeDir) {
-      try { execSync('bd prime', { cwd, encoding: 'utf8', timeout: 5000, stdio: 'ignore', windowsHide: true }); } catch {}
+    let data = {};
+    if (input) {
+      try { data = JSON.parse(input); } catch { data = {}; }
     }
 
-    if (!isInCodeDir || folderName.toLowerCase() === 'workspace') {
+    // F-3.2a + F-3.2b: resolve the SESSION's code root (anchored at
+    // SessionStart, detected structurally) — not a ~/code prefix on the
+    // transient cwd. Before this fix, sessions in any project outside ~/code
+    // were never closed (status stuck "active") and bd prime never ran.
+    const codeRoot = findCodeRoot(sessionDir(data));
+    const folderName = codeRoot ? path.basename(codeRoot) : null;
+
+    // bd prime so the next session inherits context (run at the code root).
+    if (codeRoot) {
+      try { execSync('bd prime', { cwd: codeRoot, encoding: 'utf8', timeout: 5000, stdio: 'ignore', windowsHide: true }); } catch {}
+    }
+
+    if (!codeRoot || folderName.toLowerCase() === 'workspace') {
       process.exit(0);
     }
 

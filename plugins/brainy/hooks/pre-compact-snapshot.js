@@ -16,11 +16,12 @@ const path = require('path');
 const os = require('os');
 const fs = require('fs');
 
+const { findCodeRoot, sessionDir } = require(path.join(__dirname, 'lib', 'is-code-context.js'));
+
 const VAULT_QUERY = path.join(__dirname, '..', 'scripts', 'vault-query.mjs');
 const TASKNOTES = path.join(__dirname, '..', 'scripts', 'tasknotes.mjs');
 const VAULT_DIR = path.join(os.homedir(), 'Obsidian Vault');
 const SESSIONS_DIR = path.join(VAULT_DIR, '2. Areas', 'Sessions');
-const CODE_DIR = path.join(os.homedir(), 'code');
 const SNAPSHOT_FILE = path.join(os.homedir(), '.claude', 'compact-snapshot.json');
 const CONTEXT_CACHE = path.join(os.homedir(), '.claude', 'vault-context-cache.json');
 
@@ -53,29 +54,47 @@ function run(cmd) {
   }
 }
 
-// Find active session note for a project, returns { filename, filepath, content } or null
+// Find active session note for a project, returns { filename, filepath, content } or null.
+// F-8.1: session notes are grouped into project subfolders
+// (Sessions/<ProjectSlug>/...), so a flat readdir of SESSIONS_DIR misses them
+// and compaction reinjection would restore nothing. Walk recursively, matching
+// the resilient scan in session-end.js.
 function findActiveSession(projectName) {
   if (!fs.existsSync(SESSIONS_DIR)) return null;
+  const projectSlug = projectName.replace(/[^a-zA-Z0-9]+/g, '-');
 
-  const files = fs.readdirSync(SESSIONS_DIR).filter(f => f.endsWith('.md'));
-  files.sort((a, b) => b.localeCompare(a));
-
-  for (const file of files) {
+  function walkMd(dir) {
+    const results = [];
     try {
-      const filepath = path.join(SESSIONS_DIR, file);
-      const content = fs.readFileSync(filepath, 'utf8');
-
-      const statusMatch = content.match(/^status:\s*(\S+)/m);
-      if (!statusMatch || statusMatch[1] !== 'active') continue;
-
-      const projectMatch = content.match(/^project:\s*"?\[?\[?([^\]"\n]+)\]?\]?"?/m);
-      if (!projectMatch) continue;
-
-      if (projectMatch[1].trim().toLowerCase() === projectName.toLowerCase()) {
-        return { filename: file, filepath, content };
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        if (entry.isDirectory() && !entry.name.startsWith('.')) {
+          results.push(...walkMd(path.join(dir, entry.name)));
+        } else if (entry.isFile() && entry.name.endsWith('.md')) {
+          results.push(path.join(dir, entry.name));
+        }
       }
-    } catch {
-      continue;
+    } catch {}
+    return results;
+  }
+
+  const dirs = [path.join(SESSIONS_DIR, projectSlug), SESSIONS_DIR].filter(d => fs.existsSync(d));
+  const seen = new Set();
+  for (const dir of dirs) {
+    for (const filepath of walkMd(dir).sort((a, b) => path.basename(b).localeCompare(path.basename(a)))) {
+      if (seen.has(filepath)) continue;
+      seen.add(filepath);
+      try {
+        const content = fs.readFileSync(filepath, 'utf8');
+        const statusMatch = content.match(/^status:\s*(\S+)/m);
+        if (!statusMatch || statusMatch[1] !== 'active') continue;
+        const projectMatch = content.match(/^project:\s*"?\[?\[?([^\]"\n]+)\]?\]?"?/m);
+        if (!projectMatch) continue;
+        if (projectMatch[1].trim().toLowerCase() === projectName.toLowerCase()) {
+          return { filename: path.basename(filepath), filepath, content };
+        }
+      } catch {
+        continue;
+      }
     }
   }
   return null;
@@ -176,16 +195,23 @@ process.stdin.setEncoding('utf8');
 process.stdin.on('data', chunk => { input += chunk; });
 process.stdin.on('end', () => {
   try {
+    let data = {};
+    if (input) {
+      try { data = JSON.parse(input); } catch { data = {}; }
+    }
     const cwd = process.cwd();
-    const folderName = path.basename(cwd);
     const snapshot = {
       timestamp: new Date().toISOString(),
       cwd,
     };
 
-    // Detect project
-    const isInCodeDir = cwd.toLowerCase().startsWith(CODE_DIR.toLowerCase());
-    if (isInCodeDir) {
+    // F-3.2a + F-3.2b: detect the project from the SESSION's code root
+    // (anchored at SessionStart, detected structurally) — not a ~/code prefix
+    // on the transient cwd. Off ~/code this previously snapshotted no project,
+    // so post-compact reinjection had nothing to restore.
+    const codeRoot = findCodeRoot(sessionDir(data));
+    if (codeRoot) {
+      const folderName = path.basename(codeRoot);
       snapshot.projectName = folderName.toLowerCase() === 'workspace'
         ? 'Workspace'
         : findProjectName(folderName) || folderName;
