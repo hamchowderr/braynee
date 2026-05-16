@@ -21,11 +21,13 @@ const os = require('os');
 const fs = require('fs');
 const log = require(path.join(__dirname, 'lib', 'hook-logger.js'));
 
+const { findCodeRoot, sessionDir } = require(path.join(__dirname, 'lib', 'is-code-context.js'));
+const { findTranscriptDir } = require(path.join(__dirname, 'lib', 'transcript-dir.js'));
+
 const HOOK = 'session-auto-close';
 
 const VAULT_DIR = path.join(os.homedir(), 'Obsidian Vault');
 const SESSIONS_DIR = path.join(VAULT_DIR, '2. Areas', 'Sessions');
-const CODE_DIR = path.join(os.homedir(), 'code');
 
 function findProjectName(folderName) {
   const projectsDir = path.join(VAULT_DIR, '1. Projects');
@@ -141,12 +143,10 @@ function getBranch(cwd) {
 // Extract goal from JSONL — use the EXACT session_id passed by Claude Code,
 // not whichever JSONL was most recently touched. Aggregates per project can
 // span many sessions; we want this session's first prompt only.
+// Delegates to the shared lib/transcript-dir helper so the cwd→transcript-dir
+// encoding has a single source of truth (was duplicated inline; see cp-d9g).
 function findCwdProjectsDir(cwd) {
-  // Claude Code encodes cwd by replacing path separators with dashes.
-  // E.g. C:\Users\HamCh\code\foreman → C--Users-HamCh-code-foreman
-  const encoded = cwd.replace(/[:\\\/]+/g, '-').replace(/^-+|-+$/g, '');
-  const dir = path.join(os.homedir(), '.claude', 'projects', encoded);
-  return fs.existsSync(dir) ? dir : null;
+  return findTranscriptDir(cwd);
 }
 
 function extractGoalFromJSONL(cwd, sessionId) {
@@ -221,16 +221,22 @@ process.stdin.on('data', chunk => { input += chunk; });
 process.stdin.on('end', () => {
   let sessionId = null;
   try {
-    const data = input ? JSON.parse(input) : {};
+    let data = {};
+    if (input) {
+      try { data = JSON.parse(input); } catch { data = {}; }
+    }
     sessionId = data.session_id || null;
-    const cwd = data.cwd || process.cwd();
-    const folderName = path.basename(cwd);
-    const isInCodeDir = cwd.toLowerCase().startsWith(CODE_DIR.toLowerCase());
 
-    log.info(HOOK, `start cwd=${folderName} session=${sessionId || 'unknown'}`);
+    // F-3.2a + F-3.2b: resolve the SESSION's code root (anchored at
+    // SessionStart, detected structurally) — not a ~/code prefix on the
+    // transient cwd. Off ~/code this previously never closed the session note.
+    const codeRoot = findCodeRoot(sessionDir(data));
+    const folderName = codeRoot ? path.basename(codeRoot) : null;
 
-    if (!isInCodeDir || folderName.toLowerCase() === 'workspace') {
-      log.info(HOOK, `skip: not in code dir`);
+    log.info(HOOK, `start cwd=${folderName || '(not code)'} session=${sessionId || 'unknown'}`);
+
+    if (!codeRoot || folderName.toLowerCase() === 'workspace') {
+      log.info(HOOK, `skip: not a code session`);
       process.exit(0);
     }
 
@@ -256,10 +262,11 @@ process.stdin.on('end', () => {
     const startedIso = startedMatch ? startedMatch[1].trim() : null;
     const duration = startedMatch ? getSessionDuration(startedIso) : 'unknown';
 
-    // Get git data scoped to this session window
-    const commits = getRecentCommits(cwd, startedIso);
-    const filesChanged = getFilesChanged(cwd);
-    const branch = getBranch(cwd);
+    // Get git data scoped to this session window (run at the project repo
+    // root — the detected code root — not a possibly-nested transient cwd).
+    const commits = getRecentCommits(codeRoot, startedIso);
+    const filesChanged = getFilesChanged(codeRoot);
+    const branch = getBranch(codeRoot);
 
     // ─── Auto-fill Goal if still a placeholder ──────────────────────
     const goalMatch = content.match(/## Goal\s*\n([\s\S]*?)(?=\n## )/);

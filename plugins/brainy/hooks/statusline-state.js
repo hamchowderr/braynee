@@ -16,9 +16,10 @@ const os = require('os');
 const http = require('http');
 const net = require('net');
 
+const { findCodeRoot, sessionDir } = require(path.join(__dirname, 'lib', 'is-code-context.js'));
+
 const VAULT_DIR = path.join(os.homedir(), 'Obsidian Vault');
 const SESSIONS_DIR = path.join(VAULT_DIR, '2. Areas', 'Sessions');
-const CODE_DIR = path.join(os.homedir(), 'code');
 const STATE_FILE = path.join(os.homedir(), '.claude', 'statusline-live.json');
 const AUTH_TOKEN = process.env.TASKNOTES_TOKEN || '5Z3IySQ9uI5jzH0q8sMp+Np0vruJILVSLhX1PITANl0=';
 
@@ -165,10 +166,18 @@ async function main() {
   for await (const chunk of process.stdin) input += chunk;
 
   try {
-    const data = JSON.parse(input);
-    const cwd = data.cwd || process.cwd();
-    const folderName = path.basename(cwd);
-    if (!cwd.toLowerCase().startsWith(CODE_DIR.toLowerCase()) || folderName.toLowerCase() === 'workspace') {
+    let data = {};
+    if (input) {
+      try { data = JSON.parse(input); } catch { data = {}; }
+    }
+
+    // F-3.2a + F-3.2b: gate on the SESSION's code root (anchored at
+    // SessionStart, detected structurally) — not a ~/code prefix on the
+    // transient cwd.
+    const codeRoot = findCodeRoot(sessionDir(data));
+    if (!codeRoot) process.exit(0);
+    const folderName = path.basename(codeRoot);
+    if (folderName.toLowerCase() === 'workspace') {
       process.exit(0);
     }
 
@@ -177,7 +186,7 @@ async function main() {
 
     const session = findActiveSession(projectName);
     const goal = session ? extractGoal(session.content) : '';
-    const [timer, beads] = await Promise.all([getActiveTimer(), getBeadsData(cwd)]);
+    const [timer, beads] = await Promise.all([getActiveTimer(), getBeadsData(codeRoot)]);
 
     const state = {
       goal,

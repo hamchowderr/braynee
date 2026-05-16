@@ -15,6 +15,8 @@ const os = require('os');
 const fs = require('fs');
 const { findSessionViaQmd } = require('./lib/qmd-search');
 const log = require(path.join(__dirname, 'lib', 'hook-logger.js'));
+const { findCodeRoot, sessionDir } = require(path.join(__dirname, 'lib', 'is-code-context.js'));
+const { findTranscriptDir } = require(path.join(__dirname, 'lib', 'transcript-dir.js'));
 
 const HOOK = 'session-auto-track';
 
@@ -24,7 +26,6 @@ const TASKNOTES = path.join(PLUGIN_ROOT, 'scripts', 'tasknotes.mjs');
 const VAULT_DIR = path.join(os.homedir(), 'Obsidian Vault');
 const SESSIONS_DIR = path.join(VAULT_DIR, '2. Areas', 'Sessions');
 const PRD_DIR = path.join(VAULT_DIR, '2. Areas', 'Product Manager', 'PRDs');
-const CODE_DIR = path.join(os.homedir(), 'code');
 
 function findPrdForFolder(folderName) {
   if (!fs.existsSync(PRD_DIR)) return null;
@@ -367,15 +368,16 @@ function formatSessionContext(content, filename) {
   return lines.join('\n');
 }
 
-// Find the most recent JSONL transcript for this project folder
-function getRecentTranscriptContext(folderName) {
-  const projectsDir = path.join(os.homedir(), '.claude', 'projects');
-  if (!fs.existsSync(projectsDir)) return null;
-
-  // Transcript dirs use pattern: C--Users-HamCh-code-{folder}
-  const dirName = `C--Users-HamCh-code-${folderName}`;
-  const transcriptDir = path.join(projectsDir, dirName);
-  if (!fs.existsSync(transcriptDir)) return null;
+// Find the most recent JSONL transcript for the SESSION's actual cwd.
+// Derives the transcript dir by encoding `cwd` via the shared
+// lib/transcript-dir helper — NOT a hardcoded C--Users-<user>-code-<folder>
+// string, which only worked for one machine (one username + repos under
+// ~/code). For any other user, a non-~/code project location, or a
+// differently-cased path, the old hardcode missed the dir entirely and no
+// prior-session context was ever recalled (cp-d9g / S-1).
+function getRecentTranscriptContext(cwd) {
+  const transcriptDir = findTranscriptDir(cwd);
+  if (!transcriptDir) return null;
 
   // Find most recent JSONL file
   const jsonlFiles = fs.readdirSync(transcriptDir)
@@ -449,16 +451,30 @@ process.stdin.setEncoding('utf8');
 process.stdin.on('data', chunk => { input += chunk; });
 process.stdin.on('end', () => {
   try {
-    const data = JSON.parse(input);
-    const cwd = data.cwd || process.cwd();
-    const folderName = path.basename(cwd);
+    let data = {};
+    if (input) {
+      try { data = JSON.parse(input); } catch { data = {}; }
+    }
+    const eventCwd = data.cwd || process.cwd();
     const sessionId = data.session_id || null;
 
     // Normalize paths to forward slashes for consistent comparison on Windows
     const norm = (p) => p.toLowerCase().replace(/\\/g, '/');
-    const isInCodeDir = norm(cwd).startsWith(norm(CODE_DIR));
+
+    // This hook INTENTIONALLY runs in three modes — code, vault, workspace —
+    // (see the `if (!isInCodeDir && !isWorkspace && !isVault)` guard below). We
+    // only universalize the *code* detection: F-3.2a + F-3.2b replace the
+    // ~/code prefix with a structural code-context check on the SESSION's
+    // working dir (anchored at SessionStart). The vault check stays a real
+    // VAULT_DIR path test (not a ~/code assumption) and is left as-is.
+    const codeRoot = findCodeRoot(sessionDir(data));
+    const isInCodeDir = codeRoot !== null;
+    // In code mode, derive the project folder + git cwd from the detected
+    // code root, not a possibly-nested transient cwd.
+    const cwd = codeRoot || eventCwd;
+    const folderName = path.basename(cwd);
     const isWorkspace = folderName.toLowerCase() === 'workspace';
-    const isVault = norm(cwd).startsWith(norm(VAULT_DIR));
+    const isVault = norm(eventCwd).startsWith(norm(VAULT_DIR));
 
     log.info(HOOK, `start cwd=${folderName} session=${sessionId || 'unknown'} mode=${isInCodeDir ? 'code' : isVault ? 'vault' : isWorkspace ? 'workspace' : 'other'}`);
 
@@ -696,8 +712,11 @@ process.stdin.on('end', () => {
         output.push('5. Before session ends: vault-query.mjs session close --summary "..."');
       }
 
-      // Load recent transcript from last Claude Code session
-      const transcript = getRecentTranscriptContext(folderName);
+      // Load recent transcript from last Claude Code session (project/code
+      // mode only — this block is the `else` of the vault/workspace branch, so
+      // vault & workspace sessions never reach here and keep getting vault
+      // context, not transcript context). Encoded from the real cwd.
+      const transcript = getRecentTranscriptContext(cwd);
       if (transcript) {
         output.push('');
         output.push(`── LAST SESSION TRANSCRIPT (${transcript.slug || transcript.sessionId}) ──`);

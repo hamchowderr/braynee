@@ -38,6 +38,7 @@ const results = {
   hooks: { ok: 0, fail: 0, errors: [] },
   monitors: { ok: 0, fail: 0, errors: [] },
   scripts: { ok: 0, fail: 0, errors: [] },
+  unit: { ok: 0, fail: 0, errors: [] },
 };
 
 function log(line) {
@@ -64,6 +65,7 @@ const jsFiles = [
   ...listFiles(path.join(PLUGIN_ROOT, 'hooks'), ['.js']),
   ...listFiles(path.join(PLUGIN_ROOT, 'hooks', 'lib'), ['.js']),
   ...listFiles(path.join(PLUGIN_ROOT, 'scripts'), ['.mjs', '.js']),
+  ...listFiles(path.join(PLUGIN_ROOT, 'scripts', 'lib'), ['.mjs', '.js']),
   ...listFiles(path.join(PLUGIN_ROOT, 'monitors'), ['.mjs', '.js']),
 ];
 for (const fp of jsFiles) {
@@ -236,6 +238,29 @@ for (const s of scripts) {
     results.scripts.fail++;
     results.scripts.errors.push({ file: s.file, status: r.status, error: (r.stderr || r.stdout).slice(0, 200) });
     log(`  FAIL: ${s.file} — exit ${r.status}`);
+  }
+}
+
+// ── 7. Unit tests (lib/*.test.js under hooks/ and scripts/) ──────────────────
+log('\n=== 7. Unit tests ===');
+const testFiles = [
+  ...listFiles(path.join(PLUGIN_ROOT, 'hooks', 'lib'), ['.test.js', '.test.mjs']),
+  ...listFiles(path.join(PLUGIN_ROOT, 'scripts', 'lib'), ['.test.js', '.test.mjs']),
+];
+if (testFiles.length === 0) {
+  log('  (no unit tests found)');
+}
+for (const tf of testFiles) {
+  const name = path.relative(PLUGIN_ROOT, tf);
+  const r = spawnSync(process.execPath, [tf], { encoding: 'utf8', timeout: 30_000 });
+  if (r.status === 0) {
+    results.unit.ok++;
+    log(`  OK: ${name} — ${(r.stdout || '').trim().split('\n').pop()}`);
+  } else {
+    results.unit.fail++;
+    const err = ((r.stderr || '') + (r.stdout || '')).split('\n').filter(Boolean).slice(-4).join(' | ');
+    results.unit.errors.push({ file: name, status: r.status, error: err });
+    log(`  FAIL: ${name} (exit ${r.status}) — ${err}`);
   }
 }
 

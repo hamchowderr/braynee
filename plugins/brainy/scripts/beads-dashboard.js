@@ -11,9 +11,12 @@ const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { getProjectsDir } = require('./lib/projects-root.js');
 
 const HOME = os.homedir();
-const CODE_DIR = process.env.BEADS_CODE_DIR || path.join(HOME, 'code');
+// Projects root: BRAINY_PROJECTS_DIR > BEADS_CODE_DIR > ~/code (back-compat).
+// Never a hard ~/code assumption — see scripts/lib/projects-root.js.
+const CODE_DIR = getProjectsDir();
 const DEFAULT_OUTPUT = process.env.BEADS_OUTPUT || path.join(HOME, '.claude', 'beads-dashboard.html');
 const CACHE_PATH = path.join(HOME, '.claude', 'beads-dashboard-cache.json');
 const ACTIVE_ISSUE_FILE = path.join(HOME, '.claude', 'beads-active-issue.json');
