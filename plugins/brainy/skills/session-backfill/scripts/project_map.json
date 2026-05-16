@@ -1,0 +1,20 @@
+{
+  "_comment": "Overrides for CC-folder-name → project-wikilink mapping. Kebab-case key from ~/.claude/projects/C--Users-HamCh-code-<KEY>/. Value is the Title Case With Spaces wikilink (no brackets).",
+  "dealreveal-engine": "DealReveal",
+  "dealreveal-engine-plugin": "DealReveal",
+  "flowsper": "Brokerboard",
+  "flowsper-voice-agent": "Brokerboard",
+  "fivem-studio-web": "FiveM Studio",
+  "ink-portfolio": "Slug",
+  "secrets": "Agent Vault",
+  "key-broker": "Otaku Secrets Broker",
+  "no-code-architects-toolkit": "NCAT MCP",
+  "n8n-nodes-ncat": "NCAT MCP",
+  "n8n-nodes-gamma": "Gamma N8N Nodes",
+  "nca-toolkit-installer": "NCA Toolkit Installer",
+  "ncat-saas": "NCAT SaaS",
+  "ComfyUI-Sophon": "ComfyUI-Sophon",
+  "skateghostpurrp": "Skateghostpurrp",
+  "_vault": "_Vault",
+  "_home": "_Home"
+}
