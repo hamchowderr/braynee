@@ -6,7 +6,7 @@ import { join } from 'path';
 import { loadClaudeData } from './data/claude.mjs';
 import { loadVaultStats } from './data/vault.mjs';
 import { loadBeadsStats } from './data/beads.mjs';
-import { computeAllHookCmds, computeBrainyHealth } from './data/brainy.mjs';
+import { computeAllHookCmds, computeBrainyHealth, computeHooksLive } from './data/brainy.mjs';
 
 import { renderCSS, renderTopbar, renderSidebar, renderNavJS } from './html/shell.mjs';
 import { esc } from './html/utils.mjs';
@@ -31,10 +31,11 @@ const [claudeData, vaultStats, beadsStats] = await Promise.all([
 
 const allHookCmds = computeAllHookCmds(claudeData.s);
 const brainyHealth = computeBrainyHealth(claudeData.s, allHookCmds);
+const hooksLive = computeHooksLive();
 const ts = new Date().toLocaleString();
 
 // Bundle all data for panels
-const d = { ...claudeData, vaultStats, beadsStats, brainyHealth, ts };
+const d = { ...claudeData, vaultStats, beadsStats, brainyHealth, hooksLive, ts };
 
 const html = `<!DOCTYPE html>
 <html lang="en">
