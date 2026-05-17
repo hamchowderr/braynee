@@ -1,7 +1,21 @@
 import { esc, kvTable } from '../html/utils.mjs';
 
 export function renderBrainyPanel(d) {
-  const { vaultStats, beadsStats, brainyHealth, totalProjects, acct, ts } = d;
+  const { vaultStats, beadsStats, brainyHealth, hooksLive, totalProjects, acct, ts } = d;
+
+  const hl = hooksLive || { state: 'missing', live: false, lastBeat: null };
+  const hlColor = hl.live ? 'var(--green)' : 'var(--red)';
+  const hlLabel = hl.state === 'live' ? 'YES'
+    : hl.state === 'stale' ? 'STALE'
+    : hl.state === 'missing' ? 'NO — INERT'
+    : 'UNKNOWN';
+  const hlDetail = hl.state === 'live'
+    ? `last SessionStart ${hl.lastBeat ? new Date(hl.lastBeat).toLocaleString() : ''}`
+    : hl.state === 'stale'
+      ? `no SessionStart in over 24h (last ${hl.lastBeat ? new Date(hl.lastBeat).toLocaleString() : '?'}) — hooks may be disabled`
+      : hl.state === 'missing'
+        ? 'heartbeat sentinel never written — disableAllHooks, a managed policy, or a Claude Code too old for plugin hooks. Every Brainy lifecycle guarantee is silently off.'
+        : 'heartbeat file unreadable';
 
   return `<div id="panel-brainy" class="panel active">
     <div class="section-head">
@@ -36,6 +50,10 @@ export function renderBrainyPanel(d) {
            ✓ All features installed and active
          </div>`
     }
+
+    <div style="padding:10px 14px;background:${hl.live ? 'rgba(61,220,132,.06)' : 'rgba(255,92,92,.06)'};border:1px solid ${hl.live ? 'rgba(61,220,132,.2)' : 'rgba(255,92,92,.2)'};font-size:11px;color:${hlColor};margin-bottom:16px">
+      ${hl.live ? '✓' : '○'} Hooks live? <strong>${esc(hlLabel)}</strong> &nbsp;·&nbsp; <span style="color:var(--ink-3)">${esc(hlDetail)}</span>
+    </div>
 
     <div class="card">
       <div class="card-head"><div class="card-head-dot" style="background:var(--purple)"></div>Skill Commands</div>
