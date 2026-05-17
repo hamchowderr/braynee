@@ -6,6 +6,23 @@ Brainy is a Claude Code plugin that scaffolds a PARA vault, wires up your compan
 
 > **Requires Claude Code ≥ 2.1.85.** Brainy's hooks use the `if` field to scope by tool and arguments. On older Claude Code the `if` field is ignored and the hooks run on every matched call — they still self-gate internally and stay correct, just less efficiently. Update Claude Code for the intended behavior.
 
+## Install
+
+**Marketplace (recommended):**
+
+```bash
+claude plugin marketplace add hamchowderr/claude-plugins
+claude plugin install brainy@hamch-plugins
+```
+
+**Direct from a release URL (no marketplace)** — requires Claude Code ≥ v2.1.128 for zip/URL plugin loading:
+
+```bash
+claude --plugin-url https://github.com/hamchowderr/claude-plugins/releases/download/brainy--v<version>/brainy.zip
+```
+
+Every `brainy--v<version>` GitHub Release ships a `brainy.zip` asset, built automatically when the tag is pushed (`claude plugin tag plugins/brainy` → `git push origin brainy--v<version>`). Pin the tag to the version you want.
+
 ---
 
 ## What it sets up
