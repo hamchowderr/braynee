@@ -7,34 +7,10 @@
   },
   "plugins": [
     {
-      "name": "insightful",
-      "source": "./plugins/insightful",
-      "description": "Generate a comprehensive HTML insights report from your ENTIRE Claude Code history — every session, every project, all time. The built-in /insights covers recent activity; Insightful covers everything.",
-      "version": "1.1.2",
-      "author": {
-        "name": "HamCh"
-      },
-      "repository": "https://github.com/hamchowderr/claude-plugins",
-      "license": "MIT",
-      "keywords": ["insights", "analytics", "reporting", "usage", "history"]
-    },
-    {
-      "name": "beads",
-      "source": "./plugins/beads",
-      "description": "Live HTML dashboard for your beads issue tracker — auto-opens on session start and refreshes whenever bd commands run. Shows active project issues with tabbed views, full issue detail, and a paginated grid of all other projects. Configure your projects root via BEADS_CODE_DIR env var.",
-      "version": "1.0.2",
-      "author": {
-        "name": "HamCh"
-      },
-      "repository": "https://github.com/hamchowderr/claude-plugins",
-      "license": "MIT",
-      "keywords": ["beads", "issues", "dashboard", "project-management", "dolt"]
-    },
-    {
       "name": "brainy",
       "source": "./plugins/brainy",
-      "description": "Brainy turns Claude Code into your second brain — setup wizard, PARA vault scaffolding, company knowledge base, project detection, and daily workflow skills. Requires Claude Code ≥ 2.1.85 (hooks use the `if` field for tool/argument scoping).",
-      "version": "1.31.0",
+      "description": "Brainy turns Claude Code into your second brain — setup wizard, PARA vault scaffolding, company knowledge base, project detection, all-time usage insights, and daily workflow skills. Requires Claude Code ≥ 2.1.85 (hooks use the `if` field for tool/argument scoping).",
+      "version": "1.32.0",
       "author": {
         "name": "Otaku Solutions"
       },
