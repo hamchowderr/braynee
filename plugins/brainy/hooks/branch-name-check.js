@@ -37,10 +37,18 @@ process.stdin.on('end', () => {
 
     if (!ALLOWED.test(branch)) {
       log.info(HOOK, `non-conventional branch name: ${branch}`);
-      process.stderr.write(
-        `⚠ Branch '${branch}' doesn't follow the feature/*, fix/*, chore/*, refactor/*, docs/*, test/* convention. ` +
-        `Allowing the push, but consider renaming for consistency.`
-      );
+      // cp-psc/HD-4.2: exit-0 stderr is NOT surfaced to Claude on PreToolUse;
+      // the documented channel is hookSpecificOutput.additionalContext.
+      // Factual phrasing (not an imperative) so it isn't treated as an
+      // out-of-band command. The push still proceeds (exit 0, no block).
+      process.stdout.write(JSON.stringify({
+        hookSpecificOutput: {
+          hookEventName: 'PreToolUse',
+          additionalContext:
+            `Branch '${branch}' does not follow the feature/*, fix/*, chore/*, refactor/*, docs/*, test/* naming convention. ` +
+            `The push is allowed; renaming the branch would make it consistent with the convention.`,
+        },
+      }));
     }
     process.exit(0);
   } catch (e) {

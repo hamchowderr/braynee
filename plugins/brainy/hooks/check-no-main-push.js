@@ -47,7 +47,14 @@ process.stdin.on('end', () => {
       }
       try {
         if (fs.existsSync(path.join(cwd, '.beads'))) {
-          process.stdout.write('Reminder: Run `bd preflight --check` before opening a PR to catch stale/orphaned issues.');
+          // cp-psc/HD-4.3: PreToolUse exit-0 stdout is NOT added to context;
+          // use the documented additionalContext channel, factual phrasing.
+          process.stdout.write(JSON.stringify({
+            hookSpecificOutput: {
+              hookEventName: 'PreToolUse',
+              additionalContext: 'This repo uses beads; running `bd preflight --check` before opening a PR catches stale or orphaned issues.',
+            },
+          }));
         }
       } catch {}
       process.exit(0);
