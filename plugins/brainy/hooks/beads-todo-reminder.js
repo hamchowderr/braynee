@@ -15,8 +15,21 @@
 const fs = require('fs');
 const path = require('path');
 
+// cp-psc / HD-4.1 + HD-R2.2: PostToolUse stdout is NOT added to Claude's
+// context — only UserPromptSubmit/UserPromptExpansion/SessionStart stdout is.
+// The documented channel for PostToolUse is hookSpecificOutput.additionalContext
+// (Hooks reference, "Add context for Claude"). Separately, the text must be a
+// FACTUAL statement, not an imperative "do X NOW" wrapped in a fake
+// <system-reminder> tag: per the reference, out-of-band command phrasing trips
+// Claude's prompt-injection defenses and gets surfaced to the user instead of
+// acted on — the likely real cause of the missing TodoWrite/TaskNotes mirror.
 function emit(text) {
-  process.stdout.write(`<system-reminder>BEADS-TODO-MIRROR: ${text}</system-reminder>\n`);
+  process.stdout.write(JSON.stringify({
+    hookSpecificOutput: {
+      hookEventName: 'PostToolUse',
+      additionalContext: text,
+    },
+  }));
 }
 
 let input = '';
@@ -57,8 +70,9 @@ process.stdin.on('end', () => {
 
       if (idMatch) {
         emit(
-          `bd ${idMatch[1]} created ("${title}"). ` +
-          `Call TodoWrite NOW to add { content: "${title}", activeForm: "<verb-ing form, e.g. 'Wiring Stripe webhook'>", status: "pending" } so the user can see the new task in the terminal todo panel.`
+          `beads issue ${idMatch[1]} was created ("${title}"). ` +
+          `The Claude Code todo list and the TaskNotes vault mirror are out of sync with beads for this issue until the todo list includes it as a pending item ` +
+          `(content "${title}", a present-continuous activeForm, status pending).`
         );
       }
       process.exit(0);
@@ -69,8 +83,8 @@ process.stdin.on('end', () => {
                     || cmd.match(/^bd\s+update\s+([\w-]+).*--status\s+in_progress/);
     if (claimMatch) {
       emit(
-        `bd ${claimMatch[1]} is now in_progress. ` +
-        `Call TodoWrite NOW to set that todo's status to "in_progress" (and ensure only one item is in_progress at a time).`
+        `beads issue ${claimMatch[1]} is now in_progress. ` +
+        `The Claude Code todo list is out of sync until that item's status reflects in_progress (only one item should be in_progress at a time).`
       );
       process.exit(0);
     }
@@ -80,8 +94,8 @@ process.stdin.on('end', () => {
                     || cmd.match(/^bd\s+update\s+([\w-]+).*--status\s+closed/);
     if (closeMatch) {
       emit(
-        `bd ${closeMatch[1]} is now closed. ` +
-        `Call TodoWrite NOW to set that todo's status to "completed".`
+        `beads issue ${closeMatch[1]} is now closed. ` +
+        `The Claude Code todo list is out of sync until that item's status reflects completed.`
       );
       process.exit(0);
     }

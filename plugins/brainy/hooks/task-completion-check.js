@@ -77,9 +77,17 @@ process.stdin.on('end', () => {
     }
 
     // ── 3. Beads in_progress (if in a beads project) ──────────────────
+    // cp-awg/HD-2.2: NEVER use `--all`. On the shared Dolt server `--all`
+    // overrides the default per-repo filter and spans EVERY project's
+    // namespace, so this Stop hook would surface (and raise SYNC-MISMATCH
+    // warnings for) unrelated projects' in_progress issues. Run without
+    // `--all` and with cwd inside this repo so bd auto-discovers THIS
+    // repo's .beads/ scoped to its namespace; constrain to in_progress so
+    // a stray closed/other-project issue can never leak in regardless of
+    // server-side filter behavior. Mirrors the proven beads-stop-check fix.
     let inProgressIssues = [];
     if (hasBeadsDir) {
-      const raw = run('bd list --json --all', { cwd });
+      const raw = run('bd list --json --status in_progress', { cwd });
       if (raw) {
         try {
           const issues = JSON.parse(raw);
