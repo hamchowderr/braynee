@@ -5,7 +5,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/ensure-obsidian.js\"",
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/ensure-obsidian.js"],
             "statusMessage": "Ensuring Obsidian is running..."
           }
         ]
@@ -15,7 +16,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/reinject-after-compact.js\""
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/reinject-after-compact.js"]
           }
         ]
       },
@@ -23,7 +25,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/session-auto-track.js\""
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/session-auto-track.js"]
           }
         ]
       },
@@ -31,7 +34,17 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/skills/settings-viewer/scripts/generate.mjs\"",
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/brainy-heartbeat.js"]
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/skills/settings-viewer/scripts/generate.mjs"],
             "async": true
           }
         ]
@@ -40,7 +53,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/check-beads-init.js\""
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/check-beads-init.js"]
           }
         ]
       },
@@ -48,7 +62,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/beads-work-surface.js\"",
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/beads-work-surface.js"],
             "statusMessage": "Surfacing beads work queue..."
           }
         ]
@@ -57,7 +72,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/check-git-init.js\""
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/check-git-init.js"]
           }
         ]
       },
@@ -65,7 +81,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/check-testing-setup.js\""
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/check-testing-setup.js"]
           }
         ]
       }
@@ -76,27 +93,32 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/check-no-main-push.js\"",
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/check-no-main-push.js"],
             "if": "Bash(git push *)"
           },
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/check-no-main-push.js\"",
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/check-no-main-push.js"],
             "if": "Bash(git commit *)"
           },
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/check-no-main-push.js\"",
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/check-no-main-push.js"],
             "if": "Bash(git checkout *)"
           },
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/check-no-main-push.js\"",
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/check-no-main-push.js"],
             "if": "Bash(git switch *)"
           },
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/branch-name-check.js\"",
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/branch-name-check.js"],
             "if": "Bash(git push *)"
           }
         ]
@@ -107,8 +129,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/session-end.js\"",
-            "async": true
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/session-end.js"]
           }
         ]
       }
@@ -118,7 +140,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/memory-reminder.js\""
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/memory-reminder.js"]
           }
         ]
       },
@@ -126,7 +149,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/beads-nudge.js\""
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/beads-nudge.js"]
           }
         ]
       }
@@ -136,7 +160,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/session-auto-close.js\""
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/session-auto-close.js"]
           }
         ]
       },
@@ -144,7 +169,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/session-export-qmd.js\"",
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/session-export-qmd.js"],
             "async": true
           }
         ]
@@ -153,7 +179,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/session-stop-check.js\""
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/session-stop-check.js"]
           }
         ]
       },
@@ -161,7 +188,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/beads-stop-check.js\""
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/beads-stop-check.js"]
           }
         ]
       },
@@ -169,7 +197,19 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/task-completion-check.js\""
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/task-completion-check.js"]
+          }
+        ]
+      }
+    ],
+    "StopFailure": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/stop-failure.js"]
           }
         ]
       }
@@ -179,7 +219,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/pre-compact-snapshot.js\""
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/pre-compact-snapshot.js"]
           }
         ]
       }
@@ -189,7 +230,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/post-compact.js\""
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/post-compact.js"]
           }
         ]
       }
@@ -200,7 +242,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/memory-index-sync.js\""
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/memory-index-sync.js"]
           }
         ]
       },
@@ -209,11 +252,13 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/session-note-nudge.js\""
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/session-note-nudge.js"]
           },
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/statusline-state.js\"",
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/statusline-state.js"],
             "async": true
           }
         ]
@@ -223,7 +268,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/commit-cadence-nudge.js\"",
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/commit-cadence-nudge.js"],
             "if": "Bash(bd close *) || Bash(bd update * --status closed)",
             "async": true
           }
@@ -234,7 +280,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/beads-claim-to-branch.js\"",
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/beads-claim-to-branch.js"],
             "if": "Bash(bd update * --claim) || Bash(bd claim *)",
             "async": true
           }
@@ -245,7 +292,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/beads-status-sync.js\"",
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/beads-status-sync.js"],
             "if": "Bash(bd *)",
             "async": true
           }
@@ -256,7 +304,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/beads-todo-reminder.js\"",
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/beads-todo-reminder.js"],
             "if": "Bash(bd create *) || Bash(bd update * --claim) || Bash(bd update * --status *) || Bash(bd close *)"
           }
         ]
@@ -266,7 +315,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/beads-dashboard-refresh.js\"",
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/beads-dashboard-refresh.js"],
             "if": "Bash(bd *)",
             "async": true
           }
@@ -277,9 +327,57 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/mtn-to-beads-sync.js\"",
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/mtn-to-beads-sync.js"],
             "if": "Bash(mtn complete *) || Bash(mtn done *)",
             "async": true
+          }
+        ]
+      }
+    ],
+    "PostToolBatch": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/beads-batch-reconcile.js"],
+            "async": true
+          }
+        ]
+      }
+    ],
+    "ConfigChange": [
+      {
+        "matcher": "user_settings|project_settings|skills",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/config-change-resurface.js"]
+          }
+        ]
+      }
+    ],
+    "CwdChanged": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/cwd-changed-check.js"]
+          }
+        ]
+      }
+    ],
+    "FileChanged": [
+      {
+        "matcher": "MEMORY.md",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/memory-file-changed.js"]
           }
         ]
       }
@@ -289,7 +387,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/task-created-check.js\""
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/task-created-check.js"]
           }
         ]
       }
@@ -299,7 +398,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/task-completed-check.js\""
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/task-completed-check.js"]
           }
         ]
       }
