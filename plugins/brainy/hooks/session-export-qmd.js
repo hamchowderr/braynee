@@ -35,7 +35,20 @@ function encodeCwd(cwd) {
   return cwd.replace(/[^\w-]/g, '-').replace(/^-+/, '');
 }
 
-function findCurrentSessionJsonl(cwd) {
+function findCurrentSessionJsonl(cwd, transcriptPath) {
+  // cp-wqi / HD-R1.1: Claude Code passes the conversation transcript path
+  // on stdin as the documented common input field data.transcript_path
+  // (guaranteed every event). Prefer it directly when present — sidesteps
+  // the fragile cwd→encoded-projects-dir reconstruction (cp-d9g). The
+  // directory scan below is kept as a defensive fallback for when absent.
+  if (typeof transcriptPath === 'string' && transcriptPath && fs.existsSync(transcriptPath)) {
+    return {
+      name: path.basename(transcriptPath),
+      path: transcriptPath,
+      mtime: fs.statSync(transcriptPath).mtimeMs
+    };
+  }
+
   const projectDir = path.join(CLAUDE_PROJECTS_DIR, encodeCwd(cwd));
   if (!fs.existsSync(projectDir)) return null;
 
@@ -159,10 +172,17 @@ process.stdin.setEncoding('utf8');
 process.stdin.on('data', chunk => { input += chunk; });
 process.stdin.on('end', () => {
   try {
-    const cwd = process.cwd();
+    let data = {};
+    if (input) {
+      try { data = JSON.parse(input); } catch { data = {}; }
+    }
+    // cp-wqi / HD-R1.1: prefer the documented data.transcript_path from
+    // stdin; the cwd fall-through still uses the event cwd (data.cwd),
+    // not the transient process.cwd().
+    const cwd = data.cwd || process.cwd();
 
     // Find current session JSONL
-    const jsonlFile = findCurrentSessionJsonl(cwd);
+    const jsonlFile = findCurrentSessionJsonl(cwd, data.transcript_path);
     if (!jsonlFile) {
       log.info(HOOK, `skipped: no JSONL found at ~/.claude/projects/${encodeCwd(cwd)}/ (cwd-encoding mismatch?)`);
       process.exit(0);
