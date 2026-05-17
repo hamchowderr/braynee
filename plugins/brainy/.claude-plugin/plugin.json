@@ -1,7 +1,7 @@
 {
   "name": "brainy",
-  "description": "Brainy turns Claude Code into your second brain — setup wizard, PARA vault scaffolding, company knowledge base, project detection, and daily workflow skills.",
-  "version": "1.30.1",
+  "description": "Brainy turns Claude Code into your second brain — setup wizard, PARA vault scaffolding, company knowledge base, project detection, and daily workflow skills. Requires Claude Code ≥ 2.1.85 (hooks use the `if` field for tool/argument scoping).",
+  "version": "1.31.0",
   "author": {
     "name": "Otaku Solutions",
     "email": "admin@otakusolutions.io",
