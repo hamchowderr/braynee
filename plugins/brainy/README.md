@@ -4,6 +4,8 @@
 
 Brainy is a Claude Code plugin that scaffolds a PARA vault, wires up your company knowledge base, detects your environment, installs the right Obsidian plugins, and keeps everything in sync session to session.
 
+> **Requires Claude Code ≥ 2.1.85.** Brainy's hooks use the `if` field to scope by tool and arguments. On older Claude Code the `if` field is ignored and the hooks run on every matched call — they still self-gate internally and stay correct, just less efficiently. Update Claude Code for the intended behavior.
+
 ---
 
 ## What it sets up

@@ -7,7 +7,7 @@ description: >
   human-searchable, not raw transcripts. Use when user says "backfill sessions",
   "summarize my sessions for X", "fill in the empty session notes", or wants to
   make QMD project history actually useful.
-argument-hint: [--project NAME | --all] [--limit N] [--dry-run]
+argument-hint: '[--project NAME | --all] [--limit N] [--dry-run]'
 allowed-tools: Bash(python3:*), Bash(claude:*)
 ---
 
