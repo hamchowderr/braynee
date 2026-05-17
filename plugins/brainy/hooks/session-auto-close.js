@@ -149,16 +149,30 @@ function findCwdProjectsDir(cwd) {
   return findTranscriptDir(cwd);
 }
 
-function extractGoalFromJSONL(cwd, sessionId) {
+function extractGoalFromJSONL(cwd, sessionId, transcriptPath) {
   try {
-    const transcriptDir = findCwdProjectsDir(cwd);
-    if (!transcriptDir) {
-      log.info(HOOK, `goal-extract: no transcripts dir for cwd=${cwd}`);
-      return null;
+    let jsonlPath = null;
+
+    // cp-wqi / HD-R1.1: Claude Code passes the conversation transcript path
+    // on stdin as the documented common input field data.transcript_path
+    // (guaranteed every event). Prefer it directly — this sidesteps the
+    // fragile cwd→transcript-dir reconstruction (cp-d9g) and the cp-jmx
+    // process.cwd() regression entirely. The reconstruction below is kept
+    // as a defensive fallback for when the field is absent.
+    if (typeof transcriptPath === 'string' && transcriptPath && fs.existsSync(transcriptPath)) {
+      jsonlPath = transcriptPath;
     }
 
-    let jsonlPath = null;
-    if (sessionId) {
+    let transcriptDir = null;
+    if (!jsonlPath) {
+      transcriptDir = findCwdProjectsDir(cwd);
+      if (!transcriptDir) {
+        log.info(HOOK, `goal-extract: no transcripts dir for cwd=${cwd}`);
+        return null;
+      }
+    }
+
+    if (!jsonlPath && sessionId) {
       const candidate = path.join(transcriptDir, `${sessionId}.jsonl`);
       if (fs.existsSync(candidate)) jsonlPath = candidate;
     }
@@ -277,8 +291,11 @@ process.stdin.on('end', () => {
       goalText.startsWith('(session just');
 
     if (goalIsPlaceholder) {
-      const cwdForExtract = process.cwd();
-      const extracted = extractGoalFromJSONL(cwdForExtract, sessionId);
+      // cp-wqi / HD-R1.1: prefer the documented data.transcript_path from
+      // stdin; fall back to the anchored session dir (NOT process.cwd(),
+      // which was the cp-jmx regression — the transient per-event cwd is
+      // flipped by skill base dirs / `bash cd`).
+      const extracted = extractGoalFromJSONL(sessionDir(data), sessionId, data.transcript_path);
       if (extracted) {
         log.info(HOOK, `goal extracted (${extracted.length} chars)`);
         content = content.replace(

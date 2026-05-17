@@ -415,20 +415,35 @@ function formatSessionContext(content, filename) {
 // ~/code). For any other user, a non-~/code project location, or a
 // differently-cased path, the old hardcode missed the dir entirely and no
 // prior-session context was ever recalled (cp-d9g / S-1).
-function getRecentTranscriptContext(cwd) {
-  const transcriptDir = findTranscriptDir(cwd);
-  if (!transcriptDir) return null;
+function getRecentTranscriptContext(cwd, transcriptPath) {
+  let latestFile = null;
+  let sessionId = null;
 
-  // Find most recent JSONL file
-  const jsonlFiles = fs.readdirSync(transcriptDir)
-    .filter(f => f.endsWith('.jsonl'))
-    .map(f => ({ name: f, mtime: fs.statSync(path.join(transcriptDir, f)).mtime }))
-    .sort((a, b) => b.mtime - a.mtime);
+  // cp-wqi / HD-R1.1: Claude Code passes the conversation transcript path
+  // on stdin as the documented common input field data.transcript_path
+  // (guaranteed every event). Prefer it directly when present — sidesteps
+  // the fragile cwd→transcript-dir reconstruction (cp-d9g). The directory
+  // scan below is kept as a defensive fallback for when the field is absent.
+  if (typeof transcriptPath === 'string' && transcriptPath && fs.existsSync(transcriptPath)) {
+    latestFile = transcriptPath;
+    sessionId = path.basename(transcriptPath).replace(/\.jsonl$/, '');
+  }
 
-  if (jsonlFiles.length === 0) return null;
+  if (!latestFile) {
+    const transcriptDir = findTranscriptDir(cwd);
+    if (!transcriptDir) return null;
 
-  const latestFile = path.join(transcriptDir, jsonlFiles[0].name);
-  const sessionId = jsonlFiles[0].name.replace('.jsonl', '');
+    // Find most recent JSONL file
+    const jsonlFiles = fs.readdirSync(transcriptDir)
+      .filter(f => f.endsWith('.jsonl'))
+      .map(f => ({ name: f, mtime: fs.statSync(path.join(transcriptDir, f)).mtime }))
+      .sort((a, b) => b.mtime - a.mtime);
+
+    if (jsonlFiles.length === 0) return null;
+
+    latestFile = path.join(transcriptDir, jsonlFiles[0].name);
+    sessionId = jsonlFiles[0].name.replace('.jsonl', '');
+  }
 
   // Read last ~100KB of the file (tail read for large files)
   const stat = fs.statSync(latestFile);
@@ -767,7 +782,9 @@ process.stdin.on('end', () => {
       // mode only — this block is the `else` of the vault/workspace branch, so
       // vault & workspace sessions never reach here and keep getting vault
       // context, not transcript context). Encoded from the real cwd.
-      const transcript = getRecentTranscriptContext(cwd);
+      // cp-wqi / HD-R1.1: prefer the documented data.transcript_path from
+      // stdin; fall back to the cwd-encoded transcript dir scan.
+      const transcript = getRecentTranscriptContext(cwd, data.transcript_path);
       if (transcript) {
         output.push('');
         output.push(`── LAST SESSION TRANSCRIPT (${transcript.slug || transcript.sessionId}) ──`);
