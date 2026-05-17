@@ -1,7 +1,7 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "hamch-plugins",
-  "description": "Claude Code plugins for power users — deep analytics, workflow tools, and more",
+  "description": "Otaku Solutions' Claude Code plugin marketplace — home of Brainy, the Obsidian-backed second-brain plugin.",
   "owner": {
     "name": "HamCh"
   },
