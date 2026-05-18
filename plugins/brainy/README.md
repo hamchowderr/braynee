@@ -55,11 +55,11 @@ Brainy detects your calendar platform and wires it into daily notes:
 `scan-projects.py` walks your `~/code/` directory, finds git repos, detects the stack (Next.js, Convex, FastAPI, etc.), and writes a project map. The wizard surfaces these to Claude so it knows what you're building without you having to explain it.
 
 ### Claude Code hooks
-Brainy declares its hooks in the plugin's `hooks/hooks.json` — they run automatically when the plugin is active, with nothing written into `~/.claude/settings.json`. **31 hooks across 10 Claude Code events** keep the vault, sessions, beads, and tasks in sync:
+Brainy declares its hooks in the plugin's `hooks/hooks.json` — they run automatically when the plugin is active, with nothing written into `~/.claude/settings.json`. **~40 hook entries across 15 Claude Code events** keep the vault, sessions, beads, and tasks in sync. (Counts shift as the plugin evolves — run `node bin/brainy-self-test` or `/brainy:health self-test` for the authoritative live inventory.)
 
 | Event | Hooks | What they do |
 |-------|-------|-------------|
-| **SessionStart** | `ensure-obsidian.js`, `reinject-after-compact.js`, `session-auto-track.js`, `settings-viewer/generate.mjs`, `check-beads-init.js`, `beads-work-surface.js`, `check-git-init.js`, `check-testing-setup.js` | Launch Obsidian, open/update the session note, regenerate the dashboard, ensure beads + git are initialized, surface the ready beads queue, flag a missing test stack, and re-inject vault context after a compaction |
+| **SessionStart** | `ensure-obsidian.js`, `reinject-after-compact.js`, `session-auto-track.js`, `settings-viewer/generate.mjs`, `brainy-heartbeat.js`, `check-beads-init.js`, `beads-work-surface.js`, `check-git-init.js`, `check-testing-setup.js` | Launch Obsidian, open/update the session note, regenerate the dashboard, write a hooks-live heartbeat the dashboard reads, ensure beads + git are initialized, surface the ready beads queue, flag a missing test stack, and re-inject vault context after a compaction |
 | **UserPromptSubmit** | `memory-reminder.js`, `beads-nudge.js` | Remind Claude to search vault memory before guessing and to keep the beads workflow current |
 | **PreToolUse** | `check-no-main-push.js`, `branch-name-check.js` | Protect `main`/`master`: block pushing to it, committing on it, or `--orphan`-ing onto it (opt out with `BRAINY_ALLOW_MAIN_COMMITS=1`), and enforce branch naming |
 | **PostToolUse** | `memory-index-sync.js`, `session-note-nudge.js`, `statusline-state.js`, `commit-cadence-nudge.js`, `beads-claim-to-branch.js`, `beads-status-sync.js`, `beads-todo-reminder.js`, `beads-dashboard-refresh.js`, `mtn-to-beads-sync.js` | Keep `MEMORY.md` indexed, nudge session-note updates and commit cadence, branch on `bd … --claim`, and mirror beads ⇄ Claude todos ⇄ TaskNotes |
@@ -69,6 +69,11 @@ Brainy declares its hooks in the plugin's `hooks/hooks.json` — they run automa
 | **SessionEnd** | `session-end.js` | Finalize the session note and clean up |
 | **TaskCreated** | `task-created-check.js` | Validate newly created tasks |
 | **TaskCompleted** | `task-completed-check.js` | Verify completed tasks |
+| **PostToolBatch** | `beads-batch-reconcile.js` | After a parallel tool batch, reconcile beads → TaskNotes for any issues a batched/piped command missed |
+| **StopFailure** | `stop-failure.js` (shared `lib/session-close.js`) | On an API-error turn end, still close the session note and stop the timer |
+| **ConfigChange** | `config-change-resurface.js` (matcher: user/project settings, skills) | Re-surface changed conventions when CLAUDE.md / settings / a skill changes mid-session |
+| **CwdChanged** | `cwd-changed-check.js` | Note when the working dir crosses into a different recognized project mid-session |
+| **FileChanged** | `memory-file-changed.js` (matcher: `MEMORY.md`) | Re-index `MEMORY.md` whenever it changes — Edit, Bash, or external (not just the Write tool) |
 
 Hooks that have stateful side effects detect existing equivalents and never duplicate them.
 
@@ -106,21 +111,22 @@ Zettelkasten/        → atomic permanent notes
 | `clients` | `/clients` | Client relationship management — context, engagement logs, call prep |
 | `health` | `/health` | System health check — Four Cs audit (Context, Connections, Capabilities, Cadence) |
 | `zettelkasten` | `/zettelkasten` | Create, find, and link atomic notes — permanent knowledge distillation |
+| `prd` | `/prd` | Author / audit Product Requirements Documents and seed beads issues from acceptance criteria |
+| `insightful` | `/insightful` | All-time Claude Code usage report — every session, every project (folded in from the former standalone plugin) |
+| `excalidraw` | `/excalidraw` | Generate Excalidraw diagrams, or a full codebase visual walkthrough, saved into the vault |
+| `session-backfill` | `/session-backfill` | Backfill structured summaries from past Claude Code transcripts into the vault |
+| `vault-query` | `/vault-query` | Session lifecycle + project-context aggregation |
+| `obsidian-cli` | `/obsidian-cli` | Drive the vault via the Obsidian CLI; plugin/theme dev + debugging |
+| `obsidian-bases` | `/obsidian-bases` | Create / edit Obsidian Bases (`.base`) — database-like views |
+| `obsidian-markdown` | `/obsidian-markdown` | Author Obsidian-flavored markdown (wikilinks, callouts, embeds, properties) |
+
+Plugin skills are namespaced — invoke as `/brainy:<name>` (e.g. `/brainy:daily`). Run `/help` for the authoritative live list.
 
 ---
 
 ## Quick install
 
-```bash
-# From the Claude Code marketplace
-/plugin install brainy
-
-# Or locally
-cd second-brain
-/plugin install .
-```
-
-After installing, run `/setup` to launch the wizard.
+See [**Install**](#install) above (marketplace or `--plugin-url`). After installing, run `/setup` to launch the wizard — or, on an existing vault, a non-destructive audit.
 
 ---
 
@@ -165,7 +171,7 @@ Opinionated guides on how the author builds. Recommendations, not requirements �
 
 ## Plugin name
 
-`brainy` — published under the `otaku-solutions` namespace.
+`brainy` — published in the `hamch-plugins` marketplace (repo [`hamchowderr/claude-plugins`](https://github.com/hamchowderr/claude-plugins)). Skills are namespaced `/brainy:<name>`.
 
 ---
 
