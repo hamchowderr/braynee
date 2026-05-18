@@ -328,6 +328,25 @@ If Yes:
 python3 {baseDir}/scripts/settings-writer.py apply --yes
 ```
 
+**Plan mode default** — from the same `detect` output, look at `default_mode`.
+**If it is not already `plan`**, offer it as a *separate* choice (do not bundle
+it with the memory consent above):
+
+```
+Brainy recommends Claude Code start every session in plan mode, so work is
+reviewed before it runs. This changes `permissions.defaultMode` to "plan"
+(currently <default_mode>). It's reversible any time via /plan or settings.
+Apply it?
+  [Yes / No]
+```
+
+If Yes (this is a distinct, explicit consent — bare `apply --yes` never
+changes the permission mode):
+
+```bash
+python3 {baseDir}/scripts/settings-writer.py apply --yes --set-default-mode
+```
+
 **Status line** (if no statusline is currently configured in `~/.claude/settings.json`):
 
 ```
