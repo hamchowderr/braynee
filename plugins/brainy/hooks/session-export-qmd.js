@@ -10,11 +10,11 @@
 //
 // This runs after session-auto-close.js so the session note is already written.
 
-const { execSync } = require('child_process');
 const path = require('path');
 const os = require('os');
 const fs = require('fs');
 const log = require(path.join(__dirname, 'lib', 'hook-logger.js'));
+const reindex = require(path.join(__dirname, 'lib', 'qmd-reindex.js'));
 
 const HOOK = 'session-export-qmd';
 
@@ -155,15 +155,12 @@ function buildMarkdown(messages, meta) {
 }
 
 function updateQmdIndex() {
-  try {
-    execSync(`"${process.execPath}" "${QMD_WRAPPER}" update -c vault`, {
-      encoding: 'utf8',
-      stdio: ['pipe', 'pipe', 'ignore'],
-      timeout: 30000
-    });
-  } catch {
-    // Non-blocking — index will catch up on next update
-  }
+  // Cheap BM25 reindex (single-flight; skips if an embed is in flight).
+  const kw = reindex.runKeywordUpdate(QMD_WRAPPER);
+  // Throttled, detached vector embed so stale embeddings self-heal instead
+  // of drifting (brainy never ran `qmd embed` before — see beads cp-8xq).
+  const em = reindex.scheduleEmbed();
+  return { kw, em };
 }
 
 // ─── Main ────────────────────────────────────────────────────────────────────
@@ -223,10 +220,10 @@ process.stdin.on('end', () => {
     // SAME session — never a different session's transcript.
     fs.writeFileSync(filepath, content, 'utf8');
 
-    // Update QMD index
-    updateQmdIndex();
+    // Reindex QMD (cheap BM25 now; embed throttled + detached).
+    const rx = updateQmdIndex();
 
-    log.info(HOOK, `exported ${filename} (${messages.length} msgs) and reindexed QMD`);
+    log.info(HOOK, `exported ${filename} (${messages.length} msgs); qmd update=${rx.kw.ran ? 'ok' : rx.kw.reason}, embed=${rx.em.scheduled ? 'scheduled' : rx.em.reason}`);
     process.stderr.write(`Session exported: ${filename} (${messages.length} messages)\n`);
     process.exit(0);
   } catch (e) {
