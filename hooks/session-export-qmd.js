@@ -21,7 +21,7 @@ const HOOK = 'session-export-qmd';
 const VAULT_DIR = path.join(os.homedir(), 'Obsidian Vault');
 const TRANSCRIPTS_DIR = path.join(VAULT_DIR, '2. Areas', 'Sessions', 'Transcripts');
 const CLAUDE_PROJECTS_DIR = path.join(os.homedir(), '.claude', 'projects');
-// Use brainy's bundled qmd-wrapper (cross-platform) — handles qmd discovery internally.
+// Use braynee's bundled qmd-wrapper (cross-platform) — handles qmd discovery internally.
 const QMD_WRAPPER = path.join(__dirname, '..', 'scripts', 'qmd-wrapper.mjs');
 
 function encodeCwd(cwd) {
@@ -158,7 +158,7 @@ function updateQmdIndex() {
   // Cheap BM25 reindex (single-flight; skips if an embed is in flight).
   const kw = reindex.runKeywordUpdate(QMD_WRAPPER);
   // Throttled, detached vector embed so stale embeddings self-heal instead
-  // of drifting (brainy never ran `qmd embed` before — see beads cp-8xq).
+  // of drifting (braynee never ran `qmd embed` before — see beads cp-8xq).
   const em = reindex.scheduleEmbed();
   return { kw, em };
 }

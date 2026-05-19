@@ -25,7 +25,7 @@ Do not show output to user yet.
 
 ## Step 1A: Verify Required Toolchain
 
-Brainy has hard dependencies — **do not assume any of them exist**. Setup itself
+Braynee has hard dependencies — **do not assume any of them exist**. Setup itself
 uses every one: `git` (vault git init + the Obsidian Git auto-backup the plugin
 configures), `node` (every hook/monitor/bundled script), `python3` (these setup
 scripts), `bd` (Beads is mandatory for all code projects), and QMD (search index).
@@ -46,7 +46,7 @@ This returns `{ toolchain: { found, missing, install, all_present } }` with
 consolidated prompt listing each missing tool with its install command, e.g.:
 
 ```
-Brainy needs these before setup can run. The following are missing:
+Braynee needs these before setup can run. The following are missing:
 
   • git    → winget install --id Git.Git -e
   • bd     → irm https://raw.githubusercontent.com/gastownhall/beads/main/install.ps1 | iex
@@ -300,7 +300,7 @@ Wait for user confirmation before proceeding.
 
 ---
 
-## Step 8: Apply brainy settings
+## Step 8: Apply braynee settings
 
 Hooks are registered automatically by the plugin via `hooks/hooks.json` — no manual
 hook installation needed. This step only handles settings that can't be expressed in
@@ -333,7 +333,7 @@ python3 {baseDir}/scripts/settings-writer.py apply --yes
 it with the memory consent above):
 
 ```
-Brainy recommends Claude Code start every session in plan mode, so work is
+Braynee recommends Claude Code start every session in plan mode, so work is
 reviewed before it runs. This changes `permissions.defaultMode` to "plan"
 (currently <default_mode>). It's reversible any time via /plan or settings.
 Apply it?
@@ -350,7 +350,7 @@ python3 {baseDir}/scripts/settings-writer.py apply --yes --set-default-mode
 **Status line** (if no statusline is currently configured in `~/.claude/settings.json`):
 
 ```
-Add the brainy status line? It shows inbox count, active project, and git branch
+Add the braynee status line? It shows inbox count, active project, and git branch
 in Claude Code's status bar.
   [Yes / No]
 ```

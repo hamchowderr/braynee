@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// brainy-self-test — Validate the brainy plugin install end-to-end.
+// braynee-self-test — Validate the braynee plugin install end-to-end.
 //
 // Runs:
 //   1. JS/MJS parse check on all hooks, monitors, scripts
@@ -11,9 +11,9 @@
 //
 // Cross-platform: works on Windows, macOS, Linux. Pure Node, no shell deps.
 // Usage:
-//   node bin/brainy-self-test                 # from plugin root
-//   brainy-self-test                          # if added to PATH
-//   brainy-self-test --json                   # machine-readable output
+//   node bin/braynee-self-test                 # from plugin root
+//   braynee-self-test                          # if added to PATH
+//   braynee-self-test --json                   # machine-readable output
 //
 // Exit codes:
 //   0 — all checks passed
@@ -25,7 +25,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 
-// Find brainy plugin root: this file lives at brainy/bin/brainy-self-test
+// Find braynee plugin root: this file lives at braynee/bin/braynee-self-test
 const PLUGIN_ROOT = path.resolve(__dirname, '..');
 
 const args = process.argv.slice(2);

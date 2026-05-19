@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 // prd-audit.mjs — Audit every PRD under 2. Areas/Product Manager/PRDs/ against
-// the brainy PRD schema. Reports per-PRD gaps so they can be fixed in batch.
+// the braynee PRD schema. Reports per-PRD gaps so they can be fixed in batch.
 //
 // Schema requirements (all from frontmatter unless noted):
 //   - type: prd
 //   - name: non-empty string
 //   - project: "[[1. Projects/<X>]]" — must resolve to a real file
 //   - folder: <slug> — the project repo dir name inside the configured
-//                       projects root (BRAINY_PROJECTS_DIR, default ~/code);
+//                       projects root (BRAYNEE_PROJECTS_DIR, default ~/code);
 //                       warn-only if missing
 //   - status: draft | active | shipped | archived
 //   - build_status: not-started | planning | drafting | in-progress | blocked | shipped
@@ -27,7 +27,7 @@ const { getProjectsDir, isProjectsDirConfigured } = require('./lib/projects-root
 const VAULT = process.argv.includes('--vault')
   ? process.argv[process.argv.indexOf('--vault') + 1]
   : path.join(os.homedir(), 'Obsidian Vault');
-// Projects root: BRAINY_PROJECTS_DIR > BEADS_CODE_DIR > ~/code (back-compat).
+// Projects root: BRAYNEE_PROJECTS_DIR > BEADS_CODE_DIR > ~/code (back-compat).
 const CODE_DIR = getProjectsDir();
 const PRD_DIR = path.join(VAULT, '2. Areas', 'Product Manager', 'PRDs');
 const PROJECTS_DIR = path.join(VAULT, '1. Projects');
@@ -108,14 +108,14 @@ function audit(file) {
   else if (!fs.existsSync(path.join(CODE_DIR, fm.folder))) {
     const hint = isProjectsDirConfigured()
       ? ''
-      : ' (set BRAINY_PROJECTS_DIR if your repos are not under ~/code)';
+      : ' (set BRAYNEE_PROJECTS_DIR if your repos are not under ~/code)';
     warnings.push(`folder "${fm.folder}" not found at ${path.join(CODE_DIR, fm.folder)} (PRD may predate the build)${hint}`);
   }
   if (!VALID_STATUS.has(fm.status)) issues.push(`status invalid (got "${fm.status ?? 'missing'}", expected one of ${[...VALID_STATUS].join('|')})`);
   if (fm.build_status && !VALID_BUILD.has(fm.build_status)) issues.push(`build_status invalid (got "${fm.build_status}")`);
 
   // NEW seedable fields — flag as missing
-  if (typeof fm.seeded !== 'boolean') warnings.push('seeded field missing (NEW — needed for brainy:prd-seed)');
+  if (typeof fm.seeded !== 'boolean') warnings.push('seeded field missing (NEW — needed for braynee:prd-seed)');
   if (!('seeded_at' in fm)) warnings.push('seeded_at field missing (NEW)');
   if (!('seeded_count' in fm)) warnings.push('seeded_count field missing (NEW)');
 

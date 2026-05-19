@@ -2,7 +2,7 @@
 name: prd
 description: >
   Author and manage Product Requirements Documents (PRDs) under
-  "2. Areas/Product Manager/PRDs/". Scaffolds new PRDs against the brainy
+  "2. Areas/Product Manager/PRDs/". Scaffolds new PRDs against the braynee
   schema, audits existing ones, and seeds beads issues from the
   Acceptance Criteria section.
   Use when user says "new PRD", "draft PRD", "create PRD", "write a PRD",
@@ -15,7 +15,7 @@ allowed-tools: Bash(node:*), Bash(bd:*), Bash(obsidian:*), Read, Write, Edit
 
 Manages Product Requirements Documents — the contract between vault planning
 and code execution. PRDs live at `2. Areas/Product Manager/PRDs/<Name>.md`
-and follow a schema that lets brainy seed beads issues from the
+and follow a schema that lets braynee seed beads issues from the
 Acceptance Criteria section.
 
 ## Commands
@@ -130,11 +130,11 @@ incomplete or the criterion is out of scope.
 the PRD to its code repo. The repo is looked up inside the configured
 **projects root**, resolved in this order:
 
-1. `BRAINY_PROJECTS_DIR` — set this if your repos are not under `~/code`
+1. `BRAYNEE_PROJECTS_DIR` — set this if your repos are not under `~/code`
 2. `BEADS_CODE_DIR` — legacy override, still honored
 3. `~/code` — default only when neither is set (back-compat)
 
-So a PRD with `folder: my-app` joins to `$BRAINY_PROJECTS_DIR/my-app` (or
-`~/code/my-app` by default). Brainy never assumes `~/code` exists — set
-`BRAINY_PROJECTS_DIR` once and `prd-audit`, `prd-seed`, and the beads
+So a PRD with `folder: my-app` joins to `$BRAYNEE_PROJECTS_DIR/my-app` (or
+`~/code/my-app` by default). Braynee never assumes `~/code` exists — set
+`BRAYNEE_PROJECTS_DIR` once and `prd-audit`, `prd-seed`, and the beads
 dashboard all resolve repos from there.

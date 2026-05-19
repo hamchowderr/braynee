@@ -202,7 +202,7 @@ def claude_md(name: str, company: str, projects: list[dict],
         - Email: {email}
         - Calendar: {calendar}
         - Tasks: `/tasks`
-        - Search: `/query` or `qmd search "query"` (qmd is in PATH via brainy plugin)
+        - Search: `/query` or `qmd search "query"` (qmd is in PATH via braynee plugin)
         - Sessions: `/sessions`
         - Recall: `/recall yesterday`
         - Zettelkasten: `/zettelkasten`
@@ -224,7 +224,7 @@ def claude_md(name: str, company: str, projects: list[dict],
         obsidian search:context query="term" format=json
         ```
 
-        Note: `qmd` command is added to PATH automatically when the brainy plugin is enabled.
+        Note: `qmd` command is added to PATH automatically when the braynee plugin is enabled.
 
         ## Writing Vault Files (Obsidian CLI — two-path rule)
 

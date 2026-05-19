@@ -3,7 +3,7 @@
 // truth for units of work, so commit cadence counts confirmed-closed issues.
 // Nudges the user to commit after 15 issues have been closed since the last commit.
 //
-// State file: ~/.claude/brainy-issue-counter.json
+// State file: ~/.claude/braynee-issue-counter.json
 //   { "<repoRoot>": { "closedSince": <int>, "headSha": <sha> } }
 //
 // Counter resets when the repo's HEAD SHA changes (i.e. when the user actually
@@ -16,7 +16,7 @@ const os = require('os');
 const log = require(path.join(__dirname, 'lib', 'hook-logger.js'));
 
 const HOOK = 'commit-cadence-nudge';
-const STATE_FILE = path.join(os.homedir(), '.claude', 'brainy-issue-counter.json');
+const STATE_FILE = path.join(os.homedir(), '.claude', 'braynee-issue-counter.json');
 const THRESHOLD = 15;
 
 function run(cmd, opts = {}) {

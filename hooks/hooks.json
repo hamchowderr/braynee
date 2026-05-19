@@ -35,7 +35,7 @@
           {
             "type": "command",
             "command": "node",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/brainy-heartbeat.js"]
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/braynee-heartbeat.js"]
           }
         ]
       },

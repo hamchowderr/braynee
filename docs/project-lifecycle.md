@@ -1,6 +1,6 @@
 # Project Lifecycle
 
-The flow brainy assumes — vault for thinking, code for doing, beads for
+The flow braynee assumes — vault for thinking, code for doing, beads for
 tracking. Hooks bind them together.
 
 ```
@@ -42,7 +42,7 @@ tracking. Hooks bind them together.
   - `check-beads-init` — runs `bd init` if missing
   - `session-auto-track` — creates session note + surfaces PRD context
 - Workflow per issue: `bd update <id> --claim` → edits → `bd close <id>`
-- Brainy auto-mirrors bd ↔ TaskNotes, branches on claim (if enabled), nudges to commit every 15 closed issues
+- Braynee auto-mirrors bd ↔ TaskNotes, branches on claim (if enabled), nudges to commit every 15 closed issues
 
 ### 5. Ship + Evolve
 - Once MVP is shipped, the PRD is a historical artifact

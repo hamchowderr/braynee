@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 'use strict';
 
-// brainy-heartbeat.js
-// Hook: SessionStart — lightweight sentinel proving Brainy's hooks are LIVE.
+// braynee-heartbeat.js
+// Hook: SessionStart — lightweight sentinel proving Braynee's hooks are LIVE.
 //
 // HD-6.2 / cp-6nk: if a user has disableAllHooks:true, a managed policy
 // disabling hooks, or a Claude Code old enough not to honor plugin
-// hooks/hooks.json, EVERY Brainy lifecycle guarantee silently dies — no
+// hooks/hooks.json, EVERY Braynee lifecycle guarantee silently dies — no
 // session tracking, no beads surface, no guards — with zero signal that
-// "Brainy is installed but inert". For a universal plugin that is the worst
+// "Braynee is installed but inert". For a universal plugin that is the worst
 // failure mode (looks installed, does nothing, no error).
 //
 // This hook does exactly one cheap thing: write a heartbeat file with the
@@ -20,13 +20,13 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const HEARTBEAT_FILE = path.join(os.homedir(), '.claude', 'brainy-hooks-heartbeat');
+const HEARTBEAT_FILE = path.join(os.homedir(), '.claude', 'braynee-hooks-heartbeat');
 
 try {
   const payload = JSON.stringify({
     ts: new Date().toISOString(),
     pid: process.pid,
-    plugin: 'brainy',
+    plugin: 'braynee',
   });
   fs.mkdirSync(path.dirname(HEARTBEAT_FILE), { recursive: true });
   fs.writeFileSync(HEARTBEAT_FILE, payload + '\n', 'utf8');

@@ -31,7 +31,7 @@ const TN = require('../hooks/lib/tasknotes-mirror.js');
 
 const VAULT = path.join(os.homedir(), 'Obsidian Vault');
 const PRD_DIR = path.join(VAULT, '2. Areas', 'Product Manager', 'PRDs');
-// Projects root: BRAINY_PROJECTS_DIR > BEADS_CODE_DIR > ~/code (back-compat).
+// Projects root: BRAYNEE_PROJECTS_DIR > BEADS_CODE_DIR > ~/code (back-compat).
 const CODE_DIR = getProjectsDir();
 
 const args = process.argv.slice(2);
@@ -190,15 +190,15 @@ const repoDir = path.join(CODE_DIR, fm.folder);
 if (!fs.existsSync(repoDir)) {
   console.error(`Target repo not found: ${repoDir}`);
   if (!isProjectsDirConfigured()) {
-    console.error(`If your repos are not under ~/code, set BRAINY_PROJECTS_DIR to your projects root (e.g. export BRAINY_PROJECTS_DIR=/path/to/repos).`);
+    console.error(`If your repos are not under ~/code, set BRAYNEE_PROJECTS_DIR to your projects root (e.g. export BRAYNEE_PROJECTS_DIR=/path/to/repos).`);
   } else {
-    console.error(`(projects root resolved from BRAINY_PROJECTS_DIR/BEADS_CODE_DIR: ${CODE_DIR})`);
+    console.error(`(projects root resolved from BRAYNEE_PROJECTS_DIR/BEADS_CODE_DIR: ${CODE_DIR})`);
   }
   process.exit(1);
 }
 if (!fs.existsSync(path.join(repoDir, '.beads'))) {
   console.error(`Target repo has no .beads dir: ${repoDir}`);
-  console.error(`Run \`bd init --shared-server --external -p "${fm.folder}"\` there first, or open a session in that folder so brainy auto-inits beads.`);
+  console.error(`Run \`bd init --shared-server --external -p "${fm.folder}"\` there first, or open a session in that folder so braynee auto-inits beads.`);
   process.exit(1);
 }
 

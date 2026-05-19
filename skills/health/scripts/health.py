@@ -77,8 +77,8 @@ def cmd_setup(args, vault: Path):
         else:
             warn(f"{label} — NOT FOUND")
 
-    # health.py lives at brainy/skills/health/scripts/health.py
-    # qmd-wrapper.mjs is at brainy/scripts/qmd-wrapper.mjs (3 levels up)
+    # health.py lives at braynee/skills/health/scripts/health.py
+    # qmd-wrapper.mjs is at braynee/scripts/qmd-wrapper.mjs (3 levels up)
     qmd_wrapper = Path(__file__).resolve().parent.parent.parent.parent / "scripts" / "qmd-wrapper.mjs"
     if not qmd_wrapper.exists():
         warn(f"qmd — wrapper not found at {qmd_wrapper}")
@@ -274,7 +274,7 @@ def cmd_inbox(args, vault: Path):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Brain Check — Brainy system health")
+    parser = argparse.ArgumentParser(description="Brain Check — Braynee system health")
     parser.add_argument("--vault", help="Vault path (auto-detected if omitted)")
     sub = parser.add_subparsers(dest="cmd")
 

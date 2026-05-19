@@ -4,7 +4,7 @@
 // config-change-resurface.js
 // Hook: ConfigChange (matcher: user_settings|project_settings|skills)
 //
-// HD-1.2 / cp-w4b: Brainy's core thesis is that Claude should not relearn the
+// HD-1.2 / cp-w4b: Braynee's core thesis is that Claude should not relearn the
 // user's conventions every session. But editing the vault/project CLAUDE.md,
 // ~/.claude settings, or a skill file mid-session is invisible until the next
 // launch — the just-changed convention is not in context. ConfigChange fires
@@ -13,7 +13,7 @@
 // the configuration source changed and which file Claude should re-read.
 //
 // Non-blocking: emits additionalContext only; never exit 2 / decision block
-// (policy_settings can't be blocked anyway and Brainy is advisory here).
+// (policy_settings can't be blocked anyway and Braynee is advisory here).
 
 const fs = require('fs');
 const os = require('os');

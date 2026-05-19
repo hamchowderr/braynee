@@ -51,7 +51,7 @@ process.stdin.on('end', () => {
     const projectName = path.basename(codeRoot);
     if (projectName.toLowerCase() === 'workspace') process.exit(0);
 
-    // cp-h5a / R-1: git is a hard Brainy dependency. Probe its presence FIRST
+    // cp-h5a / R-1: git is a hard Braynee dependency. Probe its presence FIRST
     // (mirror of check-beads-init.js Step 1). If git is missing, emit
     // cross-platform install guidance and exit 0 cleanly — never attempt
     // `git init` (which would throw ENOENT and surface a confusing hook error
@@ -60,8 +60,8 @@ process.stdin.on('end', () => {
       log.warn(HOOK, `git not on PATH — emitting install guidance, skipping init`);
       process.stdout.write(
         `# Git Not Installed\n\n` +
-        `\`git\` is not on PATH, but git is a required Brainy dependency ` +
-        `(\`${projectName}\` needs version control; Brainy also drives vault backup and push protection).\n\n` +
+        `\`git\` is not on PATH, but git is a required Braynee dependency ` +
+        `(\`${projectName}\` needs version control; Braynee also drives vault backup and push protection).\n\n` +
         `**Ask the user once:** "Install \`git\` now? (Y/n)"\n\n` +
         `On yes, run the platform-appropriate install:\n` +
         `- Windows (PowerShell): \`winget install --id Git.Git -e\`\n` +
@@ -84,7 +84,7 @@ process.stdin.on('end', () => {
     log.warn(HOOK, `no .git/ found in ${projectName} — running git init`);
     process.stdout.write(
       `# Git Auto-Initializing\n\n` +
-      `\`${projectName}\` does not have git initialized. Brainy is running:\n\n` +
+      `\`${projectName}\` does not have git initialized. Braynee is running:\n\n` +
       `\`\`\`\ngit init -b main\n\`\`\`\n\n`
     );
 
@@ -93,7 +93,7 @@ process.stdin.on('end', () => {
       log.info(HOOK, `git init succeeded for ${projectName}`);
       process.stdout.write(
         `**Done.** Git initialized in \`${projectName}\` on branch \`main\`. ` +
-        `Brainy will block pushes to main/master, so use feature branches (\`feature/*\`, \`fix/*\`) for work.\n`
+        `Braynee will block pushes to main/master, so use feature branches (\`feature/*\`, \`fix/*\`) for work.\n`
       );
     } else {
       log.error(HOOK, `git init failed: ${result.error?.split('\n')[0] || 'unknown'}`);

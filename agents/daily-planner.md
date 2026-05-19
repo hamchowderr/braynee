@@ -2,7 +2,7 @@
 name: daily-planner
 description: >
   Runs the morning or evening ritual for the vault owner. Use when invoked
-  by /brainy:daily, or when the user says "start my day", "morning review",
+  by /braynee:daily, or when the user says "start my day", "morning review",
   "what does my day look like", "evening wrap-up", "end of day review",
   "what do I need to do today", or asks for a daily briefing.
 tools: Read, Write, Glob, Bash

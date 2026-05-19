@@ -1,12 +1,12 @@
 // beads-nudge.js
 // Hook: UserPromptSubmit — periodic reminder about the beads workflow.
-// Fires every N prompts (default 7, override with BRAINY_BEADS_NUDGE_EVERY)
+// Fires every N prompts (default 7, override with BRAYNEE_BEADS_NUDGE_EVERY)
 // when the session is working on code AND there is no in_progress beads issue.
 // Silent otherwise. Counter resets per session and per nudge.
 //
 // "Working on code" is detected structurally via lib/is-code-context.js
 // (a language/project manifest or source files in an ancestor) — NOT a
-// hardcoded ~/code path, since brainy is a universal plugin.
+// hardcoded ~/code path, since braynee is a universal plugin.
 //
 // The per-event cwd is transient: skill base dirs and `bash cd` flip it
 // mid-session. The gate keys off the SESSION's working directory via
@@ -23,7 +23,7 @@ const { findCodeRoot, findBeadsRoot, sessionDir } = require(path.join(__dirname,
 
 const HOOK = 'beads-nudge';
 const STATE_FILE = path.join(os.homedir(), '.claude', 'beads-nudge-state.json');
-const THRESHOLD = Math.max(1, parseInt(process.env.BRAINY_BEADS_NUDGE_EVERY || '7', 10));
+const THRESHOLD = Math.max(1, parseInt(process.env.BRAYNEE_BEADS_NUDGE_EVERY || '7', 10));
 
 function readState() {
   try {

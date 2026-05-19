@@ -1,6 +1,6 @@
 # Recommended Stack
 
-The author's go-to choices for new builds. **Recommendations, not requirements** — brainy works with any stack.
+The author's go-to choices for new builds. **Recommendations, not requirements** — braynee works with any stack.
 
 ## Frontend
 
@@ -46,7 +46,7 @@ The author's go-to choices for new builds. **Recommendations, not requirements**
 | Choice | Why |
 |---|---|
 | **Beads** | Issue tracker with git-style versioning. Source of truth for work. |
-| **TaskNotes (mtn)** | Personal task layer in Obsidian. Mirrored from beads automatically by brainy. |
+| **TaskNotes (mtn)** | Personal task layer in Obsidian. Mirrored from beads automatically by braynee. |
 | **QMD** | Local BM25 + semantic search across the vault. Fast, no API calls. |
 
 ## What to skip

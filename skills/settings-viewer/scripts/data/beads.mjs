@@ -4,8 +4,8 @@ import { join } from 'path';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-// Shared projects-root resolver: plugins/brainy/scripts/lib/. This file is at
-// plugins/brainy/skills/settings-viewer/scripts/data/ → up 4 to plugin root.
+// Shared projects-root resolver: scripts/lib/. This file is at
+// skills/settings-viewer/scripts/data/ → up 4 to plugin root.
 const { getProjectsDir } = require(
   join(import.meta.dirname, '..', '..', '..', '..', 'scripts', 'lib', 'projects-root.js')
 );

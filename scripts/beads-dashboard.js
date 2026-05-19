@@ -14,7 +14,7 @@ const os = require('os');
 const { getProjectsDir } = require('./lib/projects-root.js');
 
 const HOME = os.homedir();
-// Projects root: BRAINY_PROJECTS_DIR > BEADS_CODE_DIR > ~/code (back-compat).
+// Projects root: BRAYNEE_PROJECTS_DIR > BEADS_CODE_DIR > ~/code (back-compat).
 // Never a hard ~/code assumption — see scripts/lib/projects-root.js.
 const CODE_DIR = getProjectsDir();
 const DEFAULT_OUTPUT = process.env.BEADS_OUTPUT || path.join(HOME, '.claude', 'beads-dashboard.html');

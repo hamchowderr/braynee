@@ -97,7 +97,7 @@ log.info(
 
 process.stdout.write(
   JSON.stringify({
-    additionalContext: `Plan captured to vault: "2. Areas/Plans/${filename}" (recallable via QMD / brainy:recall). No manual note needed.`,
+    additionalContext: `Plan captured to vault: "2. Areas/Plans/${filename}" (recallable via QMD / braynee:recall). No manual note needed.`,
   })
 );
 process.exit(0);

@@ -4,12 +4,12 @@
 //   1. git push to/from main/master      -> block
 //   2. git commit while HEAD is main/master -> block
 //   3. git checkout/switch --orphan main|master -> block (this is how the
-//      brainy-web autonomous build slipped a fresh history onto main)
+//      braynee-web autonomous build slipped a fresh history onto main)
 // Exit 2 = block (stderr to Claude), exit 0 = allow.
 // Opt-out for solo repos that intentionally work on main:
-//   env BRAINY_ALLOW_MAIN_COMMITS=1  (applies to the commit/orphan guards;
+//   env BRAYNEE_ALLOW_MAIN_COMMITS=1  (applies to the commit/orphan guards;
 //   pushing directly to main/master stays blocked regardless).
-// Moved from ~/.claude/hooks/ into brainy so this enforcement ships with the plugin.
+// Moved from ~/.claude/hooks/ into braynee so this enforcement ships with the plugin.
 
 const { execSync } = require('child_process');
 const fs = require('fs');
@@ -17,7 +17,7 @@ const path = require('path');
 const log = require(path.join(__dirname, 'lib', 'hook-logger.js'));
 
 const HOOK = 'check-no-main-push';
-const ALLOW_MAIN = process.env.BRAINY_ALLOW_MAIN_COMMITS === '1';
+const ALLOW_MAIN = process.env.BRAYNEE_ALLOW_MAIN_COMMITS === '1';
 
 let input = '';
 process.stdin.setEncoding('utf8');
@@ -70,7 +70,7 @@ process.stdin.on('end', () => {
         process.stderr.write(
           'BLOCKED: `--orphan main/master` starts a fresh history directly on a protected branch. ' +
           'Use a feature branch (e.g. `git checkout --orphan feature/init`) and open a PR. ' +
-          'Set BRAINY_ALLOW_MAIN_COMMITS=1 only if this repo intentionally works on main.'
+          'Set BRAYNEE_ALLOW_MAIN_COMMITS=1 only if this repo intentionally works on main.'
         );
         process.exit(2);
       }
@@ -87,7 +87,7 @@ process.stdin.on('end', () => {
           process.stderr.write(
             `BLOCKED: You are committing directly on '${branch}'. Create a feature branch first ` +
             `(e.g. \`git checkout -b feature/<topic>\`) — the commit will then succeed. ` +
-            `Set BRAINY_ALLOW_MAIN_COMMITS=1 only if this repo intentionally works on main.`
+            `Set BRAYNEE_ALLOW_MAIN_COMMITS=1 only if this repo intentionally works on main.`
           );
           process.exit(2);
         }

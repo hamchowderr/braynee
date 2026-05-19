@@ -272,7 +272,7 @@ body {
 
 export function renderTopbar(acct, ts) {
   return `<div class="topbar">
-  <div class="topbar-logo">Brainy</div>
+  <div class="topbar-logo">Braynee</div>
   <div class="topbar-sep">/</div>
   <div class="topbar-sub">Second Brain Dashboard</div>
   <div class="topbar-account">
@@ -286,7 +286,7 @@ export function renderTopbar(acct, ts) {
 
 export function renderSidebar() {
   return `<nav class="sidebar">
-  <div class="nav-item active" onclick="nav('brainy',this)" style="padding:12px 20px;margin-bottom:4px"><span class="nav-icon">🧠</span> <strong>Brainy</strong></div>
+  <div class="nav-item active" onclick="nav('braynee',this)" style="padding:12px 20px;margin-bottom:4px"><span class="nav-icon">🧠</span> <strong>Braynee</strong></div>
   <div class="sidebar-section" style="margin-top:8px">Claude Code</div>
   <div class="nav-item" onclick="nav('general',this)"><span class="nav-icon">◈</span> General</div>
   <div class="nav-item" onclick="nav('permissions',this)"><span class="nav-icon">⬡</span> Permissions</div>
@@ -318,13 +318,13 @@ function nav(id, el) {
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   document.getElementById('panel-' + id).classList.add('active');
   el.classList.add('active');
-  sessionStorage.setItem('brainy-panel', id);
+  sessionStorage.setItem('braynee-panel', id);
   if (_beadsTimer) { clearInterval(_beadsTimer); _beadsTimer = null; }
   if (id === 'beads') { _beadsTimer = setInterval(() => location.reload(), 30000); }
 }
 
 (function() {
-  const saved = sessionStorage.getItem('brainy-panel') || 'brainy';
+  const saved = sessionStorage.getItem('braynee-panel') || 'braynee';
   const panel = document.getElementById('panel-' + saved);
   if (panel) {
     document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));

@@ -1,11 +1,11 @@
-// qmd-reindex.js — shared QMD reindex helpers for brainy hooks.
+// qmd-reindex.js — shared QMD reindex helpers for braynee hooks.
 //
 // Two operations with very different cost profiles:
 //   • keyword update (`qmd update -c vault`) — cheap, content-hash incremental.
 //     Run synchronously on the Stop hook (existing behaviour).
 //   • embed (`qmd embed`)                    — expensive, model inference.
 //     Throttled + detached so it never blocks a session stop and never
-//     thrashes. Brainy previously never ran this at all, so vectors drifted
+//     thrashes. Braynee previously never ran this at all, so vectors drifted
 //     stale (~47% pending observed). See beads cp-8xq.
 //
 // Single-flight lockfile guards BOTH operations so a `qmd update` and a
@@ -27,8 +27,8 @@ function controlDir() {
   return os.tmpdir();
 }
 
-const LOCK_FILE = path.join(controlDir(), '.brainy-qmd-reindex.lock');
-const STAMP_FILE = path.join(controlDir(), '.brainy-qmd-embed.stamp');
+const LOCK_FILE = path.join(controlDir(), '.braynee-qmd-reindex.lock');
+const STAMP_FILE = path.join(controlDir(), '.braynee-qmd-embed.stamp');
 
 // A lock older than this is presumed dead (process crashed mid-embed). A
 // large embed backlog can legitimately run for several minutes, so keep
@@ -41,7 +41,7 @@ const LOCK_STALE_MS = 30 * 60 * 1000; // 30 min
 const DEFAULT_EMBED_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 h
 
 function embedIntervalMs() {
-  const raw = process.env.BRAINY_QMD_EMBED_INTERVAL_MS;
+  const raw = process.env.BRAYNEE_QMD_EMBED_INTERVAL_MS;
   const n = raw != null ? Number(raw) : NaN;
   return Number.isFinite(n) && n >= 0 ? n : DEFAULT_EMBED_INTERVAL_MS;
 }

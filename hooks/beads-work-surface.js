@@ -75,7 +75,7 @@ process.stdin.on('end', () => {
           // Banner visible to the user in the terminal.
           const firstTitle = inProgress[0].title.length > 60 ? inProgress[0].title.slice(0, 57) + '...' : inProgress[0].title;
           process.stderr.write(
-            `[brainy] ${projectName}: ${inProgress.length} in_progress, ${openCount} open — resume "${firstTitle}"\n`
+            `[braynee] ${projectName}: ${inProgress.length} in_progress, ${openCount} open — resume "${firstTitle}"\n`
           );
           process.exit(0);
         }
@@ -110,7 +110,7 @@ process.stdin.on('end', () => {
       );
       const firstTitle = topReady.title.length > 60 ? topReady.title.slice(0, 57) + '...' : topReady.title;
       process.stderr.write(
-        `[brainy] ${projectName}: 0 in_progress, ${readyCount} ready, ${openCount} open — top: [${topReady.id}] ${firstTitle}\n`
+        `[braynee] ${projectName}: 0 in_progress, ${readyCount} ready, ${openCount} open — top: [${topReady.id}] ${firstTitle}\n`
       );
     } else {
       process.stdout.write(
@@ -120,7 +120,7 @@ process.stdin.on('end', () => {
         `Do not invent work or start coding without a claimed issue.\n`
       );
       process.stderr.write(
-        `[brainy] ${projectName}: 0 in_progress, 0 ready, ${openCount} open — queue empty, ask user for next step\n`
+        `[braynee] ${projectName}: 0 in_progress, 0 ready, ${openCount} open — queue empty, ask user for next step\n`
       );
     }
 

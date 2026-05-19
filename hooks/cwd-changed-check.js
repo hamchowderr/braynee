@@ -5,7 +5,7 @@
 // Hook: CwdChanged — fires whenever the working directory changes (e.g. a
 // `cd` inside a Bash tool call).
 //
-// HD-12.2 / cp-7io: Brainy anchors the session's project at SessionStart
+// HD-12.2 / cp-7io: Braynee anchors the session's project at SessionStart
 // (sessionDir(), cp-d9g/F-3.2) and treats later cwd as transient noise. The
 // failure mode: `cd` from project A into project B and work there mid-session
 // → all of B's work is attributed to A's session note + A's beads scope. This
@@ -26,7 +26,7 @@ const { findCodeRoot, sessionDir } = require(path.join(__dirname, 'lib', 'is-cod
 
 const HOOK = 'cwd-changed-check';
 const STATE_FILE = (() => {
-  try { return path.join(os.homedir(), '.claude', 'brainy-cwd-reported.json'); }
+  try { return path.join(os.homedir(), '.claude', 'braynee-cwd-reported.json'); }
   catch { return null; }
 })();
 const STATE_MAX = 200;
@@ -95,7 +95,7 @@ process.stdin.on('end', () => {
         additionalContext:
           `The working directory moved into a different recognized project. ` +
           `This session is anchored to "${anchoredName}" (${anchoredRoot}); the current directory resolves to "${newName}" (${newRoot}). ` +
-          `Brainy's session note, beads scope, and timer remain attributed to "${anchoredName}" — work done here under "${newName}" will be recorded against "${anchoredName}" unless a new session is started for "${newName}".`,
+          `Braynee's session note, beads scope, and timer remain attributed to "${anchoredName}" — work done here under "${newName}" will be recorded against "${anchoredName}" unless a new session is started for "${newName}".`,
       },
     }));
   } catch (e) {
