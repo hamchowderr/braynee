@@ -1,5 +1,0 @@
-#!/usr/bin/env bash
-# Run the brainy health check (setup, connections, memory, inbox).
-# Usage: brainy-health [check|setup|connections|memory|inbox] [--vault /path]
-PLUGIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-exec python3 "$PLUGIN_DIR/skills/health/scripts/health.py" "$@"

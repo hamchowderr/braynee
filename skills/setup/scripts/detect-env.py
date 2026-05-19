@@ -94,9 +94,9 @@ def check_tools() -> dict:
 
 # ── Required Toolchain ────────────────────────────────────────────────────────
 
-# Brainy hard dependencies. Setup uses every one of these directly:
+# Braynee hard dependencies. Setup uses every one of these directly:
 #   git    — vault git init + the Obsidian Git auto-backup the plugin configures
-#   node   — runs every brainy hook, monitor, and bundled script (qmd-wrapper …)
+#   node   — runs every braynee hook, monitor, and bundled script (qmd-wrapper …)
 #   python3— runs the setup/migration/scaffold scripts
 #   bd     — Beads is mandatory for all code projects
 # QMD is required too but ships via the bundled qmd-wrapper, so it is verified

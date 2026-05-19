@@ -14,7 +14,7 @@ export function renderBeadsPanel(beadsStats) {
     </div>
 
     ${beadsStats.projectsData.length === 0
-      ? `<div class="card"><div class="card-body"><p class="nil">— no beads databases found in your projects root (set BRAINY_PROJECTS_DIR if your repos are not under ~/code) —</p></div></div>`
+      ? `<div class="card"><div class="card-body"><p class="nil">— no beads databases found in your projects root (set BRAYNEE_PROJECTS_DIR if your repos are not under ~/code) —</p></div></div>`
       : `<div class="beads-layout">
       <div class="beads-proj-sidebar">
         <div class="beads-proj-item active" data-proj="__all__" onclick="selectBeadsProj(this)">

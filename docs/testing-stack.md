@@ -22,7 +22,7 @@ ANTHROPIC_BASE_URL / OPENAI_BASE_URL so all three tiers stay deterministic.
 
 ## CLI install
 
-The brainy `check-testing-setup` SessionStart hook nudges if any of these are missing.
+The braynee `check-testing-setup` SessionStart hook nudges if any of these are missing.
 
 ```bash
 # Vitest — unit + integration

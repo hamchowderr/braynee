@@ -1,7 +1,7 @@
 // is-code-context.js
 // Shared helper: decide whether a directory is a "working on code" context.
 //
-// Brainy is a universal plugin. The old `cwd.startsWith(~/code)` gate assumed
+// Braynee is a universal plugin. The old `cwd.startsWith(~/code)` gate assumed
 // every user keeps repos under a single `~/code` directory — most do not.
 // Instead, detect a code context structurally: walk up from the start dir
 // looking for a language/project manifest or source files. A `.git` or
@@ -262,7 +262,7 @@ function findGitRoot(startDir) {
 // it. Bounded so it can't grow without limit across many sessions.
 const ANCHOR_FILE = (() => {
   try {
-    return path.join(os.homedir(), '.claude', 'brainy-session-anchor.json');
+    return path.join(os.homedir(), '.claude', 'braynee-session-anchor.json');
   } catch {
     return null;
   }

@@ -1,43 +1,43 @@
-# brainy
+# braynee
 
 **Claude Code's second brain** — turns your Claude Code sessions into a living, searchable knowledge system backed by an Obsidian vault.
 
-Brainy is a Claude Code plugin that scaffolds a PARA vault, wires up your company knowledge base, detects your environment, installs the right Obsidian plugins, and keeps everything in sync session to session.
+Braynee is a Claude Code plugin that scaffolds a PARA vault, wires up your company knowledge base, detects your environment, installs the right Obsidian plugins, and keeps everything in sync session to session.
 
-> **Requires Claude Code ≥ 2.1.85.** Brainy's hooks use the `if` field to scope by tool and arguments. On older Claude Code the `if` field is ignored and the hooks run on every matched call — they still self-gate internally and stay correct, just less efficiently. Update Claude Code for the intended behavior.
+> **Requires Claude Code ≥ 2.1.85.** Braynee's hooks use the `if` field to scope by tool and arguments. On older Claude Code the `if` field is ignored and the hooks run on every matched call — they still self-gate internally and stay correct, just less efficiently. Update Claude Code for the intended behavior.
 
 ## Install
 
 **Marketplace (recommended):**
 
 ```bash
-claude plugin marketplace add hamchowderr/claude-plugins
-claude plugin install brainy@hamch-plugins
+claude plugin marketplace add hamchowderr/braynee
+claude plugin install braynee@braynee
 ```
 
 **Direct from a release URL (no marketplace)** — requires Claude Code ≥ v2.1.128 for zip/URL plugin loading:
 
 ```bash
-claude --plugin-url https://github.com/hamchowderr/claude-plugins/releases/download/brainy--v<version>/brainy.zip
+claude --plugin-url https://github.com/hamchowderr/braynee/releases/download/braynee--v<version>/braynee.zip
 ```
 
-Every `brainy--v<version>` GitHub Release ships a `brainy.zip` asset, built automatically when the tag is pushed (`claude plugin tag plugins/brainy` → `git push origin brainy--v<version>`). Pin the tag to the version you want.
+Every `braynee--v<version>` GitHub Release ships a `braynee.zip` asset, built automatically when the tag is pushed (`claude plugin tag .` → `git push origin braynee--v<version>`). Pin the tag to the version you want.
 
 ---
 
 ## What it sets up
 
 ### Company / Business knowledge base
-Brainy creates an org-aware vault structure under `2. Areas/Business/`. Each business gets a folder with:
+Braynee creates an org-aware vault structure under `2. Areas/Business/`. Each business gets a folder with:
 - `Clients/` — per-client notes, engagement logs, call prep
 - `Org/` — Decisions, Strategy, Competitors, Pipeline, Risks
 - `Operations/` — Consulting, Education, Marketing, Fulfillment
 - `Shipped/` — live products still being maintained
 
-You provide your company name and email domain during setup; brainy seeds the structure and names everything correctly from the start.
+You provide your company name and email domain during setup; braynee seeds the structure and names everything correctly from the start.
 
 ### Email detection
-Brainy auto-detects your installed mail client:
+Braynee auto-detects your installed mail client:
 - ProtonMail (Bridge or app)
 - Gmail (browser profile or native app)
 - Apple Mail (macOS)
@@ -46,7 +46,7 @@ Brainy auto-detects your installed mail client:
 Email context is stored in your knowledge base and surfaced during daily planning and client call prep.
 
 ### Calendar detection
-Brainy detects your calendar platform and wires it into daily notes:
+Braynee detects your calendar platform and wires it into daily notes:
 - Google Calendar
 - Apple Calendar (macOS)
 - Outlook Calendar
@@ -55,13 +55,13 @@ Brainy detects your calendar platform and wires it into daily notes:
 `scan-projects.py` walks your `~/code/` directory, finds git repos, detects the stack (Next.js, Convex, FastAPI, etc.), and writes a project map. The wizard surfaces these to Claude so it knows what you're building without you having to explain it.
 
 ### Claude Code hooks
-Brainy declares its hooks in the plugin's `hooks/hooks.json` — they run automatically when the plugin is active, with nothing written into `~/.claude/settings.json`. **31 hooks across 10 Claude Code events** keep the vault, sessions, beads, and tasks in sync:
+Braynee declares its hooks in the plugin's `hooks/hooks.json` — they run automatically when the plugin is active, with nothing written into `~/.claude/settings.json`. **31 hooks across 10 Claude Code events** keep the vault, sessions, beads, and tasks in sync:
 
 | Event | Hooks | What they do |
 |-------|-------|-------------|
 | **SessionStart** | `ensure-obsidian.js`, `reinject-after-compact.js`, `session-auto-track.js`, `settings-viewer/generate.mjs`, `check-beads-init.js`, `beads-work-surface.js`, `check-git-init.js`, `check-testing-setup.js` | Launch Obsidian, open/update the session note, regenerate the dashboard, ensure beads + git are initialized, surface the ready beads queue, flag a missing test stack, and re-inject vault context after a compaction |
 | **UserPromptSubmit** | `memory-reminder.js`, `beads-nudge.js` | Remind Claude to search vault memory before guessing and to keep the beads workflow current |
-| **PreToolUse** | `check-no-main-push.js`, `branch-name-check.js` | Protect `main`/`master`: block pushing to it, committing on it, or `--orphan`-ing onto it (opt out with `BRAINY_ALLOW_MAIN_COMMITS=1`), and enforce branch naming |
+| **PreToolUse** | `check-no-main-push.js`, `branch-name-check.js` | Protect `main`/`master`: block pushing to it, committing on it, or `--orphan`-ing onto it (opt out with `BRAYNEE_ALLOW_MAIN_COMMITS=1`), and enforce branch naming |
 | **PostToolUse** | `memory-index-sync.js`, `session-note-nudge.js`, `statusline-state.js`, `commit-cadence-nudge.js`, `beads-claim-to-branch.js`, `beads-status-sync.js`, `beads-todo-reminder.js`, `beads-dashboard-refresh.js`, `mtn-to-beads-sync.js` | Keep `MEMORY.md` indexed, nudge session-note updates and commit cadence, branch on `bd … --claim`, and mirror beads ⇄ Claude todos ⇄ TaskNotes |
 | **PreCompact** | `pre-compact-snapshot.js` | Snapshot context before a compaction |
 | **PostCompact** | `post-compact.js` | Restore and re-inject context after a compaction |
@@ -113,7 +113,7 @@ Zettelkasten/        → atomic permanent notes
 
 ```bash
 # From the Claude Code marketplace
-/plugin install brainy
+/plugin install braynee
 
 # Or locally
 cd second-brain
@@ -132,7 +132,7 @@ If you already have an Obsidian vault, `/setup` detects it and runs a non-destru
 
 ## Search
 
-Brainy installs QMD (a local BM25 + semantic search engine) and keeps its index fresh via the `session-export-qmd.js` Stop hook. All brainy skills use QMD for vault search — never grep or filesystem scanning.
+Braynee installs QMD (a local BM25 + semantic search engine) and keeps its index fresh via the `session-export-qmd.js` Stop hook. All braynee skills use QMD for vault search — never grep or filesystem scanning.
 
 ```bash
 node ${CLAUDE_PLUGIN_ROOT}/scripts/qmd-wrapper.mjs search "query"    # exact terms
@@ -165,18 +165,18 @@ Opinionated guides on how the author builds. Recommendations, not requirements �
 
 ## Plugin name
 
-`brainy` — published under the `otaku-solutions` namespace.
+`braynee` — published under the `otaku-solutions` namespace.
 
 ---
 
 ## Development & testing
 
-### Iterating on brainy locally
+### Iterating on braynee locally
 
 Don't use `claude plugin update` for every edit. Launch Claude Code with `--plugin-dir` pointing at the source:
 
 ```bash
-claude --plugin-dir "/path/to/claude-plugins/plugins/brainy"
+claude --plugin-dir "/path/to/braynee"
 ```
 
 The local copy takes precedence over the installed marketplace version for that session. After each edit, run `/reload-plugins` — no restart needed. It reloads plugins, skills, agents, hooks, MCP, and LSP servers.
@@ -186,11 +186,11 @@ The local copy takes precedence over the installed marketplace version for that 
 Validate the plugin install end-to-end:
 
 ```bash
-node bin/brainy-self-test           # human-readable
-node bin/brainy-self-test --json    # machine-readable
+node bin/braynee-self-test           # human-readable
+node bin/braynee-self-test --json    # machine-readable
 ```
 
-Or via the health skill: `/brainy:health self-test`.
+Or via the health skill: `/braynee:health self-test`.
 
 The self-test runs all of these in sequence:
 - Parse all hooks/monitors/scripts

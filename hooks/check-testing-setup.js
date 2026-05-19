@@ -72,7 +72,7 @@ process.stdin.on('end', () => {
       '',
       `\`${path.basename(cwd)}\` is missing: **${missing.join(', ')}**`,
       '',
-      'Recommended testing stack (Vitest + Playwright + AIMock — see [docs/testing-stack.md](https://github.com/hamchowderr/claude-plugins/blob/master/plugins/brainy/docs/testing-stack.md)):',
+      'Recommended testing stack (Vitest + Playwright + AIMock — see [docs/testing-stack.md](https://github.com/hamchowderr/braynee/blob/master/docs/testing-stack.md)):',
       '',
     ];
     if (!has.vitest) lines.push('```bash\nnpm i -D vitest @vitest/ui\nnpx vitest --version\n```\nDocs: https://vitest.dev/guide/cli', '');

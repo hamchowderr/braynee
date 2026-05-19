@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// prd-new.mjs — Scaffold a new PRD with the canonical brainy schema.
+// prd-new.mjs — Scaffold a new PRD with the canonical braynee schema.
 // Usage: node prd-new.mjs "<Name>" [--folder <slug>] [--client <name>]
 
 import fs from 'node:fs';
@@ -8,8 +8,8 @@ import os from 'node:os';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-// Shared projects-root resolver lives at plugins/brainy/scripts/lib/.
-// This script is at plugins/brainy/skills/prd/scripts/ → up 3 to plugin root.
+// Shared projects-root resolver lives at scripts/lib/.
+// This script is at skills/prd/scripts/ → up 3 to plugin root.
 const { getProjectsDir, isProjectsDirConfigured } = require(
   path.join(import.meta.dirname, '..', '..', '..', 'scripts', 'lib', 'projects-root.js')
 );
@@ -202,6 +202,6 @@ console.log(`Created: ${prdPath}`);
 const projectsRoot = getProjectsDir();
 console.log(`Folder join key: ${folder} → ${path.join(projectsRoot, folder)}/`);
 if (!isProjectsDirConfigured()) {
-  console.log(`(projects root defaults to ~/code — set BRAINY_PROJECTS_DIR if your repos live elsewhere)`);
+  console.log(`(projects root defaults to ~/code — set BRAYNEE_PROJECTS_DIR if your repos live elsewhere)`);
 }
 console.log(`Next: fill in sections, then run prd-seed.mjs "${slug}" to create bd issues.`);

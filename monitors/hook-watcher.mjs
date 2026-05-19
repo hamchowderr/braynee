@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Monitor: tail brainy-hooks.log and emit Claude notifications for hook errors.
+ * Monitor: tail braynee-hooks.log and emit Claude notifications for hook errors.
  *
  * Runs as a long-lived process. Each stdout line becomes a Claude notification.
  * Watches for ERROR-level entries and emits them with actionable hints.
@@ -10,7 +10,7 @@ import { existsSync, statSync, createReadStream } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
 
-const LOG_FILE = join(homedir(), '.claude', 'brainy-hooks.log');
+const LOG_FILE = join(homedir(), '.claude', 'braynee-hooks.log');
 const POLL_MS = 5000;
 
 // Common patterns → hint text
@@ -20,7 +20,7 @@ const HINTS = [
   [/ENOENT/i,                   'File not found — check that the vault path and Sessions/ folder exist'],
   [/SyntaxError/i,              'JSON parse error — hook received malformed input'],
   [/EPERM|EACCES/i,             'Permission denied — check vault directory write access'],
-  [/qmd-wrapper.*not found/i,   'QMD not installed — run /brainy:health self-test'],
+  [/qmd-wrapper.*not found/i,   'QMD not installed — run /braynee:health self-test'],
 ];
 
 function getHint(message) {
@@ -49,7 +49,7 @@ function trackError(hookName, message) {
   if (history.length >= CHRONIC_THRESHOLD && !chronicNotified.has(hookName)) {
     chronicNotified.add(hookName);
     process.stdout.write(
-      `[brainy] CHRONIC: ${hookName} has failed ${history.length}x in last 24h — investigate. Run /brainy:health self-test\n`
+      `[braynee] CHRONIC: ${hookName} has failed ${history.length}x in last 24h — investigate. Run /braynee:health self-test\n`
     );
   } else if (history.length < CHRONIC_THRESHOLD && chronicNotified.has(hookName)) {
     // Recovered — clear the flag so we'll notify again if it goes chronic
@@ -93,7 +93,7 @@ function poll() {
 
       const [, hookName, message] = m;
       const hint = getHint(message);
-      process.stdout.write(`[brainy] Hook error in ${hookName}: ${message}${hint}\n`);
+      process.stdout.write(`[braynee] Hook error in ${hookName}: ${message}${hint}\n`);
       trackError(hookName, message);
     }
   });

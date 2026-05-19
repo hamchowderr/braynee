@@ -6,7 +6,7 @@ import { join } from 'path';
 import { loadClaudeData } from './data/claude.mjs';
 import { loadVaultStats } from './data/vault.mjs';
 import { loadBeadsStats } from './data/beads.mjs';
-import { computeAllHookCmds, computeBrainyHealth, computeHooksLive } from './data/brainy.mjs';
+import { computeAllHookCmds, computeBrayneeHealth, computeHooksLive } from './data/braynee.mjs';
 
 import { renderCSS, renderTopbar, renderSidebar, renderNavJS } from './html/shell.mjs';
 import { esc } from './html/utils.mjs';
@@ -14,7 +14,7 @@ import { esc } from './html/utils.mjs';
 import { renderGeneralPanel, renderPermissionsPanel, renderHooksPanel, renderPluginsPanel, renderMcpPanel, renderAgentsPanel, renderClaudeMdPanel } from './panels/config.mjs';
 import { renderProjectsPanel, renderSkillUsagePanel, renderInstalledSkillsPanel, renderLocalPluginsPanel, renderPrefsPanel } from './panels/data.mjs';
 import { renderAnalyticsPanel, renderToolUsagePanel, renderProjectHoursPanel } from './panels/insights.mjs';
-import { renderBrainyPanel } from './panels/brainy.mjs';
+import { renderBrayneePanel } from './panels/braynee.mjs';
 import { renderBeadsPanel, renderBeadsDrawer, renderBeadsJS } from './panels/beads.mjs';
 
 const home = homedir();
@@ -30,19 +30,19 @@ const [claudeData, vaultStats, beadsStats] = await Promise.all([
 ]);
 
 const allHookCmds = computeAllHookCmds(claudeData.s);
-const brainyHealth = computeBrainyHealth(claudeData.s, allHookCmds);
+const brayneeHealth = computeBrayneeHealth(claudeData.s, allHookCmds);
 const hooksLive = computeHooksLive();
 const ts = new Date().toLocaleString();
 
 // Bundle all data for panels
-const d = { ...claudeData, vaultStats, beadsStats, brainyHealth, hooksLive, ts };
+const d = { ...claudeData, vaultStats, beadsStats, brayneeHealth, hooksLive, ts };
 
 const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Brainy</title>
+<title>Braynee</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=Syne:wght@700;800&display=swap" rel="stylesheet">
 ${renderCSS()}
@@ -55,7 +55,7 @@ ${renderTopbar(claudeData.acct, ts)}
 ${renderSidebar()}
 
 <main class="main">
-  ${renderBrainyPanel(d)}
+  ${renderBrayneePanel(d)}
   ${renderGeneralPanel(d)}
   ${renderPermissionsPanel(d)}
   ${renderHooksPanel(d)}
@@ -77,7 +77,7 @@ ${renderSidebar()}
 
 ${renderBeadsDrawer()}
 
-<div class="footer">GENERATED ${esc(ts.toUpperCase())} &nbsp;·&nbsp; ${esc(claudeData.acct.organizationName || '')} &nbsp;·&nbsp; BRAINY v1.2.0 · Otaku Solutions</div>
+<div class="footer">GENERATED ${esc(ts.toUpperCase())} &nbsp;·&nbsp; ${esc(claudeData.acct.organizationName || '')} &nbsp;·&nbsp; BRAYNEE v1.2.0 · Otaku Solutions</div>
 
 ${renderBeadsJS(beadsStats)}
 ${renderNavJS()}

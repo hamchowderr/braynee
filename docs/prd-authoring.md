@@ -1,6 +1,6 @@
 # PRD Authoring
 
-A PRD is the contract between vault planning and code execution. Brainy
+A PRD is the contract between vault planning and code execution. Braynee
 treats it as the seed source for beads issues — the better the PRD, the
 better the backlog.
 
@@ -29,17 +29,17 @@ If you can't fill these in, you don't know enough yet to define a product. Stop 
 ## The folder field is the join key
 
 The PRD's `folder:` value MUST equal the **project repo directory name**.
-Brainy joins vault PRDs to code repos on this field — get it wrong and
+Braynee joins vault PRDs to code repos on this field — get it wrong and
 nothing wires up.
 
 The repo is resolved inside the configured **projects root**:
 
-1. `BRAINY_PROJECTS_DIR` — set this if your repos are not under `~/code`
+1. `BRAYNEE_PROJECTS_DIR` — set this if your repos are not under `~/code`
 2. `BEADS_CODE_DIR` — legacy override, still honored
 3. `~/code` — default only when neither is set (back-compat)
 
 `folder:` is a directory **name**, never a path, and never assumed to live
-under `~/code`. Set `BRAINY_PROJECTS_DIR` once and `prd-audit`, `prd-seed`,
+under `~/code`. Set `BRAYNEE_PROJECTS_DIR` once and `prd-audit`, `prd-seed`,
 and the beads dashboard all resolve repos from there.
 
 ## Acceptance Criteria — write them right
@@ -56,7 +56,7 @@ and the beads dashboard all resolve repos from there.
 Patterns that work:
 - **One observable outcome per line.** "User can do X" or "System returns Y." Not "Build the dashboard" — that's not testable.
 - **Body after the em-dash is the spec.** Treat it as the thing you'll implement, not the thing you'll explain to a stakeholder.
-- **Group by milestone.** `### Milestone: MVP` keeps phases distinct, and brainy attaches `milestone:<name>` labels to seeded beads.
+- **Group by milestone.** `### Milestone: MVP` keeps phases distinct, and braynee attaches `milestone:<name>` labels to seeded beads.
 - **Priority guides triage, not order.** P0 = blocks the milestone. P1 = required for the milestone. P2/P3 = nice-to-have.
 
 Anti-patterns:

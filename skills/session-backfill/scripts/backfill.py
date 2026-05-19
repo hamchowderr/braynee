@@ -4,7 +4,7 @@ Backfill structured session summaries from Claude Code .jsonl transcripts
 into the vault's per-project Sessions folder.
 
 Reads each CC session JSONL, filters out tool-call noise, distills the
-conversation into a structured summary matching the brainy session-note
+conversation into a structured summary matching the braynee session-note
 format, and writes it to `2. Areas/Sessions/<Project>/<note>.md`.
 
 Distillation uses `claude -p` by default — the local Claude Code OAuth
@@ -47,16 +47,16 @@ MAP_FILE = SCRIPT_DIR / "project_map.json"
 def find_vault(explicit: str | None = None) -> Path | None:
     """Resolve the Obsidian vault universally.
 
-    Priority: --vault arg → $BRAINY_VAULT → $OBSIDIAN_VAULT → common
+    Priority: --vault arg → $BRAYNEE_VAULT → $OBSIDIAN_VAULT → common
     locations probed for a `.obsidian` directory. Mirrors the resolution
-    used by brainy's sessions / setup skills so behaviour is consistent
+    used by braynee's sessions / setup skills so behaviour is consistent
     for every user regardless of where their vault lives.
     """
     if explicit:
         p = Path(explicit).expanduser()
         return p if p.is_dir() else None
 
-    for env_var in ("BRAINY_VAULT", "OBSIDIAN_VAULT"):
+    for env_var in ("BRAYNEE_VAULT", "OBSIDIAN_VAULT"):
         val = os.environ.get(env_var)
         if val:
             p = Path(val).expanduser()
@@ -494,7 +494,7 @@ def main() -> int:
     ap.add_argument("--all", action="store_true", help="Backfill every CC project")
     ap.add_argument("--limit", type=int, default=0, help="Cap on sessions per project (0 = unlimited)")
     ap.add_argument("--dry-run", action="store_true", help="Show what would be created without distilling")
-    ap.add_argument("--vault", help="Vault path (auto-detected via $BRAINY_VAULT / common locations if omitted)")
+    ap.add_argument("--vault", help="Vault path (auto-detected via $BRAYNEE_VAULT / common locations if omitted)")
     ap.add_argument("--model", default="claude-sonnet-4-6", help="Claude model id (only used with --use-api)")
     ap.add_argument(
         "--use-api",
@@ -510,7 +510,7 @@ def main() -> int:
     vault = find_vault(args.vault)
     if vault is None:
         sys.stderr.write(
-            "Obsidian vault not found. Set $BRAINY_VAULT or pass --vault PATH.\n"
+            "Obsidian vault not found. Set $BRAYNEE_VAULT or pass --vault PATH.\n"
         )
         return 1
     sessions_dir = vault / "2. Areas" / "Sessions"

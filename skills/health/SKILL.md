@@ -5,12 +5,12 @@ description: >
   Use when user says "brain check", "health check", "system status", "what's broken",
   "what needs attention", "check connections", "what's backed up".
 argument-hint: [check | setup | connections | memory | inbox | self-test]
-allowed-tools: Bash(python3:*), Bash(node:*), Bash(curl:*), Bash(brainy-self-test:*)
+allowed-tools: Bash(python3:*), Bash(node:*), Bash(curl:*), Bash(braynee-self-test:*)
 ---
 
 # Health Skill — Brain Check
 
-Audits the Brainy system across four areas and surfaces what's broken or backed up right now.
+Audits the Braynee system across four areas and surfaces what's broken or backed up right now.
 
 ## Commands
 
@@ -31,12 +31,12 @@ python3 {baseDir}/scripts/health.py memory
 python3 {baseDir}/scripts/health.py inbox
 
 # Plugin self-test — validates every hook, monitor, script, skill, agent
-node {baseDir}/../../bin/brainy-self-test
+node {baseDir}/../../bin/braynee-self-test
 ```
 
 ## Self-Test (`self-test` subcommand)
 
-Run when something feels broken with brainy itself, or after editing the plugin source. Validates:
+Run when something feels broken with braynee itself, or after editing the plugin source. Validates:
 
 - All 21 hook scripts parse and execute with mock stdin (no crashes)
 - hooks.json + monitors.json + plugin.json schema valid
@@ -48,7 +48,7 @@ Exit code 0 = everything passed. Non-zero = at least one check failed (output sh
 
 For machine-readable output use `--json`:
 ```bash
-node {baseDir}/../../bin/brainy-self-test --json
+node {baseDir}/../../bin/braynee-self-test --json
 ```
 
 The same self-test runs in CI on every push to master across Ubuntu, macOS, and Windows.

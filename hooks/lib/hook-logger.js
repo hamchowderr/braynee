@@ -5,7 +5,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const LOG_FILE = path.join(os.homedir(), '.claude', 'brainy-hooks.log');
+const LOG_FILE = path.join(os.homedir(), '.claude', 'braynee-hooks.log');
 const MAX_SIZE = 1024 * 1024; // 1MB — rotate beyond this
 
 function write(level, hookName, message) {

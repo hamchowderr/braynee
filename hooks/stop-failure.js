@@ -3,7 +3,7 @@
 // (rate_limit / authentication_failed / billing_error / server_error / ...).
 //
 // HD-2.9 / cp-9kw: on an API error the turn ends via StopFailure, NOT Stop or
-// SessionEnd. All of Brainy's session-note close + mtn-timer-stop logic lives
+// SessionEnd. All of Braynee's session-note close + mtn-timer-stop logic lives
 // on Stop/SessionEnd, so an API-error end leaves the session note status:active
 // and the mtn timer running until the next SessionStart sweep (cp-re1). This
 // hook performs the same close + timer-stop as session-end.js (shared via

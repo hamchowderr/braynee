@@ -1,0 +1,76 @@
+name: Release braynee plugin (zip + GitHub Release)
+
+# Builds a hosted braynee.zip and attaches it to a GitHub Release so users can
+# install without adding the marketplace:
+#   claude --plugin-url https://github.com/<owner>/<repo>/releases/download/braynee--v<ver>/braynee.zip
+#
+# Trigger: push a tag of the form `braynee--v<version>` — exactly what
+# `claude plugin tag .` produces (it also validates that
+# plugin.json and the marketplace entry agree before tagging).
+
+on:
+  push:
+    tags:
+      - 'braynee--v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: build + publish braynee.zip
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify tag matches plugin.json and marketplace agree
+        shell: bash
+        run: |
+          node -e "
+          const p = require('./.claude-plugin/plugin.json');
+          const mp = require('./.claude-plugin/marketplace.json').plugins.find(x => x.name === 'braynee');
+          if (!mp) throw new Error('braynee missing from marketplace.json');
+          if (p.version !== mp.version) throw new Error('version mismatch: plugin.json ' + p.version + ' vs marketplace ' + mp.version);
+          const tag = process.env.GITHUB_REF_NAME;
+          if (tag !== 'braynee--v' + p.version) throw new Error('tag ' + tag + ' != braynee--v' + p.version);
+          console.log('OK: ' + tag + ' agrees with plugin.json/marketplace v' + p.version);
+          "
+
+      - name: Validate plugin before packaging
+        shell: bash
+        run: node bin/braynee-self-test
+
+      - name: Build braynee.zip
+        shell: bash
+        run: |
+          git archive --format=zip --prefix=braynee/ -o braynee.zip HEAD
+          unzip -l braynee.zip | tail -3
+
+      - name: Release notes
+        shell: bash
+        run: |
+          VER=$(node -p "require('./.claude-plugin/plugin.json').version")
+          ASSET="https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/braynee.zip"
+          {
+            echo "Braynee v${VER} — install without adding a marketplace:"
+            echo ''
+            echo '```'
+            echo "claude --plugin-url ${ASSET}"
+            echo '```'
+            echo ''
+            echo 'Requires Claude Code >= v2.1.128 for zip/URL plugin loading'
+            echo '(>= v2.1.85 for the hook `if`-scoping the plugin relies on).'
+            echo ''
+            echo 'Marketplace install remains the primary path:'
+            echo '`claude plugin marketplace add hamchowderr/braynee`'
+            echo 'then `claude plugin install braynee@braynee`.'
+          } > RELEASE_NOTES.md
+
+      - name: Create GitHub Release with asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh release create "${GITHUB_REF_NAME}" braynee.zip \
+            --title "braynee ${GITHUB_REF_NAME#braynee--}" \
+            --notes-file RELEASE_NOTES.md

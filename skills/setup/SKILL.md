@@ -18,14 +18,14 @@ User types 4 things. Everything else is auto-detected, researched, or confirmed 
 
 ## Required Toolchain
 
-Brainy has hard dependencies. Setup verifies all of them up front (Step 1A) and
+Braynee has hard dependencies. Setup verifies all of them up front (Step 1A) and
 guides cross-platform installation for any that are missing — **none are assumed
 to exist**:
 
 | Tool | Why it's required |
 |---|---|
 | `git` | Vault is a git repo; the plugin configures Obsidian Git auto-commit/push |
-| `node` | Runs every brainy hook, monitor, and bundled script |
+| `node` | Runs every braynee hook, monitor, and bundled script |
 | `python3` | Runs the setup, scaffold, and migration scripts |
 | `bd` | Beads issue tracking is mandatory for all code projects |
 | QMD | Search index (ships via the bundled `qmd-wrapper.mjs`) |

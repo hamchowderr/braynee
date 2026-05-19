@@ -1,14 +1,14 @@
 // projects-root.js
 // Shared resolver for the directory that holds the user's code project repos.
 //
-// brainy is a universal plugin. The PRD subsystem historically hardcoded the
+// braynee is a universal plugin. The PRD subsystem historically hardcoded the
 // PRD<->repo join as `~/code/<folder>` (prd-audit, prd-seed, beads-dashboard,
 // and the PRD schema/docs). Hundreds of users have no `~/code`, so any such
 // assumption is a guaranteed failure. This module is the single source of
 // truth for "where do project repos live".
 //
 // Resolution order (first hit wins):
-//   1. BRAINY_PROJECTS_DIR   — the canonical, documented override
+//   1. BRAYNEE_PROJECTS_DIR   — the canonical, documented override
 //   2. BEADS_CODE_DIR        — legacy var beads-dashboard.js already honored;
 //                              kept for back-compat so existing setups don't break
 //   3. <home>/code           — historical default, ONLY when nothing is set
@@ -42,7 +42,7 @@ function expandHome(p) {
  * Pure: reads env + os.homedir(), touches no filesystem.
  */
 function getProjectsDir(env = process.env) {
-  const configured = env.BRAINY_PROJECTS_DIR || env.BEADS_CODE_DIR;
+  const configured = env.BRAYNEE_PROJECTS_DIR || env.BEADS_CODE_DIR;
   if (configured && String(configured).trim()) {
     return path.resolve(expandHome(String(configured).trim()));
   }
@@ -52,11 +52,11 @@ function getProjectsDir(env = process.env) {
 /**
  * True when the projects root came from an explicit override (vs. the
  * historical ~/code default). Lets callers phrase messages accurately
- * ("not found at <root>" vs. "set BRAINY_PROJECTS_DIR").
+ * ("not found at <root>" vs. "set BRAYNEE_PROJECTS_DIR").
  */
 function isProjectsDirConfigured(env = process.env) {
   return Boolean(
-    (env.BRAINY_PROJECTS_DIR && String(env.BRAINY_PROJECTS_DIR).trim()) ||
+    (env.BRAYNEE_PROJECTS_DIR && String(env.BRAYNEE_PROJECTS_DIR).trim()) ||
     (env.BEADS_CODE_DIR && String(env.BEADS_CODE_DIR).trim())
   );
 }

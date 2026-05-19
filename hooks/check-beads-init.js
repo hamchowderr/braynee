@@ -59,7 +59,7 @@ function tryBdInit(cwd, projectName) {
   // NOTE: bd's *git* hooks (pre-commit/post-merge/pre-push/post-checkout/
   // prepare-commit-msg, installed into .git/hooks/) only keep
   // .beads/issues.jsonl in sync with the Dolt DB. They are completely
-  // distinct from brainy's Claude-Code *event* hooks (SessionStart,
+  // distinct from braynee's Claude-Code *event* hooks (SessionStart,
   // PreCompact, etc., wired via the plugin's hooks.json) — different
   // mechanism, different files, no conflict. Skipping bd's git hooks at
   // init time was the ROOT CAUSE of the recurring .beads/issues.jsonl
@@ -139,7 +139,7 @@ function finishBdSetup(cwd) {
 
   // 3. Commit the bd Dolt config so the project isn't left "config: modified".
   try {
-    execSync('bd vc commit -m "brainy auto-init: commit initial bd config"', {
+    execSync('bd vc commit -m "braynee auto-init: commit initial bd config"', {
       cwd,
       encoding: 'utf8',
       timeout: 20_000,
@@ -170,7 +170,7 @@ process.stdin.on('end', () => {
     }
     // F-3.2a + F-3.2b: gate on the SESSION's working dir (anchored at
     // SessionStart), detected structurally — not this event's transient cwd
-    // and not a hardcoded ~/code prefix (brainy is universal — most users have
+    // and not a hardcoded ~/code prefix (braynee is universal — most users have
     // no ~/code). A vault-rooted session must not auto-init beads or nag about
     // the bd CLI just because a subprocess cd'd into a code project. The
     // detected root is also the correct project-name source.
@@ -226,7 +226,7 @@ process.stdin.on('end', () => {
     process.stdout.write(
       `# Beads Auto-Initializing\n\n` +
       `Beads issue tracking is mandatory for all code projects, but \`${projectName}\` ` +
-      `did not have it initialized. brainy is running:\n\n` +
+      `did not have it initialized. braynee is running:\n\n` +
       `\`\`\`\n` +
       `bd init --shared-server --external -p "${projectName}" --skip-agents --skip-hooks --non-interactive\n` +
       `bd hooks install            # git hooks that keep .beads/issues.jsonl synced\n` +
@@ -246,11 +246,11 @@ process.stdin.on('end', () => {
       }
       process.stdout.write(
         `**Done.** Beads is now initialized in \`${projectName}\`. ` +
-        `Brainy also installed bd's git hooks (keep \`.beads/issues.jsonl\` synced, ` +
+        `Braynee also installed bd's git hooks (keep \`.beads/issues.jsonl\` synced, ` +
         `preventing merge conflicts on PRs), ensured an agent doc exists, and committed ` +
         `the initial bd config — the project comes up clean in \`bd doctor\`.\n\n` +
         `Use \`bd create\`, \`bd list\`, \`bd update <id> --status in_progress\` to track work. ` +
-        `Brainy hooks will sync bd status changes to TaskNotes and the project session note automatically.\n`
+        `Braynee hooks will sync bd status changes to TaskNotes and the project session note automatically.\n`
       );
     } else {
       log.error(HOOK, `bd init failed: ${result.error?.split('\n')[0] || 'unknown'}`);

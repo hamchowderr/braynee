@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-Write brainy-specific settings into ~/.claude/settings.json.
+Write braynee-specific settings into ~/.claude/settings.json.
 
 Hooks are now registered automatically via the plugin's hooks/hooks.json.
 This script handles settings that can't be expressed in hooks.json:
 
   • autoMemoryDirectory      — routes Claude Code auto memory to the vault.
-  • permissions.defaultMode  — Brainy recommends starting sessions in
+  • permissions.defaultMode  — Braynee recommends starting sessions in
                                'plan' mode so work is reviewed before it
                                runs. Offered, never forced: dry-run unless
                                --yes, and an existing explicit value is only
@@ -22,7 +22,7 @@ sys.stdout.reconfigure(encoding="utf-8")
 
 SETTINGS_PATH = Path.home() / ".claude" / "settings.json"
 
-# Brainy's recommended Claude Code default permission mode. 'plan' makes
+# Braynee's recommended Claude Code default permission mode. 'plan' makes
 # every session start in plan mode (review-before-act). Overridable via
 # `apply --default-mode <value>` for users who prefer e.g. 'default'.
 RECOMMENDED_DEFAULT_MODE = "plan"
@@ -91,7 +91,7 @@ def cmd_check(args):
         shown = current_mode if current_mode else "unset"
         print(
             f"  ○  permissions.defaultMode — currently {shown}; "
-            f"Brainy recommends '{RECOMMENDED_DEFAULT_MODE}' "
+            f"Braynee recommends '{RECOMMENDED_DEFAULT_MODE}' "
             f"(review-before-act). Not changed without consent."
         )
         pending = True
@@ -161,11 +161,11 @@ def cmd_apply(args):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Write brainy settings into ~/.claude/settings.json"
+        description="Write braynee settings into ~/.claude/settings.json"
     )
     sub = parser.add_subparsers(dest="cmd")
 
-    sub.add_parser("detect", help="Output JSON describing current brainy settings")
+    sub.add_parser("detect", help="Output JSON describing current braynee settings")
     sub.add_parser("check", help="Show what would be added")
 
     p_apply = sub.add_parser("apply", help="Apply settings (dry-run unless --yes)")

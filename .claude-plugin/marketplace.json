@@ -1,20 +1,20 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
-  "name": "hamch-plugins",
-  "description": "Otaku Solutions' Claude Code plugin marketplace — home of Brainy, the Obsidian-backed second-brain plugin.",
+  "name": "braynee",
+  "description": "Otaku Solutions' Claude Code plugin marketplace — home of Braynee, the Obsidian-backed second-brain plugin.",
   "owner": {
     "name": "HamCh"
   },
   "plugins": [
     {
-      "name": "brainy",
-      "source": "./plugins/brainy",
-      "description": "Brainy turns Claude Code into your second brain — setup wizard, PARA vault scaffolding, company knowledge base, project detection, all-time usage insights, and daily workflow skills. Requires Claude Code ≥ 2.1.85 (hooks use the `if` field for tool/argument scoping).",
-      "version": "1.33.0",
+      "name": "braynee",
+      "source": ".",
+      "description": "Braynee turns Claude Code into your second brain — setup wizard, PARA vault scaffolding, company knowledge base, project detection, all-time usage insights, and daily workflow skills. Requires Claude Code ≥ 2.1.85 (hooks use the `if` field for tool/argument scoping).",
+      "version": "2.0.0",
       "author": {
         "name": "Otaku Solutions"
       },
-      "repository": "https://github.com/hamchowderr/claude-plugins",
+      "repository": "https://github.com/hamchowderr/braynee",
       "license": "MIT",
       "keywords": ["second-brain", "obsidian", "PARA", "vault", "knowledge-management", "daily-notes", "zettelkasten", "excalidraw"]
     }

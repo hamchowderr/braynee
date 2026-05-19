@@ -1,7 +1,7 @@
 import { esc, kvTable } from '../html/utils.mjs';
 
-export function renderBrainyPanel(d) {
-  const { vaultStats, beadsStats, brainyHealth, hooksLive, totalProjects, acct, ts } = d;
+export function renderBrayneePanel(d) {
+  const { vaultStats, beadsStats, brayneeHealth, hooksLive, totalProjects, acct, ts } = d;
 
   const hl = hooksLive || { state: 'missing', live: false, lastBeat: null };
   const hlColor = hl.live ? 'var(--green)' : 'var(--red)';
@@ -14,12 +14,12 @@ export function renderBrainyPanel(d) {
     : hl.state === 'stale'
       ? `no SessionStart in over 24h (last ${hl.lastBeat ? new Date(hl.lastBeat).toLocaleString() : '?'}) — hooks may be disabled`
       : hl.state === 'missing'
-        ? 'heartbeat sentinel never written — disableAllHooks, a managed policy, or a Claude Code too old for plugin hooks. Every Brainy lifecycle guarantee is silently off.'
+        ? 'heartbeat sentinel never written — disableAllHooks, a managed policy, or a Claude Code too old for plugin hooks. Every Braynee lifecycle guarantee is silently off.'
         : 'heartbeat file unreadable';
 
-  return `<div id="panel-brainy" class="panel active">
+  return `<div id="panel-braynee" class="panel active">
     <div class="section-head">
-      <div class="section-title">Brainy</div>
+      <div class="section-title">Braynee</div>
       <div class="section-tag">v1.2.0 · second-brain plugin · Otaku Solutions</div>
     </div>
 
@@ -37,14 +37,14 @@ export function renderBrainyPanel(d) {
         <div class="stat-lbl">Issues Assigned</div>
       </div>
       <div class="stat-box">
-        <div class="stat-num" style="color:${brainyHealth.missing === 0 ? 'var(--green)' : 'var(--red)'}">${brainyHealth.active}/${brainyHealth.total}</div>
+        <div class="stat-num" style="color:${brayneeHealth.missing === 0 ? 'var(--green)' : 'var(--red)'}">${brayneeHealth.active}/${brayneeHealth.total}</div>
         <div class="stat-lbl">Features On</div>
       </div>
     </div>
 
-    ${brainyHealth.missing > 0
+    ${brayneeHealth.missing > 0
       ? `<div style="padding:10px 14px;background:rgba(255,92,92,.06);border:1px solid rgba(255,92,92,.2);font-size:11px;color:var(--red);margin-bottom:16px">
-           ○ ${brainyHealth.missing} feature${brainyHealth.missing > 1 ? 's' : ''} not installed — run <span style="color:var(--amber);font-family:var(--mo)">python3 skills/setup/scripts/settings-writer.py apply --yes</span> or use <span style="color:var(--amber);font-family:var(--mo)">/setup</span> to complete setup
+           ○ ${brayneeHealth.missing} feature${brayneeHealth.missing > 1 ? 's' : ''} not installed — run <span style="color:var(--amber);font-family:var(--mo)">python3 skills/setup/scripts/settings-writer.py apply --yes</span> or use <span style="color:var(--amber);font-family:var(--mo)">/setup</span> to complete setup
          </div>`
       : `<div style="padding:10px 14px;background:rgba(61,220,132,.06);border:1px solid rgba(61,220,132,.2);font-size:11px;color:var(--green);margin-bottom:16px">
            ✓ All features installed and active

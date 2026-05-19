@@ -1,7 +1,7 @@
 // beads-claim-to-branch.js
 // Hook: PostToolUse (Bash, if Bash(bd update * --claim) || Bash(bd claim *)) —
 // auto-creates a feature/<id>-<slug> or fix/<id>-<slug> branch when an issue is
-// claimed, gated by a per-repo setting at .claude/brainy.local.md.
+// claimed, gated by a per-repo setting at .claude/braynee.local.md.
 //
 // Settings file (Markdown frontmatter parsed manually — keep it dumb on purpose):
 //   ---
@@ -23,7 +23,7 @@ function run(cmd, opts = {}) {
 }
 
 function readSetting(repoRoot, key) {
-  const settingsPath = path.join(repoRoot, '.claude', 'brainy.local.md');
+  const settingsPath = path.join(repoRoot, '.claude', 'braynee.local.md');
   if (!fs.existsSync(settingsPath)) return null;
   try {
     const content = fs.readFileSync(settingsPath, 'utf-8');
@@ -57,7 +57,7 @@ process.stdin.on('end', () => {
     if (!repoRoot) process.exit(0);
 
     if (!readSetting(repoRoot, 'beads_claim_auto_branch')) {
-      log.info(HOOK, `${issueId}: auto-branch disabled (set beads_claim_auto_branch: true in .claude/brainy.local.md to enable)`);
+      log.info(HOOK, `${issueId}: auto-branch disabled (set beads_claim_auto_branch: true in .claude/braynee.local.md to enable)`);
       process.exit(0);
     }
 

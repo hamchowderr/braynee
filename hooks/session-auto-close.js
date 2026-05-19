@@ -256,7 +256,7 @@ process.stdin.on('end', () => {
 
     const projectName = findProjectName(folderName);
     if (!projectName) {
-      log.warn(HOOK, `no project file in vault for folder "${folderName}" — session won't be closed. Run /brainy:project-onboarder or create 1. Projects/<name>.md with folder: ${folderName}`);
+      log.warn(HOOK, `no project file in vault for folder "${folderName}" — session won't be closed. Run /braynee:project-onboarder or create 1. Projects/<name>.md with folder: ${folderName}`);
       process.exit(0);
     }
 

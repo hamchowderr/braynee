@@ -3,11 +3,11 @@ import { homedir } from 'os';
 import { join } from 'path';
 
 // HD-6.2 / cp-6nk: read the SessionStart heartbeat sentinel
-// (brainy-heartbeat.js). If hooks are disabled (disableAllHooks, policy, old
+// (braynee-heartbeat.js). If hooks are disabled (disableAllHooks, policy, old
 // CC that ignores plugin hooks), this file is missing or stale and the
-// dashboard flags "Brainy installed but inert" — the worst silent failure
+// dashboard flags "Braynee installed but inert" — the worst silent failure
 // mode for a universal plugin.
-const HEARTBEAT_FILE = join(homedir(), '.claude', 'brainy-hooks-heartbeat');
+const HEARTBEAT_FILE = join(homedir(), '.claude', 'braynee-hooks-heartbeat');
 // A session that started within this window means hooks are firing. Generous
 // because SessionStart is the only writer and sessions can be long-lived.
 const HEARTBEAT_FRESH_HOURS = 24;
@@ -32,7 +32,7 @@ export function computeHooksLive() {
   }
 }
 
-const BRAINY_FEATURES = [
+const BRAYNEE_FEATURES = [
   { key: 'vault_context',    terms: ['vault-context','vault_context'] },
   { key: 'session_tracking', terms: ['session-tracker','session-export','session-auto-track'] },
   { key: 'qmd_sync',         terms: ['qmd-sync','qmd_sync'] },
@@ -49,13 +49,13 @@ export function computeAllHookCmds(s) {
   return cmds;
 }
 
-export function computeBrainyHealth(s, allHookCmds) {
+export function computeBrayneeHealth(s, allHookCmds) {
   let active = 0, missing = 0;
-  for (const f of BRAINY_FEATURES) {
+  for (const f of BRAYNEE_FEATURES) {
     const covered = f.terms
       ? f.terms.some(t => allHookCmds.some(c => c.includes(t)))
       : !!s.statusLine;
     if (covered) active++; else missing++;
   }
-  return { active, missing, total: BRAINY_FEATURES.length };
+  return { active, missing, total: BRAYNEE_FEATURES.length };
 }

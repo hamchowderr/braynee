@@ -13,11 +13,11 @@ allowed-tools: Bash(python3:*), Bash(claude:*)
 
 # Session Backfill Skill
 
-Turn empty brainy session-auto-track stubs into substantive per-project session notes by distilling the real Claude Code conversation history.
+Turn empty braynee session-auto-track stubs into substantive per-project session notes by distilling the real Claude Code conversation history.
 
 ## Why
 
-Brainy's session-auto-track creates a one-line stub session note when each CC session starts. The stubs never get filled in — they say "Waiting for user to state goal" and "(none yet)" forever. Meanwhile the actual conversation lives in `~/.claude/projects/<encoded-path>/*.jsonl`. QMD indexes only the stubs, so project history is unsearchable.
+Braynee's session-auto-track creates a one-line stub session note when each CC session starts. The stubs never get filled in — they say "Waiting for user to state goal" and "(none yet)" forever. Meanwhile the actual conversation lives in `~/.claude/projects/<encoded-path>/*.jsonl`. QMD indexes only the stubs, so project history is unsearchable.
 
 This skill reads each `.jsonl`, filters the tool-call noise, distills the conversation skeleton, and writes a structured summary into `<vault>/2. Areas/Sessions/<Project>/<date>-<slug>-<type>-<id>.md`.
 
@@ -56,7 +56,7 @@ ANTHROPIC_API_KEY=... python3 {baseDir}/scripts/backfill.py --project foreman --
 The vault is resolved universally, no hardcoded path:
 
 1. `--vault PATH` argument
-2. `$BRAINY_VAULT` / `$OBSIDIAN_VAULT` environment variable
+2. `$BRAYNEE_VAULT` / `$OBSIDIAN_VAULT` environment variable
 3. Common locations probed for a `.obsidian` directory (`~/Obsidian Vault`, `~/vault`, `~/Documents/Obsidian Vault`, OneDrive / iCloud variants)
 4. Falls back to `~/Obsidian Vault` so a brand-new vault still works
 

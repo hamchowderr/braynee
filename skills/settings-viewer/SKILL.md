@@ -2,7 +2,7 @@
 name: settings-viewer
 description: >
   Opens a live visual dashboard of your Claude Code configuration and usage analytics.
-  Use when user says "open brainy", "show my settings", "view my Claude Code config",
+  Use when user says "open braynee", "show my settings", "view my Claude Code config",
   "open settings dashboard", "show my analytics", "how much have I used Claude Code",
   or any request to inspect their Claude Code configuration or usage data visually.
 argument-hint: [open | refresh]
@@ -10,7 +10,7 @@ allowed-tools: Bash(node:*), Bash(start:*), Bash(powershell:*)
 disable-model-invocation: true
 ---
 
-# Settings Viewer (Brainy Dashboard)
+# Settings Viewer (Braynee Dashboard)
 
 Generates a visual HTML dashboard of the user's Claude Code settings and usage analytics, then opens it in the browser.
 
@@ -39,7 +39,7 @@ All data is read locally — nothing is fetched remotely:
 
 ## Dashboard Sections
 
-### Brainy Panel
+### Braynee Panel
 - Health summary: hooks active, skills installed, features enabled
 - Quick status across all second-brain features
 
