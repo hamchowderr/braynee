@@ -1,0 +1,5 @@
+# Keep release zips (claude --plugin-url) lean: ship only the plugin,
+# not the issue tracker or CI metadata. Used by git archive in the release workflow.
+.beads/      export-ignore
+.github/     export-ignore
+.gitattributes export-ignore

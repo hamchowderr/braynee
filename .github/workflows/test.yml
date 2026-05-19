@@ -7,8 +7,8 @@ on:
     branches: [master]
 
 jobs:
-  brainy:
-    name: brainy / ${{ matrix.os }} / Node ${{ matrix.node }}
+  braynee:
+    name: braynee / ${{ matrix.os }} / Node ${{ matrix.node }}
     strategy:
       fail-fast: false
       matrix:
@@ -21,9 +21,9 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
-      - name: Run brainy self-test
+      - name: Run braynee self-test
         shell: bash
-        run: node plugins/brainy/bin/brainy-self-test
+        run: node bin/braynee-self-test
 
   marketplace:
     name: marketplace.json valid
