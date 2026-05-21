@@ -82,7 +82,7 @@ export function renderBrayneePanel(d) {
       <div class="card">
         <div class="card-head"><div class="card-head-dot" style="background:var(--amber)"></div>Vault</div>
         <div class="card-body"><table class="kv">
-          <tr><td class="prop">path</td><td class="val-cell"><span class="scalar" style="font-size:10px;color:var(--ink-3)">~/Obsidian Vault</span></td></tr>
+          <tr><td class="prop">path</td><td class="val-cell"><span class="scalar" style="font-size:10px;color:var(--ink-3)">${esc(vaultStats.vaultPath || '(unresolved)')}</span></td></tr>
           <tr><td class="prop">inbox</td><td class="val-cell"><span class="scalar" style="${vaultStats.inboxCount > 0 ? 'color:var(--amber)' : 'color:var(--green)'}">${vaultStats.inboxCount} item${vaultStats.inboxCount !== 1 ? 's' : ''}</span></td></tr>
           <tr><td class="prop">sessions</td><td class="val-cell"><span class="scalar">${vaultStats.sessionCount} total</span></td></tr>
           <tr><td class="prop">projects</td><td class="val-cell"><span class="scalar">${totalProjects} tracked</span></td></tr>

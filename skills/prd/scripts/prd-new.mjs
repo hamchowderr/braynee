@@ -8,11 +8,11 @@ import os from 'node:os';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-// Shared projects-root resolver lives at scripts/lib/.
+// Shared resolvers live at scripts/lib/.
 // This script is at skills/prd/scripts/ → up 3 to plugin root.
-const { getProjectsDir, isProjectsDirConfigured } = require(
-  path.join(import.meta.dirname, '..', '..', '..', 'scripts', 'lib', 'projects-root.js')
-);
+const SCRIPTS_LIB = path.join(import.meta.dirname, '..', '..', '..', 'scripts', 'lib');
+const { getProjectsDir, isProjectsDirConfigured } = require(path.join(SCRIPTS_LIB, 'projects-root.js'));
+const { getVaultRoot } = require(path.join(SCRIPTS_LIB, 'vault-root.js'));
 
 const args = process.argv.slice(2);
 if (!args[0] || args[0].startsWith('--')) {
@@ -25,7 +25,7 @@ const folder = folderArg !== -1 ? args[folderArg + 1] : name.toLowerCase().repla
 const clientArg = args.indexOf('--client');
 const client = clientArg !== -1 ? args[clientArg + 1] : null;
 
-const VAULT = path.join(os.homedir(), 'Obsidian Vault');
+const VAULT = getVaultRoot();
 const PRD_DIR = path.join(VAULT, '2. Areas', 'Product Manager', 'PRDs');
 const today = new Date().toISOString().slice(0, 10);
 const slug = name.replace(/[^A-Za-z0-9-]/g, '-');

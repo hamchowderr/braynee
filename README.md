@@ -65,7 +65,7 @@ Braynee declares its hooks in the plugin's `hooks/hooks.json` — they run autom
 | **PostToolUse** | `memory-index-sync.js`, `session-note-nudge.js`, `statusline-state.js`, `commit-cadence-nudge.js`, `beads-claim-to-branch.js`, `beads-status-sync.js`, `beads-todo-reminder.js`, `beads-dashboard-refresh.js`, `mtn-to-beads-sync.js` | Keep `MEMORY.md` indexed, nudge session-note updates and commit cadence, branch on `bd … --claim`, and mirror beads ⇄ Claude todos ⇄ TaskNotes |
 | **PreCompact** | `pre-compact-snapshot.js` | Snapshot context before a compaction |
 | **PostCompact** | `post-compact.js` | Restore and re-inject context after a compaction |
-| **Stop** | `session-auto-close.js`, `session-export-qmd.js`, `session-stop-check.js`, `beads-stop-check.js`, `task-completion-check.js` | Close the session, export the transcript and refresh the QMD index, and run the session-close / beads / task checklists |
+| **Stop** | `session-auto-close.js`, `session-export-qmd.js`, `session-stop-check.js`, `beads-stop-check.js`, `stop-task-verify.js` | Close the session, export the transcript and refresh the QMD index, and run the session-close / beads / task checklists |
 | **SessionEnd** | `session-end.js` | Finalize the session note and clean up |
 | **TaskCreated** | `task-created-check.js` | Validate newly created tasks |
 | **TaskCompleted** | `task-completed-check.js` | Verify completed tasks |

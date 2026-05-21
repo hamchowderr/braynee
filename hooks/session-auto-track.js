@@ -22,7 +22,8 @@ const HOOK = 'session-auto-track';
 
 const PLUGIN_ROOT = path.join(__dirname, '..');
 const VAULT_QUERY = path.join(PLUGIN_ROOT, 'scripts', 'vault-query.mjs');
-const VAULT_DIR = path.join(os.homedir(), 'Obsidian Vault');
+const { getVaultRoot } = require(path.join(__dirname, '..', 'scripts', 'lib', 'vault-root.js'));
+const VAULT_DIR = getVaultRoot();
 const SESSIONS_DIR = path.join(VAULT_DIR, '2. Areas', 'Sessions');
 const PRD_DIR = path.join(VAULT_DIR, '2. Areas', 'Product Manager', 'PRDs');
 

@@ -16,7 +16,8 @@ const { findCodeRoot, sessionDir } = require(path.join(__dirname, 'lib', 'is-cod
 
 const HOOK = 'session-note-nudge';
 
-const VAULT_DIR = path.join(os.homedir(), 'Obsidian Vault');
+const { getVaultRoot } = require(path.join(__dirname, '..', 'scripts', 'lib', 'vault-root.js'));
+const VAULT_DIR = getVaultRoot();
 const SESSIONS_DIR = path.join(VAULT_DIR, '2. Areas', 'Sessions');
 const STATE_FILE = path.join(os.homedir(), '.claude', 'session-nudge-state.json');
 

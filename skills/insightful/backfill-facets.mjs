@@ -2,19 +2,19 @@
 /**
  * backfill-facets.mjs
  * Generates facet JSON files for sessions that don't have them.
- * Uses claude-haiku-4-5-20251001 for cost efficiency.
+ *
+ * Uses `claude -p` (Claude Code OAuth subscription) — no ANTHROPIC_API_KEY,
+ * no Console billing. ANTHROPIC_API_KEY is stripped from the subprocess env
+ * so a set var can't silently re-enable API billing.
  *
  * Usage:
  *   node backfill-facets.mjs [--chunk 50] [--dry-run]
- *
- * Cost estimate: ~500 input tokens + ~200 output tokens per session
- *   Haiku: $0.80/MTok input, $4/MTok output
- *   Per session: ~$0.0004 + ~$0.0008 = ~$0.0012
- *   50 sessions: ~$0.06
  */
 
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
+import { spawnSync } from 'child_process';
 
 const HOME = process.env.USERPROFILE || process.env.HOME;
 const PROJECTS_DIR = path.join(HOME, '.claude', 'projects');
@@ -25,30 +25,27 @@ const CHUNK_SIZE = parseInt(args.find(a => a.startsWith('--chunk='))?.split('=')
 const DRY_RUN = args.includes('--dry-run');
 const VERBOSE = args.includes('--verbose');
 
-const API_KEY = process.env.ANTHROPIC_API_KEY;
-if (!API_KEY) { console.error('ANTHROPIC_API_KEY not set'); process.exit(1); }
+// ── Distillation via `claude -p` ─────────────────────────────────────────────
+function callClaude(systemPrompt, userMessage) {
+  const env = { ...process.env };
+  delete env.ANTHROPIC_API_KEY;
 
-// ── Anthropic API call (native fetch, no SDK needed) ─────────────────────────
-async function callClaude(systemPrompt, userMessage) {
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'x-api-key': API_KEY,
-      'anthropic-version': '2023-06-01',
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 512,
-      system: systemPrompt,
-      messages: [{ role: 'user', content: userMessage }],
-    }),
-  });
-  if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`API ${res.status}: ${err.slice(0, 200)}`);
+  const tmpFile = path.join(os.tmpdir(), `braynee-facet-sys-${process.pid}-${Date.now()}.txt`);
+  fs.writeFileSync(tmpFile, systemPrompt, 'utf8');
+  try {
+    const res = spawnSync(
+      'claude',
+      ['-p', '--append-system-prompt-file', tmpFile],
+      { input: userMessage, encoding: 'utf8', env, timeout: 120_000 }
+    );
+    if (res.status !== 0 || /Credit balance is too low/.test(res.stdout || '')) {
+      const err = (res.stderr || res.stdout || '').slice(0, 500);
+      throw new Error(`claude -p failed: ${err}`);
+    }
+    return (res.stdout || '').trim();
+  } finally {
+    try { fs.unlinkSync(tmpFile); } catch {}
   }
-  return res.json();
 }
 
 // ── Facet schema prompt ───────────────────────────────────────────────────────
@@ -145,16 +142,14 @@ function extractTranscript(filePath, maxLines = 80) {
 }
 
 // ── Generate facet for one session ───────────────────────────────────────────
-async function generateFacet(sessionId, filePath) {
+function generateFacet(sessionId, filePath) {
   const transcript = extractTranscript(filePath);
   if (!transcript || transcript.length < 50) return null;
 
-  const response = await callClaude(
+  const text = callClaude(
     SYSTEM_PROMPT,
     `Analyze this Claude Code session transcript and return the facet JSON:\n\n${transcript}`
   );
-
-  const text = response.content?.[0]?.text?.trim();
   if (!text) return null;
 
   // Strip any accidental markdown fences
@@ -169,10 +164,7 @@ async function generateFacet(sessionId, filePath) {
   }
 
   parsed.session_id = sessionId;
-  return {
-    facet: parsed,
-    usage: response.usage,
-  };
+  return { facet: parsed };
 }
 
 // ── Find sessions to backfill ─────────────────────────────────────────────────
@@ -222,8 +214,6 @@ async function main() {
   console.log(`Processing chunk of: ${chunk.length}`);
   if (DRY_RUN) console.log('DRY RUN — no API calls will be made\n');
 
-  let totalInputTokens = 0;
-  let totalOutputTokens = 0;
   let success = 0;
   let failed = 0;
   let skipped = 0;
@@ -247,7 +237,7 @@ async function main() {
     process.stdout.write(`${prefix} ${sessionId.slice(0, 8)}... `);
 
     try {
-      const result = await generateFacet(sessionId, filePath);
+      const result = generateFacet(sessionId, filePath);
       if (!result) {
         process.stdout.write('SKIP (empty)\n');
         skipped++;
@@ -259,23 +249,13 @@ async function main() {
         JSON.stringify(result.facet, null, 2)
       );
 
-      totalInputTokens += result.usage?.input_tokens || 0;
-      totalOutputTokens += result.usage?.output_tokens || 0;
       success++;
-      process.stdout.write(`OK (in:${result.usage.input_tokens} out:${result.usage.output_tokens})\n`);
+      process.stdout.write('OK\n');
     } catch (err) {
       process.stdout.write(`ERROR: ${err.message?.slice(0, 60)}\n`);
       failed++;
     }
-
-    // Small delay to avoid rate limits
-    await new Promise(r => setTimeout(r, 100));
   }
-
-  // Cost calculation (Haiku pricing)
-  const inputCost = (totalInputTokens / 1_000_000) * 0.80;
-  const outputCost = (totalOutputTokens / 1_000_000) * 4.00;
-  const totalCost = inputCost + outputCost;
 
   console.log('\n═══════════════════════════════════════');
   console.log('Results:');
@@ -283,11 +263,8 @@ async function main() {
   console.log(`  Skipped:  ${skipped}`);
   console.log(`  Failed:   ${failed}`);
   if (!DRY_RUN) {
-    console.log(`\nToken usage:`);
-    console.log(`  Input:    ${totalInputTokens.toLocaleString()} tokens  ($${inputCost.toFixed(4)})`);
-    console.log(`  Output:   ${totalOutputTokens.toLocaleString()} tokens  ($${outputCost.toFixed(4)})`);
-    console.log(`  Total:    $${totalCost.toFixed(4)}`);
-    console.log(`\nFacets remaining after this chunk: ${allMissing.length - success}`);
+    console.log(`\nUsed claude -p (CC subscription) — no API billing.`);
+    console.log(`Facets remaining after this chunk: ${allMissing.length - success}`);
   }
 }
 

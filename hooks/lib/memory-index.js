@@ -28,7 +28,8 @@ function resolveMemoryDir(settings) {
   if (s.autoMemoryDirectory) {
     return s.autoMemoryDirectory.replace(/^~/, os.homedir());
   }
-  return path.join(os.homedir(), 'Obsidian Vault', '2. Areas', 'Claude Memory');
+  const { getVaultRoot } = require(path.join(__dirname, '..', '..', 'scripts', 'lib', 'vault-root.js'));
+  return path.join(getVaultRoot(), '2. Areas', 'Claude Memory');
 }
 
 function parseFrontmatter(content) {

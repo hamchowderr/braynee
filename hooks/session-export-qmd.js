@@ -18,7 +18,8 @@ const reindex = require(path.join(__dirname, 'lib', 'qmd-reindex.js'));
 
 const HOOK = 'session-export-qmd';
 
-const VAULT_DIR = path.join(os.homedir(), 'Obsidian Vault');
+const { getVaultRoot } = require(path.join(__dirname, '..', 'scripts', 'lib', 'vault-root.js'));
+const VAULT_DIR = getVaultRoot();
 const TRANSCRIPTS_DIR = path.join(VAULT_DIR, '2. Areas', 'Sessions', 'Transcripts');
 const CLAUDE_PROJECTS_DIR = path.join(os.homedir(), '.claude', 'projects');
 // Use braynee's bundled qmd-wrapper (cross-platform) — handles qmd discovery internally.

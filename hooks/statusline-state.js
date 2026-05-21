@@ -16,7 +16,8 @@ const os = require('os');
 
 const { findCodeRoot, sessionDir } = require(path.join(__dirname, 'lib', 'is-code-context.js'));
 
-const VAULT_DIR = path.join(os.homedir(), 'Obsidian Vault');
+const { getVaultRoot } = require(path.join(__dirname, '..', 'scripts', 'lib', 'vault-root.js'));
+const VAULT_DIR = getVaultRoot();
 const SESSIONS_DIR = path.join(VAULT_DIR, '2. Areas', 'Sessions');
 const STATE_FILE = path.join(os.homedir(), '.claude', 'statusline-live.json');
 
