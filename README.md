@@ -52,7 +52,7 @@ Braynee detects your calendar platform and wires it into daily notes:
 - Outlook Calendar
 
 ### Projects / git repo scanning
-The setup wizard walks your projects directory (configurable via `BRAYNEE_PROJECTS_DIR`, defaults to `~/code/`), finds git repos, detects the stack (Next.js, Convex, FastAPI, etc.), and writes a project map. The wizard surfaces these to Claude so it knows what you're building without you having to explain it.
+`scan-projects.py` scans every common projects-root folder name (`code`, `projects`, `dev`, `Developer`, `repos`, `src`, `workspace`, `work`, `Sites`, `source`, plus Windows-specific paths like `source/repos`, `Documents/GitHub`), finds git repos, detects the stack (Next.js, Convex, FastAPI, etc.), and writes a project map. The wizard surfaces these to Claude so it knows what you're building without you having to explain it.
 
 ### Claude Code hooks
 Braynee declares its hooks in the plugin's `hooks/hooks.json` — they run automatically when the plugin is active, with nothing written into `~/.claude/settings.json`. **37 hooks across 15 Claude Code events** keep the vault, sessions, beads, and tasks in sync:
