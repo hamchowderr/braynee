@@ -133,16 +133,6 @@ def cmd_setup(args, vault: Path):
 def cmd_connections(args, vault: Path):
     print("Connections — Live integrations reachable?\n")
 
-    result = subprocess.run(
-        ["curl", "-s", "-o", "/dev/null", "-w", "%{http_code}",
-         "--max-time", "3", "http://127.0.0.1:8090/api/health"],
-        capture_output=True, text=True
-    )
-    if result.stdout.strip().startswith("2"):
-        ok("TaskNotes API (http://127.0.0.1:8090)")
-    else:
-        warn("TaskNotes API not responding (start Obsidian TaskNotes plugin)")
-
     if check_tool("bd"):
         ok("Beads (bd) available")
     else:
