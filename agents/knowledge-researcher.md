@@ -35,7 +35,7 @@ Run all 3 in sequence. For compound topics, run each sub-topic separately. Minim
 
 Also check these specific locations directly:
 - `{vault}/2. Areas/context/` — priorities, goals, personal context
-- `{vault}/2. Areas/Business/Otaku Solutions/Org/Decisions/log.md` — business decisions
+- `{vault}/2. Areas/Business/*/Org/Decisions/log.md` — business decision logs (glob across all businesses)
 - `{vault}/Zettelkasten/` — atomic permanent notes on the topic (glob for relevant names)
 - `{vault}/2. Areas/Claude Memory/` — remembered insights (check MEMORY.md index)
 

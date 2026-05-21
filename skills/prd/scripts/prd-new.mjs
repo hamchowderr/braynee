@@ -62,7 +62,7 @@ const body = `
 
 One-paragraph elevator pitch. What is being built, for whom, and why now.
 
-**Product Manager:** Chowderr | Otaku Solutions | v1.0 | ${today}
+**Product Manager:** <Your Name> | <Your Business> | v1.0 | ${today}
 
 **Project:** [[1. Projects/${name}]]
 
