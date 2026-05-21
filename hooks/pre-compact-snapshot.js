@@ -2,14 +2,14 @@
 // Hook: PreCompact — Updates session note and captures dynamic state before compaction
 // Matcher: "" (all compactions)
 // Input: JSON on stdin from Claude Code
-// Output: Writes snapshot to a temp file that reinject-after-compact.ps1 reads back
+// Output: Writes snapshot to ~/.claude/compact-snapshot.json that
+//         reinject-after-compact.js reads back
 // Exit 0 = allow compaction to proceed
 //
-// v3 changes:
-// - Fixed path: '2. Areas/Sessions' (was '2. Areas/1. Sessions' — didn't exist)
-// - UPDATES the session note with recent git commits before snapshotting
-//   This ensures the note is fresh even if Claude ignored nudges
-// - Saves active session note PATH so reinject can read full content
+// Updates the active session note with recent git commits + a compaction
+// marker before snapshotting, so the note stays fresh even if Claude
+// ignored the in-session nudges. Saves the active session note path so
+// reinject can read the full content.
 
 const { execSync } = require('child_process');
 const path = require('path');

@@ -41,7 +41,7 @@ Run when something feels broken with braynee itself, or after editing the plugin
 - All 21 hook scripts parse and execute with mock stdin (no crashes)
 - hooks.json + monitors.json + plugin.json schema valid
 - All 17 skills + 6 agents have valid frontmatter
-- All 4 bundled scripts (qmd-wrapper, vault-query, tasknotes, beads-dashboard) are callable
+- All bundled scripts (qmd-wrapper, vault-query, beads-dashboard) are callable
 - All 3 monitors can boot
 
 Exit code 0 = everything passed. Non-zero = at least one check failed (output shows which).

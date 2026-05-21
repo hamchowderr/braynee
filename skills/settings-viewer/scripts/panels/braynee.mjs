@@ -1,7 +1,7 @@
 import { esc, kvTable } from '../html/utils.mjs';
 
 export function renderBrayneePanel(d) {
-  const { vaultStats, beadsStats, brayneeHealth, hooksLive, totalProjects, acct, ts } = d;
+  const { vaultStats, beadsStats, brayneeHealth, hooksLive, totalProjects, acct, ts, pluginVersion, pluginAuthor } = d;
 
   const hl = hooksLive || { state: 'missing', live: false, lastBeat: null };
   const hlColor = hl.live ? 'var(--green)' : 'var(--red)';
@@ -20,7 +20,7 @@ export function renderBrayneePanel(d) {
   return `<div id="panel-braynee" class="panel active">
     <div class="section-head">
       <div class="section-title">Braynee</div>
-      <div class="section-tag">v1.2.0 · second-brain plugin · Otaku Solutions</div>
+      <div class="section-tag">v${esc(pluginVersion || '?')} · second-brain plugin${pluginAuthor ? ' · ' + esc(pluginAuthor) : ''}</div>
     </div>
 
     <div class="stats" style="grid-template-columns:repeat(4,1fr)">

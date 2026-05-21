@@ -52,21 +52,26 @@ Braynee detects your calendar platform and wires it into daily notes:
 - Outlook Calendar
 
 ### Projects / git repo scanning
-`scan-projects.py` walks your `~/code/` directory, finds git repos, detects the stack (Next.js, Convex, FastAPI, etc.), and writes a project map. The wizard surfaces these to Claude so it knows what you're building without you having to explain it.
+The setup wizard walks your projects directory (configurable via `BRAYNEE_PROJECTS_DIR`, defaults to `~/code/`), finds git repos, detects the stack (Next.js, Convex, FastAPI, etc.), and writes a project map. The wizard surfaces these to Claude so it knows what you're building without you having to explain it.
 
 ### Claude Code hooks
-Braynee declares its hooks in the plugin's `hooks/hooks.json` — they run automatically when the plugin is active, with nothing written into `~/.claude/settings.json`. **31 hooks across 10 Claude Code events** keep the vault, sessions, beads, and tasks in sync:
+Braynee declares its hooks in the plugin's `hooks/hooks.json` — they run automatically when the plugin is active, with nothing written into `~/.claude/settings.json`. **37 hooks across 15 Claude Code events** keep the vault, sessions, beads, and tasks in sync:
 
 | Event | Hooks | What they do |
 |-------|-------|-------------|
-| **SessionStart** | `ensure-obsidian.js`, `reinject-after-compact.js`, `session-auto-track.js`, `settings-viewer/generate.mjs`, `check-beads-init.js`, `beads-work-surface.js`, `check-git-init.js`, `check-testing-setup.js` | Launch Obsidian, open/update the session note, regenerate the dashboard, ensure beads + git are initialized, surface the ready beads queue, flag a missing test stack, and re-inject vault context after a compaction |
+| **SessionStart** | `ensure-obsidian.js`, `reinject-after-compact.js`, `session-auto-track.js`, `braynee-heartbeat.js`, `check-beads-init.js`, `beads-work-surface.js`, `check-git-init.js`, `check-testing-setup.js` | Launch Obsidian, open/update the session note, write the heartbeat, ensure beads + git are initialized, surface the ready beads queue, flag a missing test stack, and re-inject vault context after a compaction |
 | **UserPromptSubmit** | `memory-reminder.js`, `beads-nudge.js` | Remind Claude to search vault memory before guessing and to keep the beads workflow current |
 | **PreToolUse** | `check-no-main-push.js`, `branch-name-check.js` | Protect `main`/`master`: block pushing to it, committing on it, or `--orphan`-ing onto it (opt out with `BRAYNEE_ALLOW_MAIN_COMMITS=1`), and enforce branch naming |
-| **PostToolUse** | `memory-index-sync.js`, `session-note-nudge.js`, `statusline-state.js`, `commit-cadence-nudge.js`, `beads-claim-to-branch.js`, `beads-status-sync.js`, `beads-todo-reminder.js`, `beads-dashboard-refresh.js`, `mtn-to-beads-sync.js` | Keep `MEMORY.md` indexed, nudge session-note updates and commit cadence, branch on `bd … --claim`, and mirror beads ⇄ Claude todos ⇄ TaskNotes |
+| **PostToolUse** | `memory-index-sync.js`, `plan-capture.js`, `session-note-nudge.js`, `statusline-state.js`, `commit-cadence-nudge.js`, `beads-claim-to-branch.js`, `beads-status-sync.js`, `beads-todo-reminder.js`, `beads-dashboard-refresh.js`, `mtn-to-beads-sync.js` | Keep `MEMORY.md` indexed, capture approved plans, nudge session-note updates and commit cadence, branch on `bd … --claim`, and mirror beads ⇄ Claude todos ⇄ TaskNotes |
+| **PostToolBatch** | `beads-batch-reconcile.js` | Reconcile beads state after batched tool calls |
 | **PreCompact** | `pre-compact-snapshot.js` | Snapshot context before a compaction |
 | **PostCompact** | `post-compact.js` | Restore and re-inject context after a compaction |
 | **Stop** | `session-auto-close.js`, `session-export-qmd.js`, `session-stop-check.js`, `beads-stop-check.js`, `stop-task-verify.js` | Close the session, export the transcript and refresh the QMD index, and run the session-close / beads / task checklists |
+| **StopFailure** | `stop-failure.js` | Detect a Stop that didn't produce a clean wrap |
 | **SessionEnd** | `session-end.js` | Finalize the session note and clean up |
+| **ConfigChange** | `config-change-resurface.js` | Resurface relevant context after a Claude Code config change |
+| **CwdChanged** | `cwd-changed-check.js` | Re-evaluate project context when the working directory changes |
+| **FileChanged** | `memory-file-changed.js` | Re-index `MEMORY.md` when it's edited externally |
 | **TaskCreated** | `task-created-check.js` | Validate newly created tasks |
 | **TaskCompleted** | `task-completed-check.js` | Verify completed tasks |
 
@@ -75,20 +80,28 @@ Hooks that have stateful side effects detect existing equivalents and never dupl
 ### Obsidian plugins
 `install-obsidian-plugins.py` installs and configures the following plugins into your vault:
 - **Dataview** — query your vault like a database
-- **Tasks** — structured task management with due dates and filters
+- **TaskNotes** — one-file-per-task management, used as the vault-side mirror of beads issues
 - **Templater** — powerful templating for notes and daily pages
 - **Calendar** — daily note calendar navigation
-- **Git** — vault backup and version history
+- **Obsidian Git** — vault backup and version history
+- **Excalidraw** — sketch + diagram drawings stored in the vault
 
 ### PARA vault structure
-The full PARA scaffold:
+The full scaffold (top-level PARA + the `2. Areas` subfolders Braynee uses):
 ```
-Inbox/               → captures and incubating ideas
-1. Projects/         → active codebases (one file per project)
-2. Areas/            → ongoing responsibilities
-3. Resources/        → reference material and templates
-4. Archives/         → completed and retired work
-Zettelkasten/        → atomic permanent notes
+Inbox/                              → captures and incubating ideas
+1. Projects/                        → active codebases (one file per project)
+2. Areas/
+   ├── Business/<YourBusiness>/    → Org, Teams, Projects, Clients, Operations, Shipped
+   ├── Product Manager/             → PRDs, Roadmaps, Research, Launches, Metrics
+   ├── Development/                 → framework reference (auto-populated by stack)
+   ├── Sessions/                    → one note per Claude Code working session
+   ├── TaskNotes/Tasks/             → vault-side mirror of beads issues
+   ├── Claude Memory/               → persistent agent memory (MEMORY.md + files)
+   └── Excalidraw/                  → drawings
+3. Resources/                       → reference material, Templates/
+4. Archives/                        → completed and retired work
+Zettelkasten/                       → atomic permanent notes
 ```
 
 ---
@@ -102,10 +115,13 @@ Zettelkasten/        → atomic permanent notes
 | `recall` | `/recall` | Load context from previous sessions — temporal, topic (QMD BM25 + semantic), and graph modes |
 | `query` | `/query` | Search the vault — keyword (BM25), semantic, and deep research modes |
 | `sessions` | `/sessions` | Export Claude Code sessions to Obsidian markdown, list, and annotate |
-| `tasks` | `/tasks` | Create, complete, and query tasks via Obsidian TaskNotes |
+| `session-backfill` | `/session-backfill` | Backfill structured summaries for historical sessions via `claude -p` |
+| `prd` | `/prd` | Author and audit PRDs under `2. Areas/Product Manager/PRDs/`; seed beads issues from acceptance criteria |
 | `clients` | `/clients` | Client relationship management — context, engagement logs, call prep |
-| `health` | `/health` | System health check — Four Cs audit (Context, Connections, Capabilities, Cadence) |
 | `zettelkasten` | `/zettelkasten` | Create, find, and link atomic notes — permanent knowledge distillation |
+| `excalidraw` | `/excalidraw` | Create Excalidraw diagrams natively in Obsidian for any workflow, architecture, or codebase walkthrough |
+| `insightful` | `/insightful` | Generate a comprehensive HTML report from your complete Claude Code session history |
+| `health` | `/health` | System health check — Four Cs audit (Context, Connections, Capabilities, Cadence) |
 
 ---
 
@@ -113,10 +129,9 @@ Zettelkasten/        → atomic permanent notes
 
 ```bash
 # From the Claude Code marketplace
-/plugin install braynee
+/plugin install braynee@braynee
 
-# Or locally
-cd second-brain
+# Or locally (from a cloned braynee checkout)
 /plugin install .
 ```
 
