@@ -20,10 +20,10 @@ function readJsonSafe(filePath) {
 
 /**
  * Derive a short friendly name from a full project path.
- * "C:\Users\HamCh\code\exosome" → "exosome"
- * "C:\Users\HamCh\code\gamma-sdk-typescript" → "gamma-sdk-typescript"
- * "C:\Users\HamCh" → "home"
- * "/home/user/projects/my-app" → "my-app"
+ * "C:\Users\<you>\code\my-app" → "my-app"
+ * "C:\Users\<you>\code\some-sdk" → "some-sdk"
+ * "C:\Users\<you>" → "home"
+ * "/home/<you>/projects/my-app" → "my-app"
  */
 function friendlyName(fullPath) {
   if (!fullPath) return 'unknown';
@@ -41,18 +41,13 @@ function friendlyName(fullPath) {
 
 /**
  * Convert a projects dir name back to a real path.
- * "C--Users-HamCh-code-exosome" → "C:\Users\HamCh\code\exosome"
+ * "C--Users-you-code-myapp" → "C:\Users\you\code\myapp"
  * Works by reversing Claude Code's encoding: replace leading drive-- and subsequent -- with separators.
  */
 function projectDirToPath(dirName) {
-  // Pattern: drive letter, then double-dash for path separators
-  // C--Users-HamCh-code-exosome → C:\Users\HamCh\code\exosome
-  // But single dashes within folder names are kept.
-  // Claude Code uses -- for path separators and - for literal dashes... actually
-  // it just replaces all path separators with -. So C:\Users\HamCh\code\exosome
-  // becomes C--Users-HamCh-code-exosome (: becomes nothing, \ becomes -)
-  // We can't perfectly reverse this, so we just use it for display as-is
-  // and rely on history.jsonl for the real paths.
+  // Claude Code encodes path separators (\ and :) as '-', so the original
+  // path can't be perfectly reversed. Return as-is for display and rely on
+  // history.jsonl for the real paths.
   return dirName;
 }
 

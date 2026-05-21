@@ -198,7 +198,7 @@
           {
             "type": "command",
             "command": "node",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/task-completion-check.js"]
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/stop-task-verify.js"]
           }
         ]
       }

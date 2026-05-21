@@ -1,7 +1,8 @@
-import { writeFileSync, mkdirSync, statSync } from 'fs';
+import { writeFileSync, mkdirSync, statSync, readFileSync } from 'fs';
 import { execSync } from 'child_process';
 import { homedir } from 'os';
-import { join } from 'path';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
 
 import { loadClaudeData } from './data/claude.mjs';
 import { loadVaultStats } from './data/vault.mjs';
@@ -34,8 +35,17 @@ const brayneeHealth = computeBrayneeHealth(claudeData.s, allHookCmds);
 const hooksLive = computeHooksLive();
 const ts = new Date().toLocaleString();
 
+// Plugin metadata — read at runtime so version + author never drift from
+// .claude-plugin/plugin.json. generate.mjs is at skills/settings-viewer/scripts/
+// → up 3 to plugin root → .claude-plugin/plugin.json.
+const pluginRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
+let pluginMeta = { version: '?', author: { name: '' } };
+try { pluginMeta = JSON.parse(readFileSync(join(pluginRoot, '.claude-plugin', 'plugin.json'), 'utf8')); } catch {}
+const pluginVersion = pluginMeta.version || '?';
+const pluginAuthor = pluginMeta.author?.name || '';
+
 // Bundle all data for panels
-const d = { ...claudeData, vaultStats, beadsStats, brayneeHealth, hooksLive, ts };
+const d = { ...claudeData, vaultStats, beadsStats, brayneeHealth, hooksLive, ts, pluginVersion, pluginAuthor };
 
 const html = `<!DOCTYPE html>
 <html lang="en">
@@ -77,7 +87,7 @@ ${renderSidebar()}
 
 ${renderBeadsDrawer()}
 
-<div class="footer">GENERATED ${esc(ts.toUpperCase())} &nbsp;·&nbsp; ${esc(claudeData.acct.organizationName || '')} &nbsp;·&nbsp; BRAYNEE v1.2.0 · Otaku Solutions</div>
+<div class="footer">GENERATED ${esc(ts.toUpperCase())} &nbsp;·&nbsp; ${esc(claudeData.acct.organizationName || '')} &nbsp;·&nbsp; BRAYNEE v${esc(pluginVersion)}${pluginAuthor ? ' · ' + esc(pluginAuthor) : ''}</div>
 
 ${renderBeadsJS(beadsStats)}
 ${renderNavJS()}

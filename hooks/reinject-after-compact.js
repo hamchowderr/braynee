@@ -27,7 +27,7 @@ function emit() {
 - curl requests: follow logical API order (auth -> parent resource -> child resource -> verify).
 - Check for existing skills/plugins before building from scratch.
 - Show diffs and wait for approval after each fix.
-- When working on tasks: use tasknotes.mjs to track progress (list, create, complete).
+- When working on tasks: use beads (bd ready / bd update / bd close) — beads is the source of truth.
 - Keep updating the active session note (Decisions, Progress, Blockers) as you work.
 `);
 

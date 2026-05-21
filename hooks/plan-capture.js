@@ -17,7 +17,8 @@ const reindex = require(path.join(__dirname, 'lib', 'qmd-reindex.js'));
 
 const HOOK = 'plan-capture';
 
-const VAULT_DIR = path.join(os.homedir(), 'Obsidian Vault');
+const { getVaultRoot } = require(path.join(__dirname, '..', 'scripts', 'lib', 'vault-root.js'));
+const VAULT_DIR = getVaultRoot();
 const PLANS_DIR = path.join(VAULT_DIR, '2. Areas', 'Plans');
 const QMD_WRAPPER = path.join(__dirname, '..', 'scripts', 'qmd-wrapper.mjs');
 

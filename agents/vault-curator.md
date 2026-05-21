@@ -25,9 +25,8 @@ Inbox/                    → Unprocessed captures, raw ideas (temporary staging
 2. Areas/                 → Ongoing responsibilities
    context/               → about-me.md, about-business.md, priorities.md, voice.md
    Business/
-     Otaku Solutions/     → Automation consulting, education, builds
-     Eumelanin/           → Chamber of commerce for melanated community
-     Waifu N Weebs/       → Anime/gaming services
+     <BusinessName>/      → One subfolder per business the user runs;
+                            discover at runtime by listing the directory.
    Product Manager/       → PRDs/, Roadmaps/, Research/, Launches/, Metrics/
    Development/           → Framework reference docs
    Sessions/              → One note per working session (YYYY-MM-DD.md)
