@@ -219,7 +219,6 @@ log('\n=== 6. Bundled scripts ===');
 const scripts = [
   { file: 'qmd-wrapper.mjs', args: ['--help'], expectExit: [0, 1, 127] },
   { file: 'vault-query.mjs', args: ['--help'], expectExit: [0, 1] },
-  { file: 'tasknotes.mjs', args: ['--help'], expectExit: [0, 1] },
   { file: 'beads-dashboard.js', args: ['--help'], expectExit: [0, 1] },
 ];
 for (const s of scripts) {

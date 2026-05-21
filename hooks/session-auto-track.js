@@ -22,7 +22,6 @@ const HOOK = 'session-auto-track';
 
 const PLUGIN_ROOT = path.join(__dirname, '..');
 const VAULT_QUERY = path.join(PLUGIN_ROOT, 'scripts', 'vault-query.mjs');
-const TASKNOTES = path.join(PLUGIN_ROOT, 'scripts', 'tasknotes.mjs');
 const VAULT_DIR = path.join(os.homedir(), 'Obsidian Vault');
 const SESSIONS_DIR = path.join(VAULT_DIR, '2. Areas', 'Sessions');
 const PRD_DIR = path.join(VAULT_DIR, '2. Areas', 'Product Manager', 'PRDs');
@@ -555,46 +554,6 @@ process.stdin.on('end', () => {
       }
     } catch (e) { log.warn(HOOK, `stale sweep failed: ${e.message}`); }
 
-    // ─── Orphaned timer check ────────────────────────────────────────
-    const activeTimers = run(`node "${TASKNOTES}" timer active --json`);
-    if (activeTimers) {
-      try {
-        const timerData = JSON.parse(activeTimers);
-        const sessions = timerData?.activeSessions || timerData || [];
-        const orphaned = [];
-        for (const s of sessions) {
-          const elapsed = s.elapsedMinutes || 0;
-          if (elapsed >= 240) {
-            orphaned.push({
-              title: s.task?.title || 'Unknown task',
-              id: s.task?.id || '',
-              elapsed,
-              hours: Math.round(elapsed / 60 * 10) / 10,
-            });
-          }
-        }
-        if (orphaned.length > 0) {
-          output.push('=== ORPHANED TIMERS AUTO-STOPPED ===');
-          output.push(`Found ${orphaned.length} timer(s) running 4+ hours — auto-stopping (likely crashed/killed session):`);
-          for (const o of orphaned) {
-            const stopped = run(`node "${TASKNOTES}" timer stop ${JSON.stringify(o.id || o.title)}`);
-            output.push(`  - "${o.title}" — was ${o.hours}h, ${stopped !== null ? 'stopped' : 'STOP FAILED — run manually'}`);
-            log.info(HOOK, `auto-stopped orphan timer "${o.title}" (${o.hours}h)`);
-          }
-          output.push('=== END ORPHANED TIMERS ===');
-          output.push('');
-        } else if (sessions.length > 0) {
-          output.push(`NOTE: ${sessions.length} active timer(s) running from a previous/parallel session.`);
-          for (const s of sessions) {
-            output.push(`  - "${s.task?.title}" — ${s.elapsedMinutes || 0}m elapsed`);
-          }
-          output.push('');
-        }
-      } catch {
-        // Timer output wasn't JSON, skip
-      }
-    }
-
     // ─── Workspace or Vault mode ───────────────────────────────────
     if (isWorkspace || (isVault && !isInCodeDir)) {
       const label = isWorkspace ? 'Workspace' : 'Vault';
@@ -798,14 +757,6 @@ process.stdin.on('end', () => {
           output.push(`  > ${msg}`);
         }
         output.push('── END TRANSCRIPT ──');
-      }
-
-      // Load open tasks
-      const tasks = run(`node "${TASKNOTES}" list --project "${projectName}"`);
-      if (tasks) {
-        output.push('');
-        output.push('Open tasks:');
-        output.push(tasks);
       }
 
       output.push('=== END AUTO-CONTEXT ===');

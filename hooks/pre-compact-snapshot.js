@@ -19,7 +19,6 @@ const fs = require('fs');
 const { findCodeRoot, sessionDir } = require(path.join(__dirname, 'lib', 'is-code-context.js'));
 
 const VAULT_QUERY = path.join(__dirname, '..', 'scripts', 'vault-query.mjs');
-const TASKNOTES = path.join(__dirname, '..', 'scripts', 'tasknotes.mjs');
 const VAULT_DIR = path.join(os.homedir(), 'Obsidian Vault');
 const SESSIONS_DIR = path.join(VAULT_DIR, '2. Areas', 'Sessions');
 const SNAPSHOT_FILE = path.join(os.homedir(), '.claude', 'compact-snapshot.json');
@@ -44,14 +43,6 @@ function findProjectName(folderName) {
     }
   }
   return null;
-}
-
-function run(cmd) {
-  try {
-    return execSync(cmd, { encoding: 'utf8', timeout: 10000 }).trim();
-  } catch (e) {
-    return null;
-  }
 }
 
 // Find active session note for a project, returns { filename, filepath, content } or null.
@@ -157,32 +148,6 @@ function updateSessionNote(session, cwd) {
     }
   }
 
-  // Add active timer info to Context section if timers are running
-  const activeTimers = run(`node "${TASKNOTES}" timer active --json`);
-  if (activeTimers) {
-    try {
-      const timerData = JSON.parse(activeTimers);
-      const sessions = timerData?.activeSessions || timerData || [];
-      if (sessions.length > 0) {
-        const timerLines = sessions.map(s =>
-          `- Timer active: "${s.task?.title}" (${s.elapsedMinutes || 0}m elapsed)`
-        ).join('\n');
-
-        // Update or append to Context section
-        const contextRegex = /(## Context\s*\n)([\s\S]*?)(?=\n## |\n$)/;
-        const ctxMatch = content.match(contextRegex);
-        if (ctxMatch) {
-          // Remove old timer lines and add fresh ones
-          let ctxBody = ctxMatch[2].replace(/- Timer active:.*\n?/g, '').trimEnd();
-          content = content.replace(contextRegex, `$1${ctxBody}\n${timerLines}\n`);
-          changed = true;
-        }
-      }
-    } catch {
-      // Skip
-    }
-  }
-
   if (changed) {
     fs.writeFileSync(session.filepath, content, 'utf-8');
   }
@@ -236,42 +201,6 @@ process.stdin.on('end', () => {
         snapshot.sessionNoteUpdated = updateSessionNote(session, cwd);
         snapshot.sessionNotePath = session.filepath;
         snapshot.sessionNoteFilename = session.filename;
-      }
-    }
-
-    // Get active timers
-    const activeTimers = run(`node "${TASKNOTES}" timer active --json`);
-    if (activeTimers) {
-      try {
-        const timerData = JSON.parse(activeTimers);
-        const sessions = timerData?.activeSessions || timerData || [];
-        if (sessions.length > 0) {
-          snapshot.activeTimers = sessions.map(s => ({
-            taskTitle: s.task?.title,
-            taskId: s.task?.id,
-            elapsed: s.elapsedMinutes,
-          }));
-        }
-      } catch {
-        // Skip
-      }
-    }
-
-    // Get in-progress tasks
-    if (snapshot.projectName && snapshot.projectName !== 'Workspace') {
-      const tasks = run(`node "${TASKNOTES}" list --project "${snapshot.projectName}" --json`);
-      if (tasks) {
-        try {
-          const taskData = JSON.parse(tasks);
-          const inProgress = (taskData.tasks || taskData || [])
-            .filter(t => t.status === 'in-progress')
-            .map(t => ({ id: t.id, title: t.title }));
-          if (inProgress.length > 0) {
-            snapshot.inProgressTasks = inProgress;
-          }
-        } catch {
-          // Skip
-        }
       }
     }
 

@@ -607,7 +607,7 @@ function loadContext(args) {
   console.log(`  Blocked: ${sessions.filter(s => s.frontmatter.status === 'blocked').length}`);
 
   console.log(`\n${'═'.repeat(60)}`);
-  console.log(`TIP: Use 'node tasknotes.mjs list --project ${project}' for tasks`);
+  console.log(`TIP: Use 'bd ready' (in the project repo) to see actionable tasks`);
   console.log(`${'═'.repeat(60)}\n`);
 }
 
