@@ -347,18 +347,37 @@ changes the permission mode):
 python3 {baseDir}/scripts/settings-writer.py apply --yes --set-default-mode
 ```
 
-**Status line** (if no statusline is currently configured in `~/.claude/settings.json`):
+**Status line** (only if `statusLine` is NOT already configured in
+`~/.claude/settings.json` — never overwrite an existing one):
 
 ```
-Add the braynee status line? It shows inbox count, active project, and git branch
-in Claude Code's status bar.
+Add the braynee status line? It shows your session goal, active project, git
+branch + repo, beads work, and Claude Code's model / context / cost / usage.
   [Yes / No]
 ```
 
-If Yes, add to `~/.claude/settings.json`:
-```json
-{ "statusline": "<pluginDir>/hooks/statusline.js" }
+If Yes — copy the renderer to a STABLE path first (the plugin's install path is
+versioned and changes on every update, so settings.json must NOT point into the
+plugin cache):
+
+```bash
+cp "${CLAUDE_PLUGIN_ROOT}/hooks/statusline.js" "<home>/.claude/statusline.js"
 ```
+
+Then add to `~/.claude/settings.json`. The key is `statusLine` (camelCase) and
+its value is an **object** — Claude Code ignores a bare string:
+
+```json
+{
+  "statusLine": {
+    "type": "command",
+    "command": "node \"<home>/.claude/statusline.js\""
+  }
+}
+```
+
+Use the absolute home path (e.g. `C:\\Users\\<you>\\.claude\\statusline.js` on
+Windows); do not rely on `~` expansion inside the command string.
 
 ---
 

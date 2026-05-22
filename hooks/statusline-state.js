@@ -152,7 +152,7 @@ async function main() {
     const state = {
       goal,
       project: projectName,
-      cwd,
+      cwd: codeRoot,
       sessionFile: session?.filename || '',
       beads,
       updatedAt: new Date().toISOString(),
