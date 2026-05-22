@@ -205,6 +205,19 @@ def cmd_memory(args, vault: Path):
     if memory_dir.exists():
         count = len(list(memory_dir.glob("*.md")))
         ok(f"Claude Memory — vault ({count} entries)")
+        # MEMORY.md tripwire: CC auto-loads only the first 200 lines / 25KB of
+        # MEMORY.md at session start. Warn before the index crosses the cap so it
+        # never silently truncates (cp-1nl). 22KB leaves headroom below ~24.4KB.
+        memory_index = memory_dir / "MEMORY.md"
+        if memory_index.exists():
+            kb = memory_index.stat().st_size / 1024
+            if kb >= 22:
+                warn(
+                    f"MEMORY.md is {kb:.1f}KB — approaching CC's 25KB startup-load "
+                    f"cap; run /health or trigger a memory resync to regenerate it"
+                )
+            else:
+                ok(f"MEMORY.md index {kb:.1f}KB (under 25KB load cap)")
     else:
         warn("Claude Memory directory missing")
 
