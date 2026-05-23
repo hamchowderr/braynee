@@ -14,7 +14,8 @@ const path = require('path');
 const fs = require('fs');
 const { execSync } = require('child_process');
 
-const VAULT_DIR = path.join(os.homedir(), 'Obsidian Vault');
+const { getVaultRoot } = require(path.join(__dirname, '..', '..', 'scripts', 'lib', 'vault-root.js'));
+const VAULT_DIR = getVaultRoot();
 const TASKNOTES_DIR = path.join(VAULT_DIR, '2. Areas', 'TaskNotes', 'Tasks');
 
 // 0–4 → name (matches beads-status-sync PRIORITY_MAP). Also tolerates the

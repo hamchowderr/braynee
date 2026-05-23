@@ -28,8 +28,18 @@ function parseBdLine(line) {
   };
 }
 
+function getCurrentBdUser() {
+  try {
+    const name = execSync('git config --global user.name', { timeout: 2000 }).toString().trim();
+    return name || '';
+  } catch {
+    return '';
+  }
+}
+
 export async function loadBeadsStats() {
   const codeDir = getProjectsDir();
+  const currentUser = getCurrentBdUser();
   let workspaces = 0, totalOpen = 0, assignedToMe = 0;
   const projectsData = [];
 
@@ -70,7 +80,9 @@ export async function loadBeadsStats() {
           } catch { issue.detail = null; }
         }
 
-        const myCount = openIssues.filter(i => i.assignee === 'hamchowderr').length;
+        const myCount = currentUser
+          ? openIssues.filter(i => i.assignee?.toLowerCase() === currentUser.toLowerCase()).length
+          : 0;
         totalOpen    += openIssues.length;
         assignedToMe += myCount;
         projectsData.push({
@@ -87,5 +99,5 @@ export async function loadBeadsStats() {
   } catch {}
 
   projectsData.sort((a, b) => b.total - a.total);
-  return { workspaces, activeProjects: projectsData.length, totalOpen, assignedToMe, projectsData };
+  return { workspaces, activeProjects: projectsData.length, totalOpen, assignedToMe, projectsData, currentUser };
 }

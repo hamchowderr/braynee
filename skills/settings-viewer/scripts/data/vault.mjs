@@ -2,9 +2,16 @@ import { execSync } from 'child_process';
 import { readFileSync, mkdirSync } from 'fs';
 import { homedir } from 'os';
 import { join } from 'path';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
+const { getVaultRoot } = require(
+  join(import.meta.dirname, '..', '..', '..', '..', 'scripts', 'lib', 'vault-root.js')
+);
 
 export async function loadVaultStats() {
   const home = homedir();
+  const vaultRoot = getVaultRoot();
   const tempDir = join(home, '.claude', 'temp');
   mkdirSync(tempDir, { recursive: true });
   const tempPath = join(tempDir, 'vault-stats.json').replace(/\\/g, '/');
@@ -22,11 +29,11 @@ export async function loadVaultStats() {
     ].join(' ').replace(/'/g, "\\'");
     execSync(`obsidian eval code="${jsCode}"`, { shell: true, timeout: 10000 });
     const data = JSON.parse(readFileSync(tempPath, 'utf8'));
-    return { inboxCount: data.inboxCount || 0, sessionCount: data.sessionCount || 0 };
+    return { inboxCount: data.inboxCount || 0, sessionCount: data.sessionCount || 0, vaultPath: vaultRoot };
   } catch {
     // Fallback: direct filesystem reads if Obsidian is not running
     const { readdirSync } = await import('fs');
-    const vaultPath = join(home, 'Obsidian Vault');
+    const vaultPath = vaultRoot;
     let inboxCount = 0, sessionCount = 0;
     try {
       inboxCount = readdirSync(join(vaultPath, 'Inbox'), { withFileTypes: true })
@@ -42,6 +49,6 @@ export async function loadVaultStats() {
         } catch {}
       }
     } catch {}
-    return { inboxCount, sessionCount };
+    return { inboxCount, sessionCount, vaultPath };
   }
 }

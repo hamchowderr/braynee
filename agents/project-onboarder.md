@@ -26,9 +26,11 @@ obsidian eval code="(async () => { const f = app.vault.getFileByPath('Path/Note.
 
 ## Questions to Ask (in order, all at once)
 
+Before asking, discover the user's existing businesses by listing `{vault}/2. Areas/Business/` (each immediate subfolder is a business). If the folder doesn't exist or is empty, treat business as `personal` and skip question 3.
+
 1. **Project name** — what do you call it?
 2. **Category** — `product` / `library` / `client` / `internal` / `education` / `demo` / `personal`
-3. **Business** — Otaku Solutions / Eumelanin / Waifu N Weebs / personal (skip if personal category)
+3. **Business** — present the businesses you discovered as the options, plus `personal`. Skip if category is `personal`.
 4. **One-liner description** — what does it do or why does it exist?
 
 If category is `client`, also ask: client name, engagement type (consulting/build/education).

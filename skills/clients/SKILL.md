@@ -25,8 +25,8 @@ python3 {baseDir}/scripts/clients.py get "acme corp"
 # Log a quick note to a client file
 python3 {baseDir}/scripts/clients.py log "acme corp" "signed SOW, starting discovery next week"
 
-# Create a new client scaffold
-python3 {baseDir}/scripts/clients.py new "acme corp" --business "Otaku Solutions"
+# Create a new client scaffold (--business must match a subfolder of 2. Areas/Business/)
+python3 {baseDir}/scripts/clients.py new "acme corp" --business "<YourBusinessName>"
 
 # Prep brief for an upcoming client call (pulls recent notes + open tasks)
 python3 {baseDir}/scripts/clients.py prep "acme corp"
@@ -49,7 +49,7 @@ python3 {baseDir}/scripts/clients.py prep "acme corp"
 ---
 type: client
 name: Acme Corp
-business: Otaku Solutions
+business: <YourBusinessName>   # must match a subfolder of 2. Areas/Business/
 status: active   # active | paused | closed
 rate: 150
 since: 2026-01

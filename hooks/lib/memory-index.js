@@ -28,21 +28,61 @@ function resolveMemoryDir(settings) {
   if (s.autoMemoryDirectory) {
     return s.autoMemoryDirectory.replace(/^~/, os.homedir());
   }
-  return path.join(os.homedir(), 'Obsidian Vault', '2. Areas', 'Claude Memory');
+  const { getVaultRoot } = require(path.join(__dirname, '..', '..', 'scripts', 'lib', 'vault-root.js'));
+  return path.join(getVaultRoot(), '2. Areas', 'Claude Memory');
 }
 
+// Parse YAML-ish frontmatter into a flat object. Reads top-level `key: value`
+// pairs AND keys nested one level under a `metadata:` block — memory files come
+// in two shapes: flat `type: feedback` (newer) and nested `metadata:\n  type:
+// feedback` (older). Reading only flat keys silently dropped `type` on the
+// nested files, defaulting them to References and spawning duplicate index
+// entries (cp-1nl). A top-level value always wins over a nested one of the same
+// key.
 function parseFrontmatter(content) {
   const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
   if (!match) return {};
   const result = {};
+  let inMetadata = false;
   for (const line of match[1].split(/\r?\n/)) {
-    const m = line.match(/^(\w+):\s*(.+)/);
-    if (m) result[m[1].trim()] = m[2].trim();
+    const top = line.match(/^([\w-]+):\s*(.*)$/);
+    if (top) {
+      const key = top[1].trim();
+      const val = top[2].trim();
+      if (key === 'metadata' && val === '') { inMetadata = true; continue; }
+      inMetadata = false;
+      if (val !== '') result[key] = val;
+      continue;
+    }
+    if (inMetadata) {
+      const nested = line.match(/^\s+([\w-]+):\s*(.+)$/);
+      if (nested) {
+        const key = nested[1].trim();
+        if (!(key in result)) result[key] = nested[2].trim();
+      } else if (/^\S/.test(line)) {
+        inMetadata = false;
+      }
+    }
   }
   return result;
 }
 
 const SECTION_ORDER = ['User', 'Feedback', 'Projects', 'References'];
+
+// Max length of the description portion of a MEMORY.md index line. CC auto-loads
+// only the first 200 lines / 25KB of MEMORY.md at session start, so an unbounded
+// description (some have been 300+ chars) bloats the index past the cap and it
+// silently truncates. Capping the description here makes that physically
+// impossible from this code path. 180 keeps the most context per line while
+// staying compact (cp-1nl).
+const MAX_DESC_LEN = 180;
+
+function truncateDesc(desc) {
+  if (!desc) return '';
+  const d = String(desc).trim();
+  if (d.length <= MAX_DESC_LEN) return d;
+  return d.slice(0, MAX_DESC_LEN - 1).trimEnd() + '…';
+}
 
 function typeToSection(type) {
   const map = {
@@ -54,6 +94,18 @@ function typeToSection(type) {
     references: 'References',
   };
   return map[(type || '').toLowerCase()] || 'References';
+}
+
+// Compose the single MEMORY.md index line for a memory note from its
+// frontmatter. Shared by syncMemoryIndex (incremental) and resyncAllMemoryNotes
+// (full rebuild) so both produce byte-identical lines — never let them diverge.
+function buildIndexLine(frontmatter, filename) {
+  const memName = (frontmatter && frontmatter.name) || filename.replace(/\.md$/, '');
+  const memDesc = truncateDesc(frontmatter && frontmatter.description);
+  const relPath = filename;
+  return memDesc
+    ? `- [${memName}](${relPath}) — ${memDesc}`
+    : `- [${memName}](${relPath})`;
 }
 
 /**
@@ -90,13 +142,9 @@ function syncMemoryIndex(memoryFilePath, settings) {
       return { action: 'skip', reason: 'file missing' };
     }
 
-    const memName = frontmatter.name || filename.replace(/\.md$/, '');
-    const memDesc = frontmatter.description || '';
     const section = typeToSection(frontmatter.type);
     const relPath = filename;
-    const newLine = memDesc
-      ? `- [${memName}](${relPath}) — ${memDesc}`
-      : `- [${memName}](${relPath})`;
+    const newLine = buildIndexLine(frontmatter, filename);
 
     const memoryIndexPath = path.join(memoryDir, 'MEMORY.md');
     let lines = [];
@@ -133,10 +181,25 @@ function syncMemoryIndex(memoryFilePath, settings) {
 }
 
 /**
- * Full resync: ensure every memory note .md in the memory dir has an entry in
- * MEMORY.md. Used by the FileChanged:MEMORY.md hook — when MEMORY.md changes
- * (however it changed: Edit, Bash, obsidian CLI, external Obsidian, manual)
- * re-walk the directory so a note added outside the Write tool is not lost.
+ * Full resync: authoritatively REGENERATE MEMORY.md from the frontmatter of
+ * every memory note in the dir. Used by the FileChanged:MEMORY.md hook — when
+ * MEMORY.md changes (however it changed: Edit, Bash, obsidian CLI, external
+ * Obsidian, manual) the index is rebuilt so it always matches the directory.
+ *
+ * Frontmatter is the source of truth. The rebuild guarantees three invariants
+ * that the old per-file insert/update could not (cp-1nl):
+ *   • one line per file — cross-section duplicate entries are eliminated
+ *   • each entry sits in its `type`'s section (mis-filed entries get re-homed)
+ *   • each description is truncated to MAX_DESC_LEN, so the index can never
+ *     bloat past CC's 200-line / 25KB startup-load cap from a long description
+ * Entries are sorted alphabetically within a section, so once clean the output
+ * is stable: an unchanged dir regenerates byte-identical content → no write →
+ * the FileChanged hook does not loop.
+ *
+ * The preamble (everything before the first managed `## Section` header — e.g.
+ * the `# Claude Memory Index` title) is preserved verbatim. Anything ELSE after
+ * that point is regenerated; the four managed sections are owned by this code.
+ *
  * Pure filesystem; never throws. Returns { scanned, added, updated }.
  */
 function resyncAllMemoryNotes(settings) {
@@ -144,12 +207,62 @@ function resyncAllMemoryNotes(settings) {
   try {
     const memoryDir = resolveMemoryDir(settings);
     if (!fs.existsSync(memoryDir)) return summary;
+    const memoryIndexPath = path.join(memoryDir, 'MEMORY.md');
+
+    const oldContent = fs.existsSync(memoryIndexPath)
+      ? fs.readFileSync(memoryIndexPath, 'utf8') : '';
+    const oldLines = oldContent.split(/\r?\n/);
+
+    // Which files already had an entry (by relPath in a markdown link) — used to
+    // split the change count into added (new) vs updated (pre-existing).
+    const oldRelPaths = new Set();
+    for (const l of oldLines) {
+      const m = l.match(/\]\(([^)]+\.md)\)/);
+      if (m) oldRelPaths.add(m[1]);
+    }
+
+    // Group fresh entries by section, from frontmatter.
+    const bySection = {};
     for (const name of fs.readdirSync(memoryDir)) {
       if (!name.endsWith('.md') || name === 'MEMORY.md') continue;
       summary.scanned++;
-      const r = syncMemoryIndex(path.join(memoryDir, name), settings);
-      if (r.action === 'added') summary.added++;
-      else if (r.action === 'updated') summary.updated++;
+      let fm = {};
+      try { fm = parseFrontmatter(fs.readFileSync(path.join(memoryDir, name), 'utf8')); }
+      catch { /* leave empty — buildIndexLine falls back to filename */ }
+      const section = typeToSection(fm.type);
+      (bySection[section] = bySection[section] || []).push({
+        sortKey: ((fm.name || name).toLowerCase()),
+        line: buildIndexLine(fm, name),
+      });
+      if (!oldRelPaths.has(name)) summary.added++;
+    }
+
+    // Preamble = everything up to the first managed-section header.
+    const managed = new Set(SECTION_ORDER.map(s => `## ${s}`));
+    const preamble = [];
+    for (const l of oldLines) {
+      if (managed.has(l.trim())) break;
+      preamble.push(l);
+    }
+    while (preamble.length && preamble[preamble.length - 1].trim() === '') preamble.pop();
+    if (preamble.length === 0) preamble.push('# Claude Memory Index');
+
+    const out = [...preamble];
+    for (const section of SECTION_ORDER) {
+      const entries = bySection[section];
+      if (!entries || entries.length === 0) continue;
+      entries.sort((a, b) => a.sortKey.localeCompare(b.sortKey));
+      out.push('', `## ${section}`);
+      for (const e of entries) out.push(e.line);
+    }
+    const newContent = out.join('\n') + '\n';
+
+    if (newContent !== oldContent) {
+      summary.updated = summary.scanned - summary.added;
+      fs.writeFileSync(memoryIndexPath, newContent, 'utf8');
+    } else {
+      summary.added = 0;
+      summary.updated = 0;
     }
   } catch { /* best-effort */ }
   return summary;
@@ -160,7 +273,10 @@ module.exports = {
   resolveMemoryDir,
   parseFrontmatter,
   typeToSection,
+  truncateDesc,
+  buildIndexLine,
   syncMemoryIndex,
   resyncAllMemoryNotes,
   SECTION_ORDER,
+  MAX_DESC_LEN,
 };

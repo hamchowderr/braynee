@@ -5,23 +5,21 @@
 //
 // Writes ~/.claude/statusline-live.json with:
 //   - goal: first line of active session's ## Goal
-//   - activeTimer: current TaskNotes timer title + elapsed
 //   - project: current project name
+//   - beads: open/ready counts from the project's .beads/
 //
 // Statusline reads this file instantly on every render.
 
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const http = require('http');
-const net = require('net');
 
 const { findCodeRoot, sessionDir } = require(path.join(__dirname, 'lib', 'is-code-context.js'));
 
-const VAULT_DIR = path.join(os.homedir(), 'Obsidian Vault');
+const { getVaultRoot } = require(path.join(__dirname, '..', 'scripts', 'lib', 'vault-root.js'));
+const VAULT_DIR = getVaultRoot();
 const SESSIONS_DIR = path.join(VAULT_DIR, '2. Areas', 'Sessions');
 const STATE_FILE = path.join(os.homedir(), '.claude', 'statusline-live.json');
-const AUTH_TOKEN = process.env.TASKNOTES_TOKEN || '5Z3IySQ9uI5jzH0q8sMp+Np0vruJILVSLhX1PITANl0=';
 
 function findProjectName(folderName) {
   const projectsDir = path.join(VAULT_DIR, '1. Projects');
@@ -89,43 +87,6 @@ function extractGoal(content) {
   return firstLine.replace(/^[-*#]\s*/, '').trim().substring(0, 120);
 }
 
-// Hit TaskNotes API with tight timeout — fail fast if not available
-function getActiveTimer() {
-  return new Promise((resolve) => {
-    const deadline = setTimeout(() => resolve(null), 400);
-    const sock = net.createConnection({ host: 'localhost', port: 8081 }, () => {
-      sock.destroy();
-      const req = http.request({
-        hostname: 'localhost', port: 8081, path: '/api/time/active',
-        method: 'GET',
-        headers: { 'Authorization': `Bearer ${AUTH_TOKEN}` },
-        timeout: 300,
-      }, (res) => {
-        let data = '';
-        res.on('data', chunk => { data += chunk; });
-        res.on('end', () => {
-          clearTimeout(deadline);
-          try {
-            const parsed = JSON.parse(data);
-            const sessions = parsed.data?.activeSessions || [];
-            if (sessions.length > 0) {
-              const s = sessions[0];
-              resolve({ title: s.task?.title || 'Timer running', elapsedMinutes: s.elapsedMinutes || 0 });
-            } else {
-              resolve(null);
-            }
-          } catch { resolve(null); }
-        });
-      });
-      req.on('error', () => { clearTimeout(deadline); resolve(null); });
-      req.on('timeout', () => { req.destroy(); clearTimeout(deadline); resolve(null); });
-      req.end();
-    });
-    sock.on('error', () => { clearTimeout(deadline); resolve(null); });
-    sock.setTimeout(200, () => { sock.destroy(); clearTimeout(deadline); resolve(null); });
-  });
-}
-
 // Query beads for open issue count and in-progress item — fast-fail if server not ready
 function getBeadsData(projectDir) {
   return new Promise((resolve) => {
@@ -186,14 +147,13 @@ async function main() {
 
     const session = findActiveSession(projectName);
     const goal = session ? extractGoal(session.content) : '';
-    const [timer, beads] = await Promise.all([getActiveTimer(), getBeadsData(codeRoot)]);
+    const beads = await getBeadsData(codeRoot);
 
     const state = {
       goal,
       project: projectName,
-      cwd,
+      cwd: codeRoot,
       sessionFile: session?.filename || '',
-      activeTimer: timer,
       beads,
       updatedAt: new Date().toISOString(),
     };

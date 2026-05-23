@@ -15,10 +15,12 @@ const os = require('os');
 const fs = require('fs');
 const log = require(path.join(__dirname, 'lib', 'hook-logger.js'));
 const reindex = require(path.join(__dirname, 'lib', 'qmd-reindex.js'));
+const summary = require(path.join(__dirname, 'lib', 'session-summary.js'));
 
 const HOOK = 'session-export-qmd';
 
-const VAULT_DIR = path.join(os.homedir(), 'Obsidian Vault');
+const { getVaultRoot } = require(path.join(__dirname, '..', 'scripts', 'lib', 'vault-root.js'));
+const VAULT_DIR = getVaultRoot();
 const TRANSCRIPTS_DIR = path.join(VAULT_DIR, '2. Areas', 'Sessions', 'Transcripts');
 const CLAUDE_PROJECTS_DIR = path.join(os.homedir(), '.claude', 'projects');
 // Use braynee's bundled qmd-wrapper (cross-platform) — handles qmd discovery internally.
@@ -159,8 +161,12 @@ function updateQmdIndex() {
   const kw = reindex.runKeywordUpdate(QMD_WRAPPER);
   // Throttled, detached vector embed so stale embeddings self-heal instead
   // of drifting (braynee never ran `qmd embed` before — see beads cp-8xq).
-  const em = reindex.scheduleEmbed();
-  return { kw, em };
+  const em = reindex.scheduleEmbed(QMD_WRAPPER);
+  // Throttled, detached, incremental session-summary sweep so the raw
+  // transcript exported above also gets a structured per-project note
+  // automatically (was manual-only via the session-backfill skill — cp-z0c).
+  const sm = summary.scheduleSummaryBackfill();
+  return { kw, em, sm };
 }
 
 // ─── Main ────────────────────────────────────────────────────────────────────
@@ -223,7 +229,7 @@ process.stdin.on('end', () => {
     // Reindex QMD (cheap BM25 now; embed throttled + detached).
     const rx = updateQmdIndex();
 
-    log.info(HOOK, `exported ${filename} (${messages.length} msgs); qmd update=${rx.kw.ran ? 'ok' : rx.kw.reason}, embed=${rx.em.scheduled ? 'scheduled' : rx.em.reason}`);
+    log.info(HOOK, `exported ${filename} (${messages.length} msgs); qmd update=${rx.kw.ran ? 'ok' : rx.kw.reason}, embed=${rx.em.scheduled ? 'scheduled' : rx.em.reason}, summary=${rx.sm.scheduled ? 'scheduled' : rx.sm.reason}`);
     process.stderr.write(`Session exported: ${filename} (${messages.length} messages)\n`);
     process.exit(0);
   } catch (e) {

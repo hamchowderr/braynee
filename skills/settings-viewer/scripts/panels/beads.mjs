@@ -10,7 +10,7 @@ export function renderBeadsPanel(beadsStats) {
       <div class="stat-box"><div class="stat-num" style="color:var(--amber)">${beadsStats.workspaces}</div><div class="stat-lbl">Workspaces</div></div>
       <div class="stat-box"><div class="stat-num" style="color:var(--blue)">${beadsStats.activeProjects}</div><div class="stat-lbl">Active Projects</div></div>
       <div class="stat-box"><div class="stat-num" style="color:var(--green)">${beadsStats.totalOpen}</div><div class="stat-lbl">Open Issues</div></div>
-      <div class="stat-box"><div class="stat-num" style="color:var(--red)">${beadsStats.assignedToMe}</div><div class="stat-lbl">Mine (@hamchowderr)</div></div>
+      <div class="stat-box"><div class="stat-num" style="color:var(--red)">${beadsStats.assignedToMe}</div><div class="stat-lbl">Mine${beadsStats.currentUser ? ` (@${esc(beadsStats.currentUser)})` : ''}</div></div>
     </div>
 
     ${beadsStats.projectsData.length === 0
@@ -67,6 +67,7 @@ export function renderBeadsDrawer() {
 export function renderBeadsJS(beadsStats) {
   return `<script>
 const BEADS_DATA = ${JSON.stringify(beadsStats.projectsData)};
+const BEADS_CURRENT_USER = ${JSON.stringify(beadsStats.currentUser || '')};
 let _bdProj = '__all__';
 let _bdFilter = 'open';
 
@@ -108,7 +109,7 @@ function renderBeads() {
       ? '<span style="color:var(--green)">✓</span>'
       : '<span style="color:var(--red)">×</span>';
     const typeCls = i.type === 'bug' ? 'color:var(--red)' : i.type === 'feature' ? 'color:var(--blue)' : 'color:var(--ink-3)';
-    const isMine = i.assignee === 'hamchowderr';
+    const isMine = BEADS_CURRENT_USER && i.assignee && i.assignee.toLowerCase() === BEADS_CURRENT_USER.toLowerCase();
     const projPrefix = _bdProj === '__all__' ? '<span style="color:var(--ink-3);font-size:9px">' + (i.proj||'') + ' </span>' : '';
     const hasDetail = i.detail !== null && i.detail !== undefined;
     return '<div class="bt-row" onclick="openBdDrawer(' + JSON.stringify(i).replace(/</g,'\\u003c').replace(/>/g,'\\u003e').replace(/"/g,'&quot;') + ')" title="' + (hasDetail ? 'Click to view details' : '') + '">'
@@ -134,7 +135,7 @@ function openBdDrawer(issue) {
     ['STATUS',   issue.status  || '—', statusColor],
     ['TYPE',     issue.type    || '—', typeColor],
     ['PRIORITY', 'P' + (issue.priority || '?'), 'var(--ink-2)'],
-    ['ASSIGNEE', issue.assignee ? '@' + issue.assignee : '—', issue.assignee === 'hamchowderr' ? 'var(--amber)' : 'var(--ink-2)'],
+    ['ASSIGNEE', issue.assignee ? '@' + issue.assignee : '—', BEADS_CURRENT_USER && issue.assignee?.toLowerCase() === BEADS_CURRENT_USER.toLowerCase() ? 'var(--amber)' : 'var(--ink-2)'],
   ];
   if (issue.detail?.owner)   metaChips.push(['OWNER',   issue.detail.owner,   'var(--ink-3)']);
   if (issue.detail?.created) metaChips.push(['CREATED', issue.detail.created, 'var(--ink-3)']);

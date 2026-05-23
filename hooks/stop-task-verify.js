@@ -1,14 +1,17 @@
-// task-completion-check.js
-// Hook: Stop — Cross-verifies all four tracking layers at session end.
+// stop-task-verify.js
+// Hook: Stop — Cross-verifies tracking layers at session end.
 //
 // Checks:
-//   1. mtn timer status (CLI — no localhost:8081 dependency)
+//   1. mtn timer status (CLI)
 //   2. beads-active-issue.json (state file written by beads-status-sync)
 //   3. Beads in_progress issues (bd list --json)
 //   4. Cross-verifies: timer ↔ active-issue ↔ beads in_progress
 //
 // Never hard-blocks (exit 0 always). Surfaces discrepancies via systemMessage
 // so Claude can prompt the user to wrap up before stopping.
+//
+// Note: this is the Stop-event hook. The TaskCompleted event has its own
+// hook at hooks/task-completed-check.js — different file, different event.
 
 const { execSync } = require('child_process');
 const fs = require('fs');

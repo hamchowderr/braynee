@@ -21,9 +21,13 @@
 
 import { readFileSync, readdirSync, writeFileSync, existsSync, mkdirSync, statSync } from 'fs';
 import { join, basename, extname, relative } from 'path';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
+const { getVaultRoot } = require('./lib/vault-root.js');
 
 // ─── Configuration ──────────────────────────────────────────────────────────
-const VAULT = process.env.OBSIDIAN_VAULT || 'C:\\Users\\HamCh\\Obsidian Vault';
+const VAULT = getVaultRoot();
 const FOLDERS = {
   projects:   join(VAULT, '1. Projects'),
   sessions:   join(VAULT, '2. Areas', 'Sessions'),
@@ -607,7 +611,7 @@ function loadContext(args) {
   console.log(`  Blocked: ${sessions.filter(s => s.frontmatter.status === 'blocked').length}`);
 
   console.log(`\n${'═'.repeat(60)}`);
-  console.log(`TIP: Use 'node tasknotes.mjs list --project ${project}' for tasks`);
+  console.log(`TIP: Use 'bd ready' (in the project repo) to see actionable tasks`);
   console.log(`${'═'.repeat(60)}\n`);
 }
 

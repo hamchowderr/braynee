@@ -183,13 +183,23 @@ def cmd_new(args, vault: Path):
     business = getattr(args, "business", None)
 
     if not business:
-        # Default to first business folder found
+        # Discover businesses from the vault; error out if none exist so the
+        # user creates one explicitly instead of inheriting a placeholder.
         biz_root = vault / "2. Areas" / "Business"
-        if biz_root.exists():
-            dirs = [d for d in biz_root.iterdir() if d.is_dir()]
-            business = dirs[0].name if dirs else "Otaku Solutions"
+        dirs = [d for d in biz_root.iterdir() if d.is_dir()] if biz_root.exists() else []
+        if len(dirs) == 1:
+            business = dirs[0].name
+        elif len(dirs) > 1:
+            names = ", ".join(d.name for d in dirs)
+            print(f"Multiple businesses found ({names}). Pass --business <name>.", file=sys.stderr)
+            sys.exit(2)
         else:
-            business = "Otaku Solutions"
+            print(
+                f"No businesses found under {biz_root}. Create one (e.g. "
+                f"`{biz_root}/<YourBusinessName>/`) or pass --business <name>.",
+                file=sys.stderr,
+            )
+            sys.exit(2)
 
     client_slug = slug(client_name)
     client_dir = vault / "2. Areas" / "Business" / business / "Clients" / client_slug

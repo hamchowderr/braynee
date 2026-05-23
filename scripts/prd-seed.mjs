@@ -24,12 +24,13 @@ import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
 const { getProjectsDir, isProjectsDirConfigured } = require('./lib/projects-root.js');
+const { getVaultRoot } = require('./lib/vault-root.js');
 // cp-8ru: prd-seed creates issues via internal execSync, so the PostToolUse
 // beads-status-sync hook never sees them and seeded backlogs got zero
 // TaskNotes. Mirror them here using the SAME shared implementation.
 const TN = require('../hooks/lib/tasknotes-mirror.js');
 
-const VAULT = path.join(os.homedir(), 'Obsidian Vault');
+const VAULT = getVaultRoot();
 const PRD_DIR = path.join(VAULT, '2. Areas', 'Product Manager', 'PRDs');
 // Projects root: BRAYNEE_PROJECTS_DIR > BEADS_CODE_DIR > ~/code (back-compat).
 const CODE_DIR = getProjectsDir();

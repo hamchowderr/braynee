@@ -41,3 +41,14 @@ jobs:
             if (!p.name || !p.source) throw 'invalid plugin entry: ' + JSON.stringify(p);
           }
           "
+
+  version-bump:
+    name: version bumped if shipping code changed
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history + tags so the gate can diff vs the last release tag
+      - name: Require a version bump for shipping changes
+        shell: bash
+        run: node scripts/check-version-bump.mjs

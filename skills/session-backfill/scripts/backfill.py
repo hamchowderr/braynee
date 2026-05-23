@@ -493,6 +493,23 @@ def main() -> int:
     ap.add_argument("--project", help="Project name / CC folder suffix (e.g., sophon-webapp)")
     ap.add_argument("--all", action="store_true", help="Backfill every CC project")
     ap.add_argument("--limit", type=int, default=0, help="Cap on sessions per project (0 = unlimited)")
+    ap.add_argument(
+        "--since-hours",
+        type=float,
+        default=0.0,
+        help="Only process sessions whose .jsonl was modified within the last N "
+        "hours (0 = no time filter). Used by the auto-summary sweep to stay "
+        "incremental; manual full backfills omit it.",
+    )
+    ap.add_argument(
+        "--min-age-minutes",
+        type=float,
+        default=0.0,
+        help="Skip sessions whose .jsonl was modified within the last N minutes "
+        "(0 = no guard). A still-open session has a fresh mtime; summarizing it "
+        "would lock in a premature 'done' note (backfill is idempotent). The "
+        "auto-sweep sets this so only settled sessions are distilled.",
+    )
     ap.add_argument("--dry-run", action="store_true", help="Show what would be created without distilling")
     ap.add_argument("--vault", help="Vault path (auto-detected via $BRAYNEE_VAULT / common locations if omitted)")
     ap.add_argument("--model", default="claude-sonnet-4-6", help="Claude model id (only used with --use-api)")
@@ -542,6 +559,12 @@ def main() -> int:
             print(f"NOT FOUND: {d.name}")
             continue
         jsonls = sorted(d.glob("*.jsonl"), key=lambda f: f.stat().st_mtime, reverse=True)
+        if args.since_hours and args.since_hours > 0:
+            cutoff = datetime.now().timestamp() - args.since_hours * 3600
+            jsonls = [j for j in jsonls if j.stat().st_mtime >= cutoff]
+        if args.min_age_minutes and args.min_age_minutes > 0:
+            settled = datetime.now().timestamp() - args.min_age_minutes * 60
+            jsonls = [j for j in jsonls if j.stat().st_mtime <= settled]
         if args.limit:
             jsonls = jsonls[: args.limit]
         if not jsonls:

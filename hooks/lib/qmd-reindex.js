@@ -46,6 +46,37 @@ function embedIntervalMs() {
   return Number.isFinite(n) && n >= 0 ? n : DEFAULT_EMBED_INTERVAL_MS;
 }
 
+// Backlog escape hatch: if at least this many docs are pending embedding,
+// embed even though we're inside the time-throttle window. Without this,
+// a heavy session can pile up hundreds of unembedded docs that then sit
+// stale for up to a full interval (the cp-5aq bug: the cp-8xq design
+// specced "run if >=N pending OR >=X hours" but only the time half shipped).
+const DEFAULT_EMBED_PENDING_THRESHOLD = 200; // docs
+
+function embedPendingThreshold() {
+  const raw = process.env.BRAYNEE_QMD_EMBED_PENDING_THRESHOLD;
+  const n = raw != null ? Number(raw) : NaN;
+  return Number.isFinite(n) && n >= 0 ? n : DEFAULT_EMBED_PENDING_THRESHOLD;
+}
+
+// Best-effort read of the pending-embedding backlog from `qmd status`.
+// Returns the count, or null if it can't be determined (caller fails open
+// to the plain time throttle so a status hiccup never forces an embed).
+function pendingEmbedCount(qmdWrapper) {
+  if (!qmdWrapper) return null;
+  try {
+    const out = execSync(`"${process.execPath}" "${qmdWrapper}" status`, {
+      encoding: 'utf8',
+      stdio: ['pipe', 'pipe', 'ignore'],
+      timeout: 10000,
+    });
+    const m = out.match(/Pending:\s*(\d+)/i);
+    return m ? Number(m[1]) : null;
+  } catch {
+    return null;
+  }
+}
+
 function pidAlive(pid) {
   if (!pid || pid <= 0) return false;
   try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; }
@@ -107,11 +138,23 @@ function lastEmbedTs() {
 // Throttle check + fire-and-forget. The detached runner does its own
 // locking, embedding, and stamping so the Stop hook returns instantly.
 // Returns a small status object for logging.
-function scheduleEmbed() {
+//
+// Gating is "embed if >= N docs pending OR >= X hours since last embed":
+// the time throttle prevents back-to-back runs, and the pending-count
+// escape hatch keeps a heavy session from leaving the index stale for a
+// whole interval. `qmdWrapper` is optional — without it we fall open to
+// the plain time throttle. The detached runner's single-flight lock still
+// guarantees two embeds can never overlap.
+function scheduleEmbed(qmdWrapper) {
   const since = Date.now() - lastEmbedTs();
   const interval = embedIntervalMs();
   if (since < interval) {
-    return { scheduled: false, reason: 'throttled', sinceMs: since };
+    const pending = pendingEmbedCount(qmdWrapper);
+    const threshold = embedPendingThreshold();
+    if (pending == null || pending < threshold) {
+      return { scheduled: false, reason: 'throttled', sinceMs: since, pending };
+    }
+    // pending >= threshold → bypass the time throttle and embed now.
   }
   const runner = path.join(__dirname, '..', '..', 'scripts', 'qmd-embed-runner.js');
   try {
