@@ -89,7 +89,7 @@ try {
 
 // Reindex: cheap BM25 now (single-flight), embed throttled + detached.
 const kw = reindex.runKeywordUpdate(QMD_WRAPPER);
-const em = reindex.scheduleEmbed();
+const em = reindex.scheduleEmbed(QMD_WRAPPER);
 
 log.info(
   HOOK,
