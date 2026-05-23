@@ -36,18 +36,15 @@ function getCachedGit(cwd, sessionId) {
     }
   } catch {}
 
-  const result = { cwd, branch: '', remoteUrl: '', repoName: '' };
+  // Branch only. The repo URL now comes from Claude Code's provided
+  // workspace.repo (parsed from origin) — no `git remote` subprocess, which
+  // was fragile when cwd wasn't a clean native path. See cp-bw8.
+  const result = { cwd, branch: '' };
   try {
     execSync('git rev-parse --git-dir', { cwd, stdio: 'ignore' });
     result.branch = execSync('git branch --show-current', {
       cwd, encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'],
     }).trim();
-    let remote = execSync('git remote get-url origin', {
-      cwd, encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'],
-    }).trim();
-    remote = remote.replace(/^git@([^:]+):/, 'https://$1/').replace(/\.git$/, '');
-    result.remoteUrl = remote;
-    result.repoName = path.basename(remote);
   } catch {}
 
   try { fs.writeFileSync(cacheFile, JSON.stringify(result)); } catch {}
@@ -174,6 +171,17 @@ process.stdin.on('end', () => {
   // ── Worktree ──────────────────────────────────────────────────────
   const worktree = data.worktree || null;
 
+  // ── Repo (provided by Claude Code, parsed from origin) ───────────
+  const repo = data.workspace?.repo || null;
+
+  // ── Open PR for the current branch (absent until found / after merge) ─
+  const pr = data.pr || null;
+
+  // ── Context window size (200000, or 1000000 for extended models) ──
+  const winSize = data.context_window?.context_window_size || 0;
+  const winLabel = winSize >= 1_000_000 ? '1M'
+    : winSize >= 1000 ? `${Math.round(winSize / 1000)}k` : '';
+
   const live = getLiveState(currentDir);
   const git  = getCachedGit(currentDir, sessionId);
 
@@ -223,7 +231,24 @@ process.stdin.on('end', () => {
   const worktreePart = worktree?.name ? `${DIM}[wt:${worktree.name}]${RESET}` : '';
   const gitPart = branch ? `🌿 ${branch}${worktreePart ? ' ' + worktreePart : ''}` : '';
 
-  const repoPart  = git.remoteUrl ? `${CYAN}🔗 ${osc8(git.remoteUrl, git.repoName)}${RESET}` : '';
+  // Repo link from the provided workspace.repo (no git subprocess).
+  let repoPart = '';
+  if (repo?.host && repo?.owner && repo?.name) {
+    const repoUrl = `https://${repo.host}/${repo.owner}/${repo.name}`;
+    repoPart = `${CYAN}🔗 ${osc8(repoUrl, repo.name)}${RESET}`;
+  }
+
+  // PR badge: number + review-state icon, clickable when a URL is present.
+  let prPart = '';
+  if (pr?.number) {
+    const rs = pr.review_state;
+    const icon = rs === 'approved' ? '✓' : rs === 'changes_requested' ? '✗'
+      : rs === 'draft' ? '◌' : '◍';
+    const rc = rs === 'approved' ? GREEN : rs === 'changes_requested' ? RED : YELLOW;
+    const label = `🔀 #${pr.number} ${rc}${icon}${RESET}`;
+    prPart = `${CYAN}${pr.url ? osc8(pr.url, label) : label}${RESET}`;
+  }
+
   const agentPart = agentName ? `${CYAN}🤖 ${agentName}${RESET}` : '';
 
   const line2Parts = [
@@ -231,17 +256,21 @@ process.stdin.on('end', () => {
     `${PINK}${dirDisplay}${RESET}`,
     gitPart ? `${PINK}${gitPart}${RESET}` : '',
     repoPart,
+    prPart,
     agentPart,
   ].filter(Boolean);
   const line2 = line2Parts.join(` ${SEP} `);
 
   // ── Line 3: METRICS ──────────────────────────────────────────────
   const filled = Math.floor(pct / 10);
+  // Thresholds match the context-budget hook: yellow at 60% (the /compact
+  // nudge point), red at 85%+ or once the 200k cliff is exceeded.
   let barColor = GREEN;
-  if (pct >= 90 || exceeds200k) barColor = RED;
-  else if (pct >= 70) barColor = YELLOW;
+  if (pct >= 85 || exceeds200k) barColor = RED;
+  else if (pct >= 60) barColor = YELLOW;
   const bar    = barColor + '▓'.repeat(filled) + DIM + '░'.repeat(10 - filled) + RESET;
-  const pctStr = exceeds200k ? `${RED}${pct}%!${RESET}` : `${pct}%`;
+  const winStr = winLabel ? `${DIM}·${winLabel}${RESET}` : '';
+  const pctStr = (exceeds200k ? `${RED}${pct}%!${RESET}` : `${pct}%`) + winStr;
 
   // Token display with optional cache-hit indicator
   const cacheStr = cacheHits > 0 ? ` ${DIM}💾${formatK(cacheHits)}${RESET}` : '';
