@@ -100,7 +100,7 @@ Here's what the second-brain plugin can add:
   (only shown if hook not already configured)
 
   Obsidian plugins
-  [ ] Dataview, Tasks, Templater, Calendar, Obsidian Git
+  [ ] Dataview, TaskNotes, Templater, Calendar, Obsidian Git, Excalidraw
   (only shown if plugin not already installed)
 
 Select what you'd like added (comma-separated numbers, or "all", or Enter to skip):
@@ -188,8 +188,8 @@ Store results for Steps 6 and 8.
 Show one at a time. Do not proceed past a No.
 
 ```
-[popup 1] Install 5 Obsidian plugins?
-  Dataview, Tasks, Templater, Calendar, Obsidian Git
+[popup 1] Install 6 Obsidian plugins?
+  Dataview, TaskNotes, Templater, Calendar, Obsidian Git, Excalidraw
   [Yes / No]
 
 [popup 2] Initialize Git repository for your vault?
@@ -282,10 +282,11 @@ python3 {baseDir}/scripts/install-obsidian-plugins.py --vault "{vault_path}"
 | Plugin | ID | Key settings written to data.json |
 |---|---|---|
 | Dataview | `dataview` | inline queries, refresh enabled |
-| Tasks | `obsidian-tasks-plugin` | auto-suggest, done date tracking |
+| TaskNotes | `tasknotes` | `tasksFolder` → `2. Areas/TaskNotes/Tasks`, `taskTag` → `task` (vault-side view of beads) |
 | Templater | `templater-obsidian` | template folder → `3. Resources/Templates` |
 | Calendar | `calendar` | week starts Monday |
 | Obsidian Git | `obsidian-git` | auto-commit 10min, auto-push, auto-pull on boot |
+| Excalidraw | `obsidian-excalidraw-plugin` | drawings folder → `2. Areas/Excalidraw` |
 
 **Restricted mode check:**
 The script checks if community plugins are already active. If not, it shows:

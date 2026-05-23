@@ -85,10 +85,11 @@ folder name under `.obsidian/plugins/` and the entry in `community-plugins.json`
 | Plugin | Correct ID | Key settings written |
 |---|---|---|
 | Dataview | `dataview` | inline queries, refresh enabled |
-| Tasks | `obsidian-tasks-plugin` | auto-suggest, set done date |
+| TaskNotes | `tasknotes` | `tasksFolder` → `2. Areas/TaskNotes/Tasks`, `taskTag` → `task` (vault-side view of beads) |
 | Templater | `templater-obsidian` | template folder → `3. Resources/Templates` |
 | Calendar | `calendar` | week starts Monday |
 | Obsidian Git | `obsidian-git` | auto-commit every 10min, auto-push, auto-pull on boot |
+| Excalidraw | `obsidian-excalidraw-plugin` | drawings folder → `2. Areas/Excalidraw` |
 
 Per-plugin settings are written to `.obsidian/plugins/<id>/data.json`.
 Existing `data.json` files are never overwritten (user customizations preserved).
