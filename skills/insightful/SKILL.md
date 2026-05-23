@@ -31,20 +31,19 @@ Run the collect script first to check coverage:
 node "${CLAUDE_PLUGIN_ROOT}/skills/insightful/collect-insights.js"
 ```
 
-If it prints a `⚠️ FACET COVERAGE LOW` warning, backfill your historical sessions before generating the report. Start with a small chunk to see costs first:
+If it prints a `⚠️ FACET COVERAGE LOW` warning, backfill your historical sessions before generating the report. Backfill uses `claude -p` (your Claude Code subscription) — no API billing.
 
 ```bash
-# Dry run — shows what would be processed, no API calls
+# Dry run — shows what would be processed, no LLM calls
 node "${CLAUDE_PLUGIN_ROOT}/skills/insightful/backfill-facets.mjs" --dry-run
 
-# Run first 50 sessions (~$0.20 at Haiku pricing)
+# Run first 50 sessions
 node "${CLAUDE_PLUGIN_ROOT}/skills/insightful/backfill-facets.mjs" --chunk=50
 
-# Run all remaining once you've verified quality
+# Run all remaining
 node "${CLAUDE_PLUGIN_ROOT}/skills/insightful/backfill-facets.mjs" --chunk=500
 ```
 
-Cost: ~$0.004 per session using `claude-haiku-4-5-20251001`. A full backfill of 400 sessions costs roughly $1.50.
 Re-run `collect-insights.js` after backfilling to confirm coverage improved.
 
 ## Step 1: Collect Data

@@ -23,10 +23,11 @@ import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
 const { getProjectsDir, isProjectsDirConfigured } = require('./lib/projects-root.js');
+const { getVaultRoot } = require('./lib/vault-root.js');
 
 const VAULT = process.argv.includes('--vault')
   ? process.argv[process.argv.indexOf('--vault') + 1]
-  : path.join(os.homedir(), 'Obsidian Vault');
+  : getVaultRoot();
 // Projects root: BRAYNEE_PROJECTS_DIR > BEADS_CODE_DIR > ~/code (back-compat).
 const CODE_DIR = getProjectsDir();
 const PRD_DIR = path.join(VAULT, '2. Areas', 'Product Manager', 'PRDs');

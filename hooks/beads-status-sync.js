@@ -18,7 +18,8 @@ const { findBeadsRoot } = require(path.join(__dirname, 'lib', 'is-code-context.j
 const TN = require(path.join(__dirname, 'lib', 'tasknotes-mirror.js'));
 
 const HOME = os.homedir();
-const VAULT_DIR = path.join(HOME, 'Obsidian Vault');
+const { getVaultRoot } = require(path.join(__dirname, '..', 'scripts', 'lib', 'vault-root.js'));
+const VAULT_DIR = getVaultRoot();
 const SESSIONS_DIR = path.join(VAULT_DIR, '2. Areas', 'Sessions');
 const ACTIVE_ISSUE_FILE = path.join(HOME, '.claude', 'beads-active-issue.json');
 // Bundled dashboard generator (F-5.3): use the plugin's own copy, not a

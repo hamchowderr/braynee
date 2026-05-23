@@ -100,7 +100,7 @@ Here's what the second-brain plugin can add:
   (only shown if hook not already configured)
 
   Obsidian plugins
-  [ ] Dataview, Tasks, Templater, Calendar, Obsidian Git
+  [ ] Dataview, TaskNotes, Templater, Calendar, Obsidian Git, Excalidraw
   (only shown if plugin not already installed)
 
 Select what you'd like added (comma-separated numbers, or "all", or Enter to skip):
@@ -188,8 +188,8 @@ Store results for Steps 6 and 8.
 Show one at a time. Do not proceed past a No.
 
 ```
-[popup 1] Install 5 Obsidian plugins?
-  Dataview, Tasks, Templater, Calendar, Obsidian Git
+[popup 1] Install 6 Obsidian plugins?
+  Dataview, TaskNotes, Templater, Calendar, Obsidian Git, Excalidraw
   [Yes / No]
 
 [popup 2] Initialize Git repository for your vault?
@@ -282,10 +282,11 @@ python3 {baseDir}/scripts/install-obsidian-plugins.py --vault "{vault_path}"
 | Plugin | ID | Key settings written to data.json |
 |---|---|---|
 | Dataview | `dataview` | inline queries, refresh enabled |
-| Tasks | `obsidian-tasks-plugin` | auto-suggest, done date tracking |
+| TaskNotes | `tasknotes` | `tasksFolder` → `2. Areas/TaskNotes/Tasks`, `taskTag` → `task` (vault-side view of beads) |
 | Templater | `templater-obsidian` | template folder → `3. Resources/Templates` |
 | Calendar | `calendar` | week starts Monday |
 | Obsidian Git | `obsidian-git` | auto-commit 10min, auto-push, auto-pull on boot |
+| Excalidraw | `obsidian-excalidraw-plugin` | drawings folder → `2. Areas/Excalidraw` |
 
 **Restricted mode check:**
 The script checks if community plugins are already active. If not, it shows:
@@ -347,18 +348,37 @@ changes the permission mode):
 python3 {baseDir}/scripts/settings-writer.py apply --yes --set-default-mode
 ```
 
-**Status line** (if no statusline is currently configured in `~/.claude/settings.json`):
+**Status line** (only if `statusLine` is NOT already configured in
+`~/.claude/settings.json` — never overwrite an existing one):
 
 ```
-Add the braynee status line? It shows inbox count, active project, and git branch
-in Claude Code's status bar.
+Add the braynee status line? It shows your session goal, active project, git
+branch + repo, beads work, and Claude Code's model / context / cost / usage.
   [Yes / No]
 ```
 
-If Yes, add to `~/.claude/settings.json`:
-```json
-{ "statusline": "<pluginDir>/hooks/statusline.js" }
+If Yes — copy the renderer to a STABLE path first (the plugin's install path is
+versioned and changes on every update, so settings.json must NOT point into the
+plugin cache):
+
+```bash
+cp "${CLAUDE_PLUGIN_ROOT}/hooks/statusline.js" "<home>/.claude/statusline.js"
 ```
+
+Then add to `~/.claude/settings.json`. The key is `statusLine` (camelCase) and
+its value is an **object** — Claude Code ignores a bare string:
+
+```json
+{
+  "statusLine": {
+    "type": "command",
+    "command": "node \"<home>/.claude/statusline.js\""
+  }
+}
+```
+
+Use the absolute home path (e.g. `C:\\Users\\<you>\\.claude\\statusline.js` on
+Windows); do not rely on `~` expansion inside the command string.
 
 ---
 

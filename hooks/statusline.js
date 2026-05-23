@@ -1,0 +1,280 @@
+#!/usr/bin/env node
+// statusline.js — braynee's Claude Code status line renderer.
+//
+// This is the SHIPPED renderer. /setup copies it to a stable path
+// (~/.claude/statusline.js) and points settings.json `statusLine.command` at
+// that copy — NOT at this versioned plugin path, which changes on every plugin
+// update. Registering a status line is not expressible in hooks.json, so setup
+// writes the `statusLine` settings key (camelCase, object-valued).
+//
+// Reads two inputs and degrades gracefully if either is absent:
+//   • Claude Code's status JSON on stdin (model, context, cost, worktree, …)
+//   • braynee's live state at ~/.claude/statusline-live.json (goal, timer,
+//     beads) written by statusline-state.js + session-auto-track.js, and
+//     ~/.claude/beads-active-issue.json written by the beads claim hook.
+//
+// Line 1 (WHAT):  🎯 session goal  │  ⏱ active timer task (Xm)  │  📋 beads  │  [session-name]
+// Line 2 (WHERE): [Model] 🧠 medium │ 📁 folder │ 🌿 branch [wt:name] │ 🔗 repo │ 🤖 agent
+// Line 3 (COST):  ▓▓░░ 42% │ 💰 $0.56 │ ⏱️ 1h4m (12m API)
+// Line 4 (USAGE): 🔤 3.3k↓ 1.7k↑ 💾cache │ 5h:23% 7d:41%
+
+const { execSync } = require('child_process');
+const path = require('path');
+const fs = require('fs');
+const os = require('os');
+
+// ─── Git Cache (keyed by session_id to prevent cross-session collisions) ─────
+const GIT_CACHE_MAX_AGE = 5; // seconds
+
+function getCachedGit(cwd, sessionId) {
+  const cacheFile = path.join(os.tmpdir(), `claude-statusline-git-${sessionId}`);
+  try {
+    const stat = fs.statSync(cacheFile);
+    if ((Date.now() - stat.mtimeMs) / 1000 <= GIT_CACHE_MAX_AGE) {
+      const cached = JSON.parse(fs.readFileSync(cacheFile, 'utf8'));
+      if (cached.cwd === cwd) return cached;
+    }
+  } catch {}
+
+  const result = { cwd, branch: '', remoteUrl: '', repoName: '' };
+  try {
+    execSync('git rev-parse --git-dir', { cwd, stdio: 'ignore' });
+    result.branch = execSync('git branch --show-current', {
+      cwd, encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'],
+    }).trim();
+    let remote = execSync('git remote get-url origin', {
+      cwd, encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'],
+    }).trim();
+    remote = remote.replace(/^git@([^:]+):/, 'https://$1/').replace(/\.git$/, '');
+    result.remoteUrl = remote;
+    result.repoName = path.basename(remote);
+  } catch {}
+
+  try { fs.writeFileSync(cacheFile, JSON.stringify(result)); } catch {}
+  return result;
+}
+
+// ─── Live State (written by statusline-state.js async hook) ──────────────────
+function getLiveState(currentDir) {
+  const STATE_FILE = path.join(process.env.USERPROFILE || os.homedir(), '.claude', 'statusline-live.json');
+  try {
+    const stat = fs.statSync(STATE_FILE);
+    if ((Date.now() - stat.mtimeMs) / 1000 > 300) return {};
+    const state = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
+    if (state.cwd && !currentDir.toLowerCase().startsWith(state.cwd.toLowerCase()) &&
+        !state.cwd.toLowerCase().startsWith(currentDir.toLowerCase())) {
+      return {};
+    }
+    return state;
+  } catch {
+    return {};
+  }
+}
+
+// ─── Active Beads Issue ───────────────────────────────────────────────────────
+function getActiveBeadsIssue(currentDir) {
+  const file = path.join(process.env.USERPROFILE || os.homedir(), '.claude', 'beads-active-issue.json');
+  try {
+    const stat = fs.statSync(file);
+    if ((Date.now() - stat.mtimeMs) / 1000 > 3600) return null; // stale after 1h
+    const issue = JSON.parse(fs.readFileSync(file, 'utf8'));
+    // Only show if the active issue belongs to this session's project
+    if (issue.project && currentDir) {
+      const currentFolder = path.basename(currentDir).toLowerCase();
+      const issueProject = issue.project.toLowerCase();
+      if (currentFolder !== issueProject) return null;
+    }
+    return issue;
+  } catch {
+    return null;
+  }
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+function formatDuration(ms) {
+  const sec = Math.floor(ms / 1000);
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  if (h > 0) return `${h}h ${m}m`;
+  if (s === 0) return `${m}m`;
+  return `${m}m ${s}s`;
+}
+
+function formatK(n) {
+  return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
+}
+
+function truncate(str, max) {
+  if (!str) return '';
+  return str.length > max ? str.substring(0, max - 1) + '…' : str;
+}
+
+const osc8 = (url, text) => `\x1b]8;;${url}\x07${text}\x1b]8;;\x07`;
+
+// ─── Main ─────────────────────────────────────────────────────────────────────
+let input = '';
+process.stdin.on('data', chunk => input += chunk);
+process.stdin.on('end', () => {
+  let data;
+  try { data = JSON.parse(input); } catch { process.exit(0); }
+
+  // Colors
+  const PINK     = '\x1b[38;5;213m';
+  const HOT_PINK = '\x1b[38;5;199m';
+  const CYAN     = '\x1b[36m';
+  const GREEN    = '\x1b[32m';
+  const YELLOW   = '\x1b[33m';
+  const RED      = '\x1b[31m';
+  const DIM      = '\x1b[2m';
+  const BOLD     = '\x1b[1m';
+  const RESET    = '\x1b[0m';
+  const SEP      = `${PINK}│${RESET}`;
+
+  // ── Core fields ──────────────────────────────────────────────────
+  const sessionId   = data.session_id || 'default';
+  const sessionName = data.session_name || '';
+  const model       = data.model?.display_name || '';
+  const currentDir  = data.workspace?.current_dir || data.cwd || '';
+  const projectDir  = data.workspace?.project_dir || '';
+  // Use data.workspace.added_dirs directly (provided by Claude Code)
+  const addedDirs   = (data.workspace?.added_dirs || []).map(d =>
+    path.basename(d.replace(/\\/g, '/').replace(/\/$/, ''))
+  );
+
+  // ── Context window ───────────────────────────────────────────────
+  const pct         = Math.floor(data.context_window?.used_percentage || 0);
+  const exceeds200k = data.exceeds_200k_tokens || false;
+  // Use current_usage for accurate per-call counts; fall back to cumulative totals
+  const curUsage    = data.context_window?.current_usage;
+  const inputTok    = curUsage
+    ? (curUsage.input_tokens || 0) + (curUsage.cache_creation_input_tokens || 0) + (curUsage.cache_read_input_tokens || 0)
+    : (data.context_window?.total_input_tokens || 0);
+  const outputTok   = curUsage
+    ? (curUsage.output_tokens || 0)
+    : (data.context_window?.total_output_tokens || 0);
+  const cacheHits   = curUsage?.cache_read_input_tokens || 0;
+
+  // ── Cost / timing ────────────────────────────────────────────────
+  const cost       = data.cost?.total_cost_usd || 0;
+  const durationMs = data.cost?.total_duration_ms || 0;
+  const apiMs      = data.cost?.total_api_duration_ms || 0;
+
+  // ── Rate limits (Pro/Max only — absent for other plans) ──────────
+  const rl5h = data.rate_limits?.five_hour?.used_percentage;
+  const rl7d = data.rate_limits?.seven_day?.used_percentage;
+
+  // ── Reasoning ────────────────────────────────────────────────────
+  const effort   = data.effort?.level || '';
+  const thinking = data.thinking?.enabled || false;
+
+  // ── Agent ────────────────────────────────────────────────────────
+  const agentName = data.agent?.name || '';
+
+  // ── Worktree ──────────────────────────────────────────────────────
+  const worktree = data.worktree || null;
+
+  const live = getLiveState(currentDir);
+  const git  = getCachedGit(currentDir, sessionId);
+
+  // ── Line 1: WHAT ─────────────────────────────────────────────────
+  const goalStr = live.goal ? `${BOLD}🎯 ${truncate(live.goal, 68)}${RESET}` : '';
+  let timerStr = '';
+  if (live.activeTimer?.title) {
+    const elapsed = live.activeTimer.elapsedMinutes;
+    const elapsedStr = elapsed > 0 ? ` ${DIM}(${elapsed}m)${RESET}` : '';
+    timerStr = `${YELLOW}⏱${RESET} ${truncate(live.activeTimer.title, 40)}${elapsedStr}`;
+  }
+  let beadsStr = '';
+  const activeIssue = getActiveBeadsIssue(currentDir);
+  if (activeIssue?.id) {
+    const label = activeIssue.mtnTitle || activeIssue.title || activeIssue.id;
+    beadsStr = `${CYAN}📋 ${DIM}${activeIssue.id}${RESET} ${CYAN}${truncate(label, 40)}${RESET}`;
+  } else if (live.beads?.openCount != null) {
+    beadsStr = `${CYAN}📋 ${live.beads.openCount} open${RESET}`;
+  }
+  const nameStr = sessionName ? `${DIM}[${sessionName}]${RESET}` : '';
+
+  const line1Parts = [goalStr, timerStr, beadsStr, nameStr].filter(Boolean);
+  const line1 = line1Parts.join(`  ${SEP}  `);
+
+  // ── Line 2: WHERE ────────────────────────────────────────────────
+  // Model + reasoning indicators (effort + thinking)
+  let modelStr = `${HOT_PINK}[${model}]${RESET}`;
+  if (effort || thinking) {
+    const icon = thinking ? '🧠' : '💭';
+    const effortColor = (effort === 'max' || effort === 'xhigh') ? RED : effort === 'high' ? YELLOW : DIM;
+    const color = thinking && !effort ? CYAN : effortColor;
+    modelStr += ` ${color}${icon}${effort ? ' ' + effort : ''}${RESET}`;
+  }
+
+  // Directory: show root → subdir if cd'd into a subdirectory
+  const baseDir = path.basename(currentDir);
+  const rootDir = projectDir ? path.basename(projectDir) : baseDir;
+  let dirDisplay = projectDir && currentDir !== projectDir
+    ? `📁 ${rootDir} ${DIM}→${RESET} ${baseDir}`
+    : `📁 ${baseDir}`;
+  if (addedDirs.length) {
+    dirDisplay += ' ' + addedDirs.map(d => `${DIM}+${d}${RESET}`).join(' ');
+  }
+
+  // Worktree branch takes precedence over cached git branch
+  const branch = worktree?.branch || git.branch;
+  const worktreePart = worktree?.name ? `${DIM}[wt:${worktree.name}]${RESET}` : '';
+  const gitPart = branch ? `🌿 ${branch}${worktreePart ? ' ' + worktreePart : ''}` : '';
+
+  const repoPart  = git.remoteUrl ? `${CYAN}🔗 ${osc8(git.remoteUrl, git.repoName)}${RESET}` : '';
+  const agentPart = agentName ? `${CYAN}🤖 ${agentName}${RESET}` : '';
+
+  const line2Parts = [
+    modelStr,
+    `${PINK}${dirDisplay}${RESET}`,
+    gitPart ? `${PINK}${gitPart}${RESET}` : '',
+    repoPart,
+    agentPart,
+  ].filter(Boolean);
+  const line2 = line2Parts.join(` ${SEP} `);
+
+  // ── Line 3: METRICS ──────────────────────────────────────────────
+  const filled = Math.floor(pct / 10);
+  let barColor = GREEN;
+  if (pct >= 90 || exceeds200k) barColor = RED;
+  else if (pct >= 70) barColor = YELLOW;
+  const bar    = barColor + '▓'.repeat(filled) + DIM + '░'.repeat(10 - filled) + RESET;
+  const pctStr = exceeds200k ? `${RED}${pct}%!${RESET}` : `${pct}%`;
+
+  // Token display with optional cache-hit indicator
+  const cacheStr = cacheHits > 0 ? ` ${DIM}💾${formatK(cacheHits)}${RESET}` : '';
+  const tokStr   = `${PINK}🔤 ${formatK(inputTok)}↓ ${formatK(outputTok)}↑${cacheStr}${RESET}`;
+
+  // Rate limits — only shown when available (Pro/Max after first API response)
+  let rateLimitStr = '';
+  if (rl5h != null || rl7d != null) {
+    const parts = [];
+    if (rl5h != null) {
+      const c = rl5h >= 90 ? RED : rl5h >= 70 ? YELLOW : DIM;
+      parts.push(`${c}5h:${Math.round(rl5h)}%${RESET}`);
+    }
+    if (rl7d != null) {
+      const c = rl7d >= 90 ? RED : rl7d >= 70 ? YELLOW : DIM;
+      parts.push(`${c}7d:${Math.round(rl7d)}%${RESET}`);
+    }
+    rateLimitStr = parts.join(' ');
+  }
+
+  const line3Parts = [
+    `${bar} ${pctStr}`,
+    `${PINK}💰 $${cost.toFixed(2)}${RESET}`,
+    `${PINK}⏱️ ${formatDuration(durationMs)}${RESET} ${DIM}(${formatDuration(apiMs)} API)${RESET}`,
+  ].filter(Boolean);
+  const line3 = line3Parts.join(` ${SEP} `);
+
+  const line4Parts = [
+    tokStr,
+    rateLimitStr,
+  ].filter(Boolean);
+  const line4 = line4Parts.join(` ${SEP} `);
+
+  const lines = [line1, line2, line3, line4].filter(Boolean);
+  console.log(lines.join('\n'));
+});

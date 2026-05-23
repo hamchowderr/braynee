@@ -274,8 +274,12 @@ def detect_claude_config() -> dict:
         result["settings_error"] = True
         return result
 
-    result["has_statusline"] = bool(settings.get("statusline"))
-    result["statusline_path"] = settings.get("statusline")
+    # Claude Code's key is `statusLine` (camelCase), an object {type, command}.
+    statusline = settings.get("statusLine")
+    result["has_statusline"] = bool(statusline)
+    result["statusline_path"] = (
+        statusline.get("command") if isinstance(statusline, dict) else statusline
+    )
 
     all_cmds: list[str] = []
     for event, entries in settings.get("hooks", {}).items():

@@ -382,7 +382,6 @@ def main():
         f"---\ntype: connections\n---\n\n# Connections — Tier-1 Domains\n\n"
         f"The 7 systems that must stay live for the second brain to function.\n\n"
         f"| Domain | Tool | Status | Notes |\n|---|---|---|---|\n"
-        f"| Revenue | TaskNotes API (http://127.0.0.1:8090) | | |\n"
         f"| Customer | 2. Areas/Business/Clients/ | | |\n"
         f"| Comms | obsidian CLI | | |\n"
         f"| Tasks | Beads (bd) | | |\n"

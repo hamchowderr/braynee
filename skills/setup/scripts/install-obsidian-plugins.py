@@ -44,22 +44,6 @@ PLUGINS = {
             "inlineQueriesInCodeblocks": True,
         },
     },
-    "obsidian-tasks-plugin": {
-        "repo": "obsidian-tasks-group/obsidian-tasks",
-        "files": ["main.js", "manifest.json", "styles.css"],
-        "data": {
-            "globalFilter": "",
-            "globalQuery": "",
-            "removeGlobalFilter": False,
-            "setDoneDate": True,
-            "autoSuggestInEditor": True,
-            "autoSuggestMinMatch": 0,
-            "autoSuggestMaxItems": 6,
-            "provideAccessKeys": True,
-            "useFilenameAsScheduledDate": False,
-            "recurrenceOnNextLine": False,
-        },
-    },
     "templater-obsidian": {
         "repo": "SilentVoid13/Templater",
         "files": ["main.js", "manifest.json", "styles.css"],
@@ -125,6 +109,25 @@ PLUGINS = {
             "parseTODO": False,
             "todo": "- [ ]",
             "done": "- [x]",
+        },
+    },
+    # TaskNotes is the vault-side surface for beads. braynee's
+    # beads-status-sync.js writes task files into `tasksFolder` via the
+    # mtn CLI; without this plugin the synced data has no renderer.
+    "tasknotes": {
+        "repo": "callumalpass/tasknotes",
+        "files": ["main.js", "manifest.json", "styles.css"],
+        "data": {
+            "tasksFolder": "2. Areas/TaskNotes/Tasks",
+            "archiveFolder": "2. Areas/TaskNotes/Archive",
+            "moveArchivedTasks": False,
+            "taskTag": "task",
+            "taskIdentificationMethod": "tag",
+            "defaultTaskPriority": "normal",
+            "defaultTaskStatus": "open",
+            "taskFilenameFormat": "zettel",
+            "storeTitleInFilename": True,
+            "customFilenameTemplate": "{title}",
         },
     },
 }

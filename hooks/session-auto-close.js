@@ -26,7 +26,8 @@ const { findTranscriptDir } = require(path.join(__dirname, 'lib', 'transcript-di
 
 const HOOK = 'session-auto-close';
 
-const VAULT_DIR = path.join(os.homedir(), 'Obsidian Vault');
+const { getVaultRoot } = require(path.join(__dirname, '..', 'scripts', 'lib', 'vault-root.js'));
+const VAULT_DIR = getVaultRoot();
 const SESSIONS_DIR = path.join(VAULT_DIR, '2. Areas', 'Sessions');
 
 function findProjectName(folderName) {
