@@ -153,6 +153,15 @@
             "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/beads-nudge.js"]
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/context-budget-warn.js"]
+          }
+        ]
       }
     ],
     "Stop": [
