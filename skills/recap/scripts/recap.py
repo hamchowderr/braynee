@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Recall — load context from previous Claude Code sessions.
+Recap — load context from previous Claude Code sessions.
 Temporal mode: scans JSONL session files by date.
 Graph mode: generates interactive HTML visualization.
 """
@@ -217,7 +217,7 @@ def cmd_graph(args):
     files = find_session_files(start, end)
     sessions = [parse_session(f) for f in files]
 
-    out = Path(getattr(args, "out", "~/Downloads/recall-graph.html")).expanduser()
+    out = Path(getattr(args, "out", "~/Downloads/recap-graph.html")).expanduser()
 
     nodes = []
     edges = []
@@ -232,7 +232,7 @@ def cmd_graph(args):
         })
 
     html = f"""<!DOCTYPE html>
-<html><head><title>Recall Graph — {start} to {end}</title>
+<html><head><title>Recap Graph — {start} to {end}</title>
 <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
 <style>body{{margin:0}}#graph{{width:100vw;height:100vh}}</style>
 </head><body>
@@ -252,7 +252,7 @@ new vis.Network(document.getElementById('graph'), {{nodes, edges}}, {{
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Recall session context")
+    parser = argparse.ArgumentParser(description="Recap session context")
     sub = parser.add_subparsers(dest="cmd")
 
     p_list = sub.add_parser("list")
@@ -265,7 +265,7 @@ def main():
 
     p_graph = sub.add_parser("graph")
     p_graph.add_argument("date_expr", nargs="+")
-    p_graph.add_argument("--out", default="~/Downloads/recall-graph.html")
+    p_graph.add_argument("--out", default="~/Downloads/recap-graph.html")
     p_graph.add_argument("--min-files", type=int, default=0)
 
     args = parser.parse_args()

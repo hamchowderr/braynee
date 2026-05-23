@@ -112,7 +112,7 @@ Zettelkasten/                       → atomic permanent notes
 |-------|---------|-------------|
 | `setup` | `/setup` | Onboarding wizard — runs the full install or audits an existing vault and shows only what's missing |
 | `daily` | `/daily` | Open today's note, log what you're working on, and run an EOD summary |
-| `recall` | `/recall` | Load context from previous sessions — temporal, topic (QMD BM25 + semantic), and graph modes |
+| `recap` | `/recap` | Load context from previous sessions — temporal, topic (QMD BM25 + semantic), and graph modes |
 | `query` | `/query` | Search the vault — keyword (BM25), semantic, and deep research modes |
 | `sessions` | `/sessions` | Export Claude Code sessions to Obsidian markdown, list, and annotate |
 | `session-backfill` | `/session-backfill` | Backfill structured summaries for historical sessions via `claude -p` |

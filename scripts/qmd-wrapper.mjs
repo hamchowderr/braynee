@@ -40,6 +40,7 @@ if (!qmdJs) {
 const res = spawnSync(process.execPath, [qmdJs, ...process.argv.slice(2)], {
   stdio: 'inherit',
   timeout: 60_000,
+  windowsHide: true, // no console-window flash when invoked from hooks
 });
 
 process.exit(res.status ?? 1);

@@ -121,7 +121,7 @@ def cmd_setup(args, vault: Path):
         warn("settings.json not found")
 
     plugin_root = Path(__file__).parent.parent.parent
-    for skill in ["setup", "daily", "tasks", "recall",
+    for skill in ["setup", "daily", "tasks", "recap",
                   "sessions", "clients", "query", "health", "zettelkasten", "settings-viewer"]:
         skill_md = plugin_root / skill / "SKILL.md"
         if skill_md.exists():

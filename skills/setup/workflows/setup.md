@@ -440,6 +440,6 @@ Setup complete.
 → Restart Obsidian once to activate plugins.
 → Run /daily to open today's note.
 → Run /tasks to manage your tasks.
-→ Run /recall yesterday to load prior session context.
+→ Run /recap yesterday to load prior session context.
 → Run /health to verify all connections are live.
 ```

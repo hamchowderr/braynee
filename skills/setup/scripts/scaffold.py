@@ -204,7 +204,7 @@ def claude_md(name: str, company: str, projects: list[dict],
         - Tasks: `/tasks`
         - Search: `/query` or `qmd search "query"` (qmd is in PATH via braynee plugin)
         - Sessions: `/sessions`
-        - Recall: `/recall yesterday`
+        - Recap: `/recap yesterday`
         - Zettelkasten: `/zettelkasten`
 
         ## Vault Structure

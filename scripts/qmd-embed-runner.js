@@ -39,6 +39,7 @@ function main() {
     const res = spawnSync(process.execPath, [qmdJs, 'embed'], {
       stdio: 'ignore',
       timeout: 15 * 60 * 1000, // 15 min ceiling for a large backlog
+      windowsHide: true, // no console-window flash on Windows
     });
 
     // Stamp only on a clean run so a failed/killed embed retries next cycle
