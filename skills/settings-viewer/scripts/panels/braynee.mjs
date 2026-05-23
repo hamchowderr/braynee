@@ -64,7 +64,7 @@ export function renderBrayneePanel(d) {
             ['/daily',        'Open or create today\'s daily note'],
             ['/tasks',        'Task management via TaskNotes'],
             ['/clients',      'Client CRM — context, logs, call prep'],
-            ['/recall',       'Search past sessions via QMD'],
+            ['/recap',        'Search past sessions via QMD'],
             ['/sessions',     'Export current session to Obsidian'],
             ['/query',        'Vault search (BM25 + semantic)'],
             ['/health',       'Four Cs system audit'],

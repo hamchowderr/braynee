@@ -1,6 +1,6 @@
-# Recall Workflow
+# Recap Workflow
 
-Routing logic and output format for `/recall`.
+Routing logic and output format for `/recap`.
 
 ---
 
@@ -25,7 +25,7 @@ Scan JSONL session files by date range.
 **Step 1 — List sessions**
 
 ```bash
-python3 {baseDir}/scripts/recall.py list "EXPR"
+python3 {baseDir}/scripts/recap.py list "EXPR"
 ```
 
 Supported expressions: `yesterday`, `today`, `last week`, `this week`, `last 3 days`,
@@ -39,7 +39,7 @@ and the first user message. Use this to decide which sessions are worth expandin
 **Step 3 — Expand sessions that matter**
 
 ```bash
-python3 {baseDir}/scripts/recall.py expand SESSION_ID
+python3 {baseDir}/scripts/recap.py expand SESSION_ID
 ```
 
 Expand 1–3 sessions. Prefer: highest message count, most recent, or sessions in the
@@ -97,10 +97,10 @@ Read top 3–5 results from each search. Report what was found:
 Generate an interactive HTML session map.
 
 ```bash
-python3 {baseDir}/scripts/recall.py graph "EXPR" --out ~/Downloads/recall-graph.html
+python3 {baseDir}/scripts/recap.py graph "EXPR" --out ~/Downloads/recap-graph.html
 ```
 
-Tell the user: "Graph saved to `~/Downloads/recall-graph.html` — open it in a browser."
+Tell the user: "Graph saved to `~/Downloads/recap-graph.html` — open it in a browser."
 
 Node size = message count. Color groups = date. Use when the user wants a visual
 overview of activity over a period.
@@ -109,7 +109,7 @@ overview of activity over a period.
 
 ## One Thing
 
-Every recall ends with One Thing — the single highest-leverage next action.
+Every recap ends with One Thing — the single highest-leverage next action.
 
 ```
 One Thing → [concrete, specific, one sentence]
@@ -127,13 +127,13 @@ Examples of bad One Things:
 Examples of good One Things:
 - "Run the Docker test suite to confirm scaffold --check passes before writing migration scripts" ✓
 - "Merge the feature/supabase-migration branch — both phases are complete and tested" ✓
-- "Write the `recall.md` workflow doc — recall SKILL.md references it and it's the last missing piece" ✓
+- "Write the `recap.md` workflow doc — recap SKILL.md references it and it's the last missing piece" ✓
 
 ---
 
 ## No Sessions Found
 
-If `recall.py list` returns nothing for the date range:
+If `recap.py list` returns nothing for the date range:
 
 1. Widen the range — try `last week` if `yesterday` was empty
 2. Try topic mode on the same subject
