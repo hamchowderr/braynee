@@ -27,7 +27,7 @@ export async function loadVaultStats() {
       `  writeFileSync('${tempPath}', JSON.stringify({inboxCount: inbox, sessionCount: sessions}));`,
       `})()`,
     ].join(' ').replace(/'/g, "\\'");
-    execSync(`obsidian eval code="${jsCode}"`, { shell: true, timeout: 10000 });
+    execSync(`obsidian eval code="${jsCode}"`, { timeout: 10000, windowsHide: true });
     const data = JSON.parse(readFileSync(tempPath, 'utf8'));
     return { inboxCount: data.inboxCount || 0, sessionCount: data.sessionCount || 0, vaultPath: vaultRoot };
   } catch {
