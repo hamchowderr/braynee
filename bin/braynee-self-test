@@ -22,6 +22,7 @@
 'use strict';
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 
@@ -36,6 +37,7 @@ const results = {
   configs: { ok: 0, fail: 0, errors: [] },
   frontmatter: { ok: 0, fail: 0, errors: [] },
   hooks: { ok: 0, fail: 0, errors: [] },
+  gating: { ok: 0, fail: 0, errors: [] },
   monitors: { ok: 0, fail: 0, errors: [] },
   scripts: { ok: 0, fail: 0, errors: [] },
   unit: { ok: 0, fail: 0, errors: [] },
@@ -262,6 +264,71 @@ for (const tf of testFiles) {
     log(`  FAIL: ${name} (exit ${r.status}) — ${err}`);
   }
 }
+
+// ── 8. Gated-hook output assertions (cp-068 / cp-cpp) ────────────────────────
+// The Claude Code hook `if` field proved version-unreliable (CC 2.1.143 never
+// fires an if-gated hook; older CC ignores `if` and fires it on every Bash). So
+// every beads/mtn Bash hook now registers WITHOUT `if` and MUST self-gate in JS.
+// Step 4 only proves "doesn't crash"; these assertions prove the gate actually
+// works — emit on a matching command, stay SILENT on a non-matching one. A
+// regression here is exactly the bug class that silently broke the task mirror.
+log('\n=== 8. Gated-hook output assertions ===');
+
+// Temp cwd containing a .beads marker so the `.beads` existsSync gate passes
+// without touching any real repo.
+const gateCwd = fs.mkdtempSync(path.join(os.tmpdir(), 'braynee-gate-'));
+fs.mkdirSync(path.join(gateCwd, '.beads'), { recursive: true });
+
+function runHook(hookRel, command, toolResponse) {
+  const payload = {
+    session_id: 'self-test', cwd: gateCwd, source: 'self-test',
+    tool_name: 'Bash', tool_input: { command },
+  };
+  if (toolResponse) payload.tool_response = toolResponse;
+  const r = spawnSync(process.execPath, [path.join(PLUGIN_ROOT, 'hooks', hookRel)], {
+    input: JSON.stringify(payload), encoding: 'utf8', timeout: 15_000,
+  });
+  return { out: (r.stdout || ''), status: r.status };
+}
+
+function assertGate(label, cond) {
+  if (cond) { results.gating.ok++; log(`  OK: ${label}`); }
+  else { results.gating.fail++; results.gating.errors.push({ test: label }); log(`  FAIL: ${label}`); }
+}
+
+// beads-todo-reminder.js — the mirror-critical, side-effect-free hook. Must emit
+// hookSpecificOutput.additionalContext for each bd state-change, silence otherwise.
+{
+  const create = runHook('beads-todo-reminder.js', 'bd create --title="Gate test"',
+    { stdout: '✓ Created issue: tt-1 — Gate test\n' });
+  assertGate('beads-todo-reminder emits on `bd create` (additionalContext + id)',
+    create.out.includes('additionalContext') && create.out.includes('tt-1'));
+
+  const claim = runHook('beads-todo-reminder.js', 'bd update tt-1 --claim');
+  assertGate('beads-todo-reminder emits on `bd update --claim` (in_progress)',
+    claim.out.includes('additionalContext') && /in_progress/.test(claim.out));
+
+  const close = runHook('beads-todo-reminder.js', 'bd close tt-1');
+  assertGate('beads-todo-reminder emits on `bd close` (closed)',
+    close.out.includes('additionalContext') && /closed/.test(close.out));
+
+  const noise = runHook('beads-todo-reminder.js', 'echo hello world');
+  assertGate('beads-todo-reminder stays SILENT on a non-bd command',
+    noise.out.trim() === '' && (noise.status === 0 || noise.status === 2));
+}
+
+// The remaining gated Bash hooks side-effect on a match (timers, branches,
+// session notes), so only assert the property we now depend on: a non-matching
+// command produces no stdout and a clean exit (the self-gate fires first).
+for (const h of ['commit-cadence-nudge.js', 'beads-claim-to-branch.js',
+                 'beads-status-sync.js', 'beads-dashboard-refresh.js', 'mtn-to-beads-sync.js']) {
+  const noise = runHook(h, 'echo hello world');
+  assertGate(`${h} stays SILENT + exit 0 on a non-matching command`,
+    noise.out.trim() === '' && (noise.status === 0 || noise.status === 2));
+}
+
+try { fs.rmSync(gateCwd, { recursive: true, force: true }); } catch {}
+log(`  ${results.gating.ok} passed | ${results.gating.fail} failed`);
 
 // ── Summary ──────────────────────────────────────────────────────────────────
 const totalOk = Object.values(results).reduce((s, r) => s + r.ok, 0);
