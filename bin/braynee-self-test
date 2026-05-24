@@ -172,12 +172,21 @@ log(`  ${results.frontmatter.ok} OK | ${results.frontmatter.fail} failed`);
 
 // ── 4. Run each hook with mock stdin (verify no crashes) ─────────────────────
 log('\n=== 4. Run each hook with mock stdin ===');
+// cp-ww6: run against an ISOLATED temp cwd, not PLUGIN_ROOT. With PLUGIN_ROOT,
+// session-export-qmd.js resolved this repo's real ~/.claude/projects session
+// and did production work on every run — wrote a transcript into the vault and
+// ran a synchronous `qmd update -c vault` that occasionally blew the 15s timeout
+// (flaky fail) and polluted the vault during a smoke test. A throwaway cwd has
+// no projects JSONL (export skips) while a `.beads` marker still lets the
+// beads-aware hooks exercise their context-detection path.
+const smokeCwd = fs.mkdtempSync(path.join(os.tmpdir(), 'braynee-smoke-'));
+fs.mkdirSync(path.join(smokeCwd, '.beads'), { recursive: true });
 const mockInput = JSON.stringify({
   session_id: 'self-test',
-  cwd: PLUGIN_ROOT,
+  cwd: smokeCwd,
   source: 'self-test',
   tool_name: 'Write',
-  tool_input: { file_path: '/tmp/self-test', command: 'echo test' },
+  tool_input: { file_path: path.join(smokeCwd, 'self-test'), command: 'echo test' },
 });
 for (const hookFile of listFiles(path.join(PLUGIN_ROOT, 'hooks'), ['.js'])) {
   const name = path.basename(hookFile);
@@ -196,6 +205,7 @@ for (const hookFile of listFiles(path.join(PLUGIN_ROOT, 'hooks'), ['.js'])) {
     log(`  CRASH: ${name} (exit ${r.status}) — ${err}`);
   }
 }
+try { fs.rmSync(smokeCwd, { recursive: true, force: true }); } catch {}
 log(`  ${results.hooks.ok} ran cleanly | ${results.hooks.fail} crashed`);
 
 // ── 5. Boot-test each monitor (verify it can start) ──────────────────────────
