@@ -2,11 +2,13 @@
 // Hook: PostToolUse — Reminds Claude to update the session note
 // Matcher: "Write|Edit|Bash" (only after real work, not reads/greps)
 //
-// v3 changes:
-// - Lower thresholds: every 5 tool uses OR 8 minutes
-// - Output wrapped in <system-reminder> tags for reliable Claude attention
-// - Goal auto-extraction: nudges Claude to fill placeholder goals
-// - Recursive session lookup: searches project subfolders
+// Thresholds: nudge every 5 tool uses OR 8 minutes. Nudges Claude to fill a
+// placeholder Goal and to refresh a stale note. Recursive session lookup
+// searches project subfolders.
+//
+// Output goes through hookSpecificOutput.additionalContext (see emit() below) —
+// NOT raw <system-reminder> stdout, which a PostToolUse hook can't surface to
+// the model and which trips prompt-injection defenses (cp-30b / HD-4.1).
 
 const fs = require('fs');
 const path = require('path');
@@ -15,6 +17,19 @@ const log = require(path.join(__dirname, 'lib', 'hook-logger.js'));
 const { findCodeRoot, sessionDir } = require(path.join(__dirname, 'lib', 'is-code-context.js'));
 
 const HOOK = 'session-note-nudge';
+
+// cp-30b / HD-4.1: a PostToolUse hook's plain stdout is NOT added to Claude's
+// context — only UserPromptSubmit/SessionStart stdout is. The documented
+// channel is hookSpecificOutput.additionalContext. The text must also be a
+// FACTUAL statement, not an imperative "DO THIS NOW" wrapped in a fake
+// <system-reminder> tag: out-of-band command phrasing trips Claude's
+// prompt-injection defenses and gets shown to the user instead of acted on.
+// Mirrors beads-todo-reminder.js. Multiple emits in one run are concatenated.
+function emit(text) {
+  process.stdout.write(JSON.stringify({
+    hookSpecificOutput: { hookEventName: 'PostToolUse', additionalContext: text },
+  }));
+}
 
 const { getVaultRoot } = require(path.join(__dirname, '..', 'scripts', 'lib', 'vault-root.js'));
 const VAULT_DIR = getVaultRoot();
@@ -122,7 +137,10 @@ function saveState(state) {
   } catch {}
 }
 
-function checkGoalPlaceholder(session) {
+// Returns a factual reminder string if the session's Goal is still a
+// placeholder, else null. The caller batches this with other reminders into a
+// single additionalContext emit.
+function goalPlaceholderNote(session) {
   try {
     const content = fs.readFileSync(session.filepath, 'utf8');
     const goalMatch = content.match(/## Goal\s*\n([\s\S]*?)(?=\n## )/);
@@ -130,21 +148,17 @@ function checkGoalPlaceholder(session) {
     const isPlaceholder = !goalText || goalText.includes('Waiting for user') || goalText === '(none yet)' || goalText === 'New session';
 
     if (isPlaceholder) {
-      process.stdout.write(
-        `<system-reminder>\n` +
-        `SESSION GOAL MISSING — Extract from conversation context\n` +
-        `The session note "${session.filename}" still has a placeholder Goal.\n` +
-        `Review what the user has asked you to do in this session and write a clear, ` +
-        `specific goal in the ## Goal section of:\n` +
-        `  ${session.filepath}\n` +
-        `Example: "Implement user authentication with Supabase RLS policies"\n` +
-        `NOT: "Working on project" or "Code session"\n` +
-        `</system-reminder>\n`
+      return (
+        `The session note "${session.filename}" (${session.filepath}) still has a placeholder ## Goal. ` +
+        `A specific goal extracted from what the user has asked this session — e.g. ` +
+        `"Implement user authentication with Supabase RLS policies", not "Working on project" — ` +
+        `would let the goal survive compaction and restarts.`
       );
     }
   } catch {
     // Don't block on goal check errors
   }
+  return null;
 }
 
 let input = '';
@@ -184,6 +198,7 @@ process.stdin.on('end', () => {
 
     // Find session for both nudge and goal checks
     const session = findActiveSessionNote(projectName);
+    const notes = [];
 
     if (shouldNudge) {
       // Reset counter
@@ -197,18 +212,11 @@ process.stdin.on('end', () => {
 
         if (noteAge > NOTE_STALE_MS) {
           const minutesStale = Math.round(noteAge / 60000);
-          process.stdout.write(
-            `<system-reminder>\n` +
-            `ACTION REQUIRED — UPDATE SESSION NOTE NOW\n` +
-            `Session note "${session.filename}" has not been updated in ${minutesStale} minutes.\n` +
-            `Before continuing, write to the session file at:\n` +
-            `  ${session.filepath}\n` +
-            `Update these sections with current state:\n` +
-            `  ## Decisions — any design/architecture choices made since last update\n` +
-            `  ## Progress — mark completed items, add new ones\n` +
-            `  ## Blockers — anything stuck or changed\n` +
-            `Do this NOW before your next task. This is how context survives compaction and session restarts.\n` +
-            `</system-reminder>\n`
+          notes.push(
+            `The active session note "${session.filename}" (${session.filepath}) has not been updated in ` +
+            `${minutesStale} minutes. Updating ## Decisions (design/architecture choices), ## Progress ` +
+            `(completed + new items), and ## Blockers with the current state keeps context recoverable ` +
+            `across compaction and session restarts.`
           );
         }
       }
@@ -216,10 +224,15 @@ process.stdin.on('end', () => {
       saveState(state);
     }
 
-    // Goal check fires independently of staleness nudge
+    // Goal check fires independently of staleness nudge.
     if (session) {
-      checkGoalPlaceholder(session);
+      const goalNote = goalPlaceholderNote(session);
+      if (goalNote) notes.push(goalNote);
     }
+
+    // Single additionalContext emit (concatenating multiple JSON objects on
+    // stdout would be malformed).
+    if (notes.length) emit(notes.join(' '));
 
     process.exit(0);
   } catch (e) {
