@@ -63,8 +63,15 @@ function persistContextWindow(sessionId, size, usedPct, exceeds200k) {
   try {
     const dir = path.join(os.homedir(), '.cache', 'braynee');
     fs.mkdirSync(dir, { recursive: true });
-    const file = path.join(dir, `context-window-${String(sessionId).slice(0, 12)}.json`);
-    fs.writeFileSync(file, JSON.stringify({ size, usedPct, exceeds200k, ts: Date.now() }));
+    const payload = JSON.stringify({ size, usedPct, exceeds200k, ts: Date.now() });
+    fs.writeFileSync(path.join(dir, `context-window-${String(sessionId).slice(0, 12)}.json`), payload);
+    // cp-03z: also persist a machine-level "latest known window" snapshot. The
+    // per-session file is missing right after a (re)started session_id, and the
+    // warn hook fires on UserPromptSubmit before the statusline re-renders for
+    // the new id — so it needs a session-independent fallback. Window SIZE is a
+    // stable property of the model/plan, so the most-recent value is a safe
+    // default until this session's own file appears.
+    fs.writeFileSync(path.join(dir, 'context-window-latest.json'), payload);
   } catch { /* non-fatal — statusline must never throw */ }
 }
 
