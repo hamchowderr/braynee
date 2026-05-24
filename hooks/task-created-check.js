@@ -7,6 +7,16 @@
 const path = require('path');
 const { findCodeRoot, findBeadsRoot, sessionDir } = require(path.join(__dirname, 'lib', 'is-code-context.js'));
 
+// cp-068/HD-4.1: non-UserPromptSubmit stdout doesn't reach Claude unless sent
+// via hookSpecificOutput.additionalContext as a FACTUAL statement. Used on the
+// ALLOW path only — the BLOCK path stays stderr + exit 2 (enforcement). See
+// beads-todo-reminder.js for the same pattern.
+function emit(text) {
+  process.stdout.write(JSON.stringify({
+    hookSpecificOutput: { hookEventName: 'TaskCreated', additionalContext: text },
+  }));
+}
+
 let input = '';
 process.stdin.setEncoding('utf8');
 process.stdin.on('data', chunk => { input += chunk; });
@@ -47,6 +57,17 @@ process.stdin.on('end', () => {
       process.exit(2);
     }
 
+    // Allow path: beads is initialized. Surface a factual reminder so the
+    // CC-task <-> beads mirror stays consistent. Not an auto-create — without a
+    // stable id map that would duplicate the issue when the task was already
+    // mirrored from a `bd create` (the normal flow). beads stays source of truth.
+    const subject = (data.task_subject || data.task_name || '').replace(/"/g, '\\"').slice(0, 140);
+    emit(
+      `A Claude Code task "${subject}" was created. ` +
+      `beads is the source of truth: it is out of sync unless a beads issue tracks this work. ` +
+      `If this task was mirrored from an existing \`bd create\`, no action is needed; ` +
+      `otherwise create the matching beads issue (\`bd create ...\`).`
+    );
     process.exit(0);
   } catch {
     // Don't block on errors

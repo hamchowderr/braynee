@@ -32,16 +32,33 @@ function thresholdPct() {
   return Number.isFinite(n) && n > 0 && n < 100 ? n : DEFAULT_THRESHOLD_PCT;
 }
 
-// Model context window in tokens. The transcript's message.model often omits
-// the "[1m]" suffix even on the 1M-context beta, so we instead look for the
-// `context-1m` beta marker in the transcript. Bulletproof fallback: if the
-// loaded context already exceeds the 200k base window, it must be a 1M window.
-// Override with BRAYNEE_CONTEXT_WINDOW_TOKENS for unrecognized models.
-function windowTokens(model, has1m, loaded) {
+// Model context window in tokens, in priority order:
+//   1. BRAYNEE_CONTEXT_WINDOW_TOKENS env override (explicit escape hatch).
+//   2. The authoritative size Claude Code hands the statusline, persisted to
+//      ~/.cache/braynee/context-window-<sid>.json (see statusline.js / cp-e0i).
+//      This is the ONLY reliable 1M-window signal: the transcript records the
+//      model as e.g. "claude-opus-4-7" with no "[1m]" suffix and omits the
+//      `context-1m` beta marker, so the heuristic below silently defaults to
+//      200k and warns at ~12% of a real 1M window.
+//   3. Transcript heuristic (has1m marker / loaded>200k / "[1m]" in model).
+function windowTokens(model, has1m, loaded, persistedSize) {
   const env = Number(process.env.BRAYNEE_CONTEXT_WINDOW_TOKENS);
   if (Number.isFinite(env) && env > 0) return env;
+  if (Number.isFinite(persistedSize) && persistedSize > 0) return persistedSize;
   if (has1m || (loaded || 0) > 200_000 || (model && /\[1m\]/i.test(model))) return 1_000_000;
   return 200_000;
+}
+
+// The window size + used% Claude Code last reported to the statusline for this
+// session. Fresh-only (statusline re-renders constantly); ignore if stale.
+function readPersistedContext(sessionId) {
+  try {
+    const file = path.join(controlDir(), `context-window-${String(sessionId || '').slice(0, 12)}.json`);
+    const o = JSON.parse(fs.readFileSync(file, 'utf8'));
+    if (!o || !(o.size > 0)) return null;
+    if (Date.now() - (o.ts || 0) > 600_000) return null; // >10 min = stale
+    return o;
+  } catch { return null; }
 }
 
 // Latest usage block + model from the transcript. "Loaded context" = the input
@@ -94,7 +111,8 @@ process.stdin.on('end', () => {
     const u = readUsage(transcriptPath);
     if (!u || !u.loaded) process.exit(0);
 
-    const win = windowTokens(u.model, u.has1m, u.loaded);
+    const persisted = readPersistedContext(data.session_id);
+    const win = windowTokens(u.model, u.has1m, u.loaded, persisted?.size);
     const pct = (u.loaded / win) * 100;
     const threshold = thresholdPct();
     if (pct < threshold) process.exit(0);

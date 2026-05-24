@@ -51,6 +51,23 @@ function getCachedGit(cwd, sessionId) {
   return result;
 }
 
+// ─── Context Window persistence (for the context-budget-warn hook) ───────────
+// The UserPromptSubmit hook can't reliably detect the context window size from
+// the transcript (the model is recorded as e.g. "claude-opus-4-7" with no
+// "[1m]" suffix, and the "context-1m" beta marker is absent), so it would
+// default to a 200k window and warn far too early on 1M-window models. Claude
+// Code gives the statusline the authoritative size + used%, so we persist them
+// here (keyed by session) for the hook to consume. See cp-e0i / cp-sat.
+function persistContextWindow(sessionId, size, usedPct, exceeds200k) {
+  if (!sessionId || !(size > 0)) return;
+  try {
+    const dir = path.join(os.homedir(), '.cache', 'braynee');
+    fs.mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, `context-window-${String(sessionId).slice(0, 12)}.json`);
+    fs.writeFileSync(file, JSON.stringify({ size, usedPct, exceeds200k, ts: Date.now() }));
+  } catch { /* non-fatal — statusline must never throw */ }
+}
+
 // ─── Live State (written by statusline-state.js async hook) ──────────────────
 function getLiveState(currentDir) {
   const STATE_FILE = path.join(process.env.USERPROFILE || os.homedir(), '.claude', 'statusline-live.json');
@@ -181,6 +198,9 @@ process.stdin.on('end', () => {
   const winSize = data.context_window?.context_window_size || 0;
   const winLabel = winSize >= 1_000_000 ? '1M'
     : winSize >= 1000 ? `${Math.round(winSize / 1000)}k` : '';
+
+  // Persist authoritative window size + used% for the context-budget-warn hook.
+  persistContextWindow(sessionId, winSize, pct, exceeds200k);
 
   const live = getLiveState(currentDir);
   const git  = getCachedGit(currentDir, sessionId);
