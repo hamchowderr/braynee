@@ -49,16 +49,28 @@ function windowTokens(model, has1m, loaded, persistedSize) {
   return 200_000;
 }
 
-// The window size + used% Claude Code last reported to the statusline for this
-// session. Fresh-only (statusline re-renders constantly); ignore if stale.
-function readPersistedContext(sessionId) {
-  try {
-    const file = path.join(controlDir(), `context-window-${String(sessionId || '').slice(0, 12)}.json`);
-    const o = JSON.parse(fs.readFileSync(file, 'utf8'));
-    if (!o || !(o.size > 0)) return null;
-    if (Date.now() - (o.ts || 0) > 600_000) return null; // >10 min = stale
-    return o;
-  } catch { return null; }
+// cp-03z: the authoritative window SIZE Claude Code reported to the statusline.
+// Read it WITHOUT a staleness gate: window size is a stable property of the
+// model/plan (unlike used%, which the old readPersistedContext correctly aged
+// out). Gating size on a 10-min freshness window was the bug — during a long
+// run the statusline doesn't re-render, so on the next prompt the warn hook
+// discarded a perfectly valid 1M size and fell back to the 200k heuristic,
+// reporting ~91% of a real 1M window. Prefer this session's file; fall back to
+// the machine-level "latest known" snapshot for freshly (re)started sessions
+// whose own file doesn't exist yet.
+function persistedWindowSize(sessionId) {
+  const dir = controlDir();
+  const candidates = [
+    path.join(dir, `context-window-${String(sessionId || '').slice(0, 12)}.json`),
+    path.join(dir, 'context-window-latest.json'),
+  ];
+  for (const file of candidates) {
+    try {
+      const o = JSON.parse(fs.readFileSync(file, 'utf8'));
+      if (o && o.size > 0) return o.size;
+    } catch { /* try next */ }
+  }
+  return null;
 }
 
 // Latest usage block + model from the transcript. "Loaded context" = the input
@@ -111,8 +123,8 @@ process.stdin.on('end', () => {
     const u = readUsage(transcriptPath);
     if (!u || !u.loaded) process.exit(0);
 
-    const persisted = readPersistedContext(data.session_id);
-    const win = windowTokens(u.model, u.has1m, u.loaded, persisted?.size);
+    const persistedSize = persistedWindowSize(data.session_id);
+    const win = windowTokens(u.model, u.has1m, u.loaded, persistedSize);
     const pct = (u.loaded / win) * 100;
     const threshold = thresholdPct();
     if (pct < threshold) process.exit(0);
