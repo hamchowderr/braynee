@@ -48,7 +48,7 @@ process.stdin.on('end', () => {
     // Regenerate shared dashboard (all active sessions)
     const dashboardPath = path.join(CLAUDE_DIR, 'beads-dashboard.html');
     execSync(`node "${path.join(__dirname, '..', 'scripts', 'beads-dashboard.js')}" --sessions-only --output "${dashboardPath}"`, {
-      cwd: codeRoot, encoding: 'utf8', timeout: 60000, stdio: 'ignore',
+      cwd: codeRoot, encoding: 'utf8', timeout: 60000, stdio: 'ignore', windowsHide: true,
     });
 
     process.exit(0);

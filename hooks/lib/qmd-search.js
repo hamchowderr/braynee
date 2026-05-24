@@ -20,7 +20,7 @@ function qmdSearch(query, collection = 'vault', limit = 5) {
   try {
     const result = execSync(
       `"${NODE}" "${QMD_SCRIPT}" search "${query}" -c ${collection} --json -n ${limit}`,
-      { encoding: 'utf8', timeout: TIMEOUT, stdio: ['pipe', 'pipe', 'ignore'] }
+      { encoding: 'utf8', timeout: TIMEOUT, stdio: ['pipe', 'pipe', 'ignore'], windowsHide: true }
     ).trim();
     if (!result) return null;
     return JSON.parse(result);

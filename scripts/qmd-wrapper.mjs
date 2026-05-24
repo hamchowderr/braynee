@@ -21,7 +21,7 @@ function findQmdJs() {
   // Try `npm root -g` to locate the global modules dir
   let globalRoot;
   try {
-    globalRoot = execSync('npm root -g', { encoding: 'utf8' }).trim();
+    globalRoot = execSync('npm root -g', { encoding: 'utf8', windowsHide: true }).trim();
   } catch {
     return null;
   }

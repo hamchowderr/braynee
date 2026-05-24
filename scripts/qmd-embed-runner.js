@@ -19,7 +19,7 @@ const reindex = require(path.join(__dirname, '..', 'hooks', 'lib', 'qmd-reindex.
 function findQmdJs() {
   let globalRoot;
   try {
-    globalRoot = execSync('npm root -g', { encoding: 'utf8' }).trim();
+    globalRoot = execSync('npm root -g', { encoding: 'utf8', windowsHide: true }).trim();
   } catch {
     return null;
   }

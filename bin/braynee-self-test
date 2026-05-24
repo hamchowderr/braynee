@@ -340,6 +340,58 @@ for (const h of ['commit-cadence-nudge.js', 'beads-claim-to-branch.js',
 try { fs.rmSync(gateCwd, { recursive: true, force: true }); } catch {}
 log(`  ${results.gating.ok} passed | ${results.gating.fail} failed`);
 
+// ── 9. windowsHide on every process spawn (cp-x01) ───────────────────────────
+// Hooks/scripts run from a console-less parent; a string execSync (which wraps
+// in cmd.exe) or a child .cmd shim (npm, etc.) without windowsHide:true flashes
+// a console window on Windows. braynee's convention is windowsHide on EVERY
+// spawn — this scans for offenders so the flash class can't silently regress.
+log('\n=== 9. windowsHide on every spawn ===');
+results.winhide = { ok: 0, fail: 0, errors: [] };
+function walkCode(dir) {
+  const out = [];
+  for (const e of (fs.existsSync(dir) ? fs.readdirSync(dir, { withFileTypes: true }) : [])) {
+    if (e.name === 'node_modules' || e.name.startsWith('.')) continue;
+    const fp = path.join(dir, e.name);
+    if (e.isDirectory()) out.push(...walkCode(fp));
+    else if (/\.(js|mjs)$/.test(e.name) && !/\.test\.(js|mjs)$/.test(e.name)) out.push(fp);
+  }
+  return out;
+}
+const SPAWN_RE = /\b(execSync|spawnSync|spawn|exec)\s*\(/g;
+for (const fp of [...walkCode(path.join(PLUGIN_ROOT, 'hooks')), ...walkCode(path.join(PLUGIN_ROOT, 'scripts'))]) {
+  const text = fs.readFileSync(fp, 'utf8');
+  let m, bad = 0;
+  while ((m = SPAWN_RE.exec(text))) {
+    // Extract exactly this call — from its open paren to the matching close —
+    // via balanced-paren scan, so the check never bleeds into the next call.
+    const open = text.indexOf('(', m.index);
+    if (open === -1) continue;
+    let depth = 0, end = open;
+    for (let i = open; i < text.length && i < open + 2000; i++) {
+      const c = text[i];
+      if (c === '(') depth++;
+      else if (c === ')') { depth--; if (depth === 0) { end = i; break; } }
+    }
+    const call = text.slice(open, end + 1);
+    // Only flag calls that pass an INLINE options object literal but omit
+    // windowsHide. Calls that pass a shared const (e.g. EXEC) or spread one
+    // (`{ ...EXEC }`) inherit its windowsHide; shell:false is hook-sandbox's
+    // intentional dev spawn. Bare identifier-options calls are the const's job.
+    if (!/\{/.test(call)) continue;
+    if (/windowsHide\s*:\s*true/.test(call) || /shell\s*:\s*false/.test(call)) continue;
+    if (/\.\.\.[A-Za-z_$][\w$]*/.test(call)) continue;
+    bad++;
+  }
+  if (bad === 0) { results.winhide.ok++; }
+  else {
+    results.winhide.fail++;
+    const rel = path.relative(PLUGIN_ROOT, fp);
+    results.winhide.errors.push({ file: rel, missing: bad });
+    log(`  FAIL: ${rel} — ${bad} spawn(s) without windowsHide`);
+  }
+}
+log(`  ${results.winhide.ok} files clean | ${results.winhide.fail} with un-hidden spawns`);
+
 // ── Summary ──────────────────────────────────────────────────────────────────
 const totalOk = Object.values(results).reduce((s, r) => s + r.ok, 0);
 const totalFail = Object.values(results).reduce((s, r) => s + r.fail, 0);

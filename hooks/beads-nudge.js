@@ -43,7 +43,7 @@ function writeState(state) {
 function hasInProgress(beadsRoot) {
   try {
     const out = execSync('bd list --status in_progress --json', {
-      cwd: beadsRoot, encoding: 'utf8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe']
+      cwd: beadsRoot, encoding: 'utf8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true
     }).trim();
     const list = JSON.parse(out);
     return Array.isArray(list) && list.length > 0;

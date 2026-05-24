@@ -163,7 +163,7 @@ function autoCreateProjectFile(folderName) {
 
 function run(cmd) {
   try {
-    return execSync(cmd, { encoding: 'utf8', timeout: 10000 }).trim();
+    return execSync(cmd, { encoding: 'utf8', timeout: 10000, windowsHide: true }).trim();
   } catch (e) {
     return null;
   }
@@ -176,6 +176,7 @@ function getGitBranch(cwd) {
       cwd,
       stdio: ['pipe', 'pipe', 'ignore'],
       timeout: 5000,
+      windowsHide: true,
     }).trim();
   } catch {
     return '';
@@ -688,7 +689,7 @@ process.stdin.on('end', () => {
           const beadsDir = path.join(cwd, '.beads');
           if (fs.existsSync(beadsDir)) {
             const { execSync } = require('child_process');
-            const raw = execSync('bd list --json --all', { cwd, encoding: 'utf8', timeout: 10000, stdio: ['pipe','pipe','ignore'] });
+            const raw = execSync('bd list --json --all', { cwd, encoding: 'utf8', timeout: 10000, stdio: ['pipe','pipe','ignore'], windowsHide: true });
             const issues = JSON.parse(raw);
             const inProgress = issues.filter(i => i.status === 'in_progress');
             const open = issues.filter(i => i.status === 'open');

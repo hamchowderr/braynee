@@ -18,7 +18,7 @@ const log = require(path.join(__dirname, 'lib', 'hook-logger.js'));
 const HOOK = 'beads-claim-to-branch';
 
 function run(cmd, opts = {}) {
-  try { return execSync(cmd, { encoding: 'utf8', timeout: 8000, stdio: ['pipe', 'pipe', 'ignore'], ...opts }).trim(); }
+  try { return execSync(cmd, { encoding: 'utf8', timeout: 8000, stdio: ['pipe', 'pipe', 'ignore'], windowsHide: true, ...opts }).trim(); }
   catch { return null; }
 }
 

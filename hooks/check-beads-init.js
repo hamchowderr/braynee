@@ -20,7 +20,7 @@ const PLUGINS_CACHE = path.join(os.homedir(), '.claude', 'plugins', 'cache');
 
 function isBdOnPath() {
   try {
-    execSync('bd --version', { encoding: 'utf8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] });
+    execSync('bd --version', { encoding: 'utf8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
     return true;
   } catch {
     return false;
@@ -73,6 +73,7 @@ function tryBdInit(cwd, projectName) {
       encoding: 'utf8',
       timeout: 30_000,
       stdio: ['pipe', 'pipe', 'pipe'],
+      windowsHide: true,
     });
     return { ok: true, cmd };
   } catch (err) {
@@ -104,6 +105,7 @@ function finishBdSetup(cwd) {
         encoding: 'utf8',
         timeout: 20_000,
         stdio: ['pipe', 'pipe', 'pipe'],
+        windowsHide: true,
       });
       steps.push({ step: 'git-hooks', ok: true });
     } catch (err) {
@@ -144,6 +146,7 @@ function finishBdSetup(cwd) {
       encoding: 'utf8',
       timeout: 20_000,
       stdio: ['pipe', 'pipe', 'pipe'],
+      windowsHide: true,
     });
     steps.push({ step: 'vc-commit', ok: true });
   } catch (err) {

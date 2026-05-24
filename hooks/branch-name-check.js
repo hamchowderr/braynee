@@ -29,6 +29,7 @@ process.stdin.on('end', () => {
         cwd,
         encoding: 'utf8',
         stdio: ['pipe', 'pipe', 'ignore'],
+        windowsHide: true,
       }).trim();
     } catch { process.exit(0); }
 

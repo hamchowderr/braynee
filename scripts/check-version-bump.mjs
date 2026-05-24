@@ -29,7 +29,7 @@ const SHIPPING_PREFIXES = [
 const HEAD = process.argv[2] || 'HEAD';
 
 function sh(cmd) {
-  return execSync(cmd, { encoding: 'utf8' }).trim();
+  return execSync(cmd, { encoding: 'utf8', windowsHide: true }).trim();
 }
 
 function lastReleaseTag() {

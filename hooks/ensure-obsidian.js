@@ -133,7 +133,7 @@ async function main() {
       if (platform() === 'win32') {
         execSync(`start "" "${exe}"`, { stdio: 'ignore', windowsHide: true });
       } else {
-        spawn(exe, [], { detached: true, stdio: 'ignore' }).unref();
+        spawn(exe, [], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
       }
     }
 
