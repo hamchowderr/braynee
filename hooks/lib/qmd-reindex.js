@@ -4,9 +4,11 @@
 //   • keyword update (`qmd update -c vault`) — cheap, content-hash incremental.
 //     Run synchronously on the Stop hook (existing behaviour).
 //   • embed (`qmd embed`)                    — expensive, model inference.
-//     Throttled + detached so it never blocks a session stop and never
-//     thrashes. Braynee previously never ran this at all, so vectors drifted
-//     stale (~47% pending observed). See beads cp-8xq.
+//     Detached + single-flight-locked so it never blocks a session stop and
+//     never thrashes. Runs on every Stop by default (interval 0) to keep the
+//     vector index fresh; re-throttle via BRAYNEE_QMD_EMBED_INTERVAL_MS on
+//     weaker hardware. Braynee previously never ran this at all, so vectors
+//     drifted stale (~47% pending observed). See beads cp-8xq, cp-z0r.
 //
 // Single-flight lockfile guards BOTH operations so a `qmd update` and a
 // `qmd embed` can never write the SQLite index concurrently (corruption
@@ -35,10 +37,13 @@ const STAMP_FILE = path.join(controlDir(), '.braynee-qmd-embed.stamp');
 // this generous to avoid stealing a lock from a live embed.
 const LOCK_STALE_MS = 30 * 60 * 1000; // 30 min
 
-// Minimum spacing between embed runs. Embed only processes *pending* docs so
-// cost scales with churn, not interval — this just prevents back-to-back
-// runs. Overridable for testing / power users.
-const DEFAULT_EMBED_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 h
+// Minimum spacing between embed runs. Default 0 = embed on every Stop so the
+// vector index is "always fresh, even from today" — the single-flight lock in
+// qmd-embed-runner.js already prevents overlap/thrashing, and `qmd embed` only
+// processes *pending* docs, so cost scales with churn not interval. Set
+// BRAYNEE_QMD_EMBED_INTERVAL_MS to a positive value to re-throttle on weaker
+// hardware (the pending-count escape hatch below still applies in that case).
+const DEFAULT_EMBED_INTERVAL_MS = 0;
 
 function embedIntervalMs() {
   const raw = process.env.BRAYNEE_QMD_EMBED_INTERVAL_MS;
