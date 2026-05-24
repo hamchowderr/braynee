@@ -103,32 +103,12 @@
           {
             "type": "command",
             "command": "node",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/check-no-main-push.js"],
-            "if": "Bash(git push *)"
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/check-no-main-push.js"]
           },
           {
             "type": "command",
             "command": "node",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/check-no-main-push.js"],
-            "if": "Bash(git commit *)"
-          },
-          {
-            "type": "command",
-            "command": "node",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/check-no-main-push.js"],
-            "if": "Bash(git checkout *)"
-          },
-          {
-            "type": "command",
-            "command": "node",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/check-no-main-push.js"],
-            "if": "Bash(git switch *)"
-          },
-          {
-            "type": "command",
-            "command": "node",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/branch-name-check.js"],
-            "if": "Bash(git push *)"
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/branch-name-check.js"]
           }
         ]
       }
@@ -299,7 +279,6 @@
             "type": "command",
             "command": "node",
             "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/commit-cadence-nudge.js"],
-            "if": "Bash(bd close *) || Bash(bd update * --status closed)",
             "async": true
           }
         ]
@@ -311,7 +290,6 @@
             "type": "command",
             "command": "node",
             "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/beads-claim-to-branch.js"],
-            "if": "Bash(bd update * --claim) || Bash(bd claim *)",
             "async": true
           }
         ]
@@ -323,7 +301,6 @@
             "type": "command",
             "command": "node",
             "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/beads-status-sync.js"],
-            "if": "Bash(bd *)",
             "async": true
           }
         ]
@@ -334,8 +311,7 @@
           {
             "type": "command",
             "command": "node",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/beads-todo-reminder.js"],
-            "if": "Bash(bd create *) || Bash(bd update * --claim) || Bash(bd update * --status *) || Bash(bd close *)"
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/beads-todo-reminder.js"]
           }
         ]
       },
@@ -346,7 +322,6 @@
             "type": "command",
             "command": "node",
             "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/beads-dashboard-refresh.js"],
-            "if": "Bash(bd *)",
             "async": true
           }
         ]
@@ -358,7 +333,6 @@
             "type": "command",
             "command": "node",
             "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/mtn-to-beads-sync.js"],
-            "if": "Bash(mtn complete *) || Bash(mtn done *)",
             "async": true
           }
         ]
