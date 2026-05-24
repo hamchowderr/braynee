@@ -108,7 +108,7 @@ function getRecentCommits(cwd, sinceIso) {
     const sinceFlag = sinceIso ? '--after="' + sinceIso + '"' : '--since="24 hours ago"';
     const log = execSync(
       'git log --all --oneline ' + sinceFlag + ' --no-merges --format="%h %s"',
-      { encoding: 'utf8', cwd, stdio: ['pipe', 'pipe', 'ignore'], timeout: 5000 }
+      { encoding: 'utf8', cwd, stdio: ['pipe', 'pipe', 'ignore'], timeout: 5000, windowsHide: true }
     ).trim();
     if (!log) return [];
     return log.split('\n').filter(Boolean).slice(0, 15);
@@ -121,7 +121,7 @@ function getFilesChanged(cwd) {
   try {
     const diff = execSync(
       'git diff --stat HEAD~10 HEAD --no-merges 2>nul || git diff --stat --cached',
-      { encoding: 'utf8', cwd, stdio: ['pipe', 'pipe', 'ignore'], timeout: 5000 }
+      { encoding: 'utf8', cwd, stdio: ['pipe', 'pipe', 'ignore'], timeout: 5000, windowsHide: true }
     ).trim();
     // Just get the summary line (e.g., "15 files changed, 500 insertions(+), 20 deletions(-)")
     const lines = diff.split('\n');
@@ -134,7 +134,7 @@ function getFilesChanged(cwd) {
 function getBranch(cwd) {
   try {
     return execSync('git rev-parse --abbrev-ref HEAD', {
-      encoding: 'utf8', cwd, stdio: ['pipe', 'pipe', 'ignore'], timeout: 5000
+      encoding: 'utf8', cwd, stdio: ['pipe', 'pipe', 'ignore'], timeout: 5000, windowsHide: true
     }).trim();
   } catch {
     return '';

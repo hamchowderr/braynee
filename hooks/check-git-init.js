@@ -18,7 +18,7 @@ const HOOK = 'check-git-init';
 // ERROR instead of actionable install guidance (cp-h5a / R-1).
 function isGitOnPath() {
   try {
-    execSync('git --version', { encoding: 'utf8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] });
+    execSync('git --version', { encoding: 'utf8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
     return true;
   } catch {
     return false;
@@ -27,7 +27,7 @@ function isGitOnPath() {
 
 function tryGitInit(cwd) {
   try {
-    execSync('git init -b main', { cwd, encoding: 'utf8', timeout: 10_000, stdio: ['pipe', 'pipe', 'pipe'] });
+    execSync('git init -b main', { cwd, encoding: 'utf8', timeout: 10_000, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
     return { ok: true };
   } catch (err) {
     return { ok: false, error: err.stderr?.toString() || err.message };

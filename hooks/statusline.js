@@ -41,9 +41,9 @@ function getCachedGit(cwd, sessionId) {
   // was fragile when cwd wasn't a clean native path. See cp-bw8.
   const result = { cwd, branch: '' };
   try {
-    execSync('git rev-parse --git-dir', { cwd, stdio: 'ignore' });
+    execSync('git rev-parse --git-dir', { cwd, stdio: 'ignore', windowsHide: true });
     result.branch = execSync('git branch --show-current', {
-      cwd, encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'],
+      cwd, encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'], windowsHide: true,
     }).trim();
   } catch {}
 

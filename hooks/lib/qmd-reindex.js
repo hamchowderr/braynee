@@ -74,6 +74,7 @@ function pendingEmbedCount(qmdWrapper) {
       encoding: 'utf8',
       stdio: ['pipe', 'pipe', 'ignore'],
       timeout: 10000,
+      windowsHide: true,
     });
     const m = out.match(/Pending:\s*(\d+)/i);
     return m ? Number(m[1]) : null;
@@ -126,6 +127,7 @@ function runKeywordUpdate(qmdWrapper) {
       encoding: 'utf8',
       stdio: ['pipe', 'pipe', 'ignore'],
       timeout: 30000,
+      windowsHide: true,
     });
     return { ran: true };
   } catch {

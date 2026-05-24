@@ -11,7 +11,7 @@ const { findCodeRoot, findBeadsRoot, sessionDir } = require(path.join(__dirname,
 
 function run(cmd, opts = {}) {
   try {
-    return execSync(cmd, { encoding: 'utf8', timeout: 5000, stdio: ['pipe', 'pipe', 'ignore'], ...opts }).trim();
+    return execSync(cmd, { encoding: 'utf8', timeout: 5000, stdio: ['pipe', 'pipe', 'ignore'], windowsHide: true, ...opts }).trim();
   } catch { return null; }
 }
 

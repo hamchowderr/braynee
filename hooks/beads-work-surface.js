@@ -18,7 +18,7 @@ const HOOK = 'beads-work-surface';
 
 function run(cmd, opts = {}) {
   try {
-    return execSync(cmd, { encoding: 'utf8', timeout: 8000, stdio: ['pipe', 'pipe', 'pipe'], ...opts }).trim();
+    return execSync(cmd, { encoding: 'utf8', timeout: 8000, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true, ...opts }).trim();
   } catch {
     return null;
   }

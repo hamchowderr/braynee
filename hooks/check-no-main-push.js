@@ -37,7 +37,7 @@ process.stdin.on('end', () => {
       }
       if (/git\s+push\s*$/.test(command) || /git\s+push\s+origin\s*$/.test(command)) {
         try {
-          const branch = execSync('git rev-parse --abbrev-ref HEAD', { cwd, encoding: 'utf8' }).trim();
+          const branch = execSync('git rev-parse --abbrev-ref HEAD', { cwd, encoding: 'utf8', windowsHide: true }).trim();
           if (branch === 'main' || branch === 'master') {
             log.warn(HOOK, `blocked implicit push from ${branch}`);
             process.stderr.write(`BLOCKED: Currently on '${branch}'. Create a feature branch and PR instead of pushing directly.`);
@@ -81,7 +81,7 @@ process.stdin.on('end', () => {
     if (/^\s*git\s+commit\b/i.test(command)) {
       if (ALLOW_MAIN) process.exit(0);
       try {
-        const branch = execSync('git rev-parse --abbrev-ref HEAD', { cwd, encoding: 'utf8' }).trim();
+        const branch = execSync('git rev-parse --abbrev-ref HEAD', { cwd, encoding: 'utf8', windowsHide: true }).trim();
         if (branch === 'main' || branch === 'master') {
           log.warn(HOOK, `blocked commit on ${branch}`);
           process.stderr.write(

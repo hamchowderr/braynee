@@ -20,7 +20,7 @@ const STATE_FILE = path.join(os.homedir(), '.claude', 'braynee-issue-counter.jso
 const THRESHOLD = 15;
 
 function run(cmd, opts = {}) {
-  try { return execSync(cmd, { encoding: 'utf8', timeout: 5000, stdio: ['pipe', 'pipe', 'ignore'], ...opts }).trim(); }
+  try { return execSync(cmd, { encoding: 'utf8', timeout: 5000, stdio: ['pipe', 'pipe', 'ignore'], windowsHide: true, ...opts }).trim(); }
   catch { return null; }
 }
 

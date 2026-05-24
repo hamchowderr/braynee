@@ -126,7 +126,7 @@ function persistedTitles(prdLabel, repoDir) {
   try {
     out = execSync(
       `bd list -l ${JSON.stringify(prdLabel)} --all -n 0 --json`,
-      { cwd: repoDir, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] },
+      { cwd: repoDir, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true },
     );
   } catch (err) {
     console.error(`Failed to query target repo beads for label ${prdLabel}: ${(err.stderr?.toString() || err.message).split('\n')[0]}`);
@@ -156,7 +156,7 @@ function mirrorSeededToTasknotes(prdLabel, repoDir) {
   try {
     const out = execSync(
       `bd list -l ${JSON.stringify(prdLabel)} --all -n 0 --json`,
-      { cwd: repoDir, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] },
+      { cwd: repoDir, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true },
     );
     parsed = JSON.parse(out.trim() || '[]');
   } catch {
@@ -247,7 +247,7 @@ if (alreadyPresent > 0) {
 for (const item of missing) {
   const cmd = buildCreateCmd(item);
   try {
-    const out = execSync(cmd, { cwd: repoDir, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+    const out = execSync(cmd, { cwd: repoDir, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true }).trim();
     console.log(`✓ ${item.priority} ${item.title}`);
     if (out) console.log(`    ${out.split('\n')[0]}`);
   } catch (err) {

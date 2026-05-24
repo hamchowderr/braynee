@@ -72,7 +72,7 @@ function getProjectIssues(projectPath) {
   try {
     return JSON.parse(execSync('bd list --json --all', {
       cwd: projectPath, timeout: 10000, encoding: 'utf8',
-      stdio: ['pipe', 'pipe', 'pipe'],
+      stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true,
     }));
   } catch { return null; }
 }
@@ -790,5 +790,5 @@ fs.writeFileSync(outputPath, html);
 console.log(`\nDashboard written to: ${outputPath}`);
 
 if (shouldOpen) {
-  try { execSync(`start "" "${outputPath}"`, { stdio: 'ignore' }); } catch {}
+  try { execSync(`start "" "${outputPath}"`, { stdio: 'ignore', windowsHide: true }); } catch {}
 }

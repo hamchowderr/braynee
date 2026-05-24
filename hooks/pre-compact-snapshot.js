@@ -97,7 +97,7 @@ function getRecentCommits(cwd) {
   try {
     const log = execSync(
       'git log --all --oneline --since="24 hours ago" --no-merges --format="%h %s"',
-      { encoding: 'utf8', cwd, stdio: ['pipe', 'pipe', 'ignore'], timeout: 5000 }
+      { encoding: 'utf8', cwd, stdio: ['pipe', 'pipe', 'ignore'], timeout: 5000, windowsHide: true }
     ).trim();
     if (!log) return [];
     return log.split('\n').filter(Boolean).slice(0, 15);
@@ -189,6 +189,7 @@ process.stdin.on('end', () => {
         encoding: 'utf8',
         stdio: ['pipe', 'pipe', 'ignore'],
         timeout: 5000,
+        windowsHide: true,
       }).trim();
     } catch {
       // Not a git repo

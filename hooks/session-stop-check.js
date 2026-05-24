@@ -38,7 +38,7 @@ function findProjectName(folderName) {
 
 function run(cmd) {
   try {
-    return execSync(cmd, { encoding: 'utf8', timeout: 10000 }).trim();
+    return execSync(cmd, { encoding: 'utf8', timeout: 10000, windowsHide: true }).trim();
   } catch (e) {
     return null;
   }

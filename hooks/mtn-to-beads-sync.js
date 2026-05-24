@@ -17,7 +17,7 @@ const HOOK = 'mtn-to-beads-sync';
 
 function run(cmd, opts = {}) {
   try {
-    return execSync(cmd, { encoding: 'utf8', timeout: 8000, stdio: ['pipe', 'pipe', 'ignore'], ...opts }).trim();
+    return execSync(cmd, { encoding: 'utf8', timeout: 8000, stdio: ['pipe', 'pipe', 'ignore'], windowsHide: true, ...opts }).trim();
   } catch { return null; }
 }
 
