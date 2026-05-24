@@ -51,7 +51,7 @@ For machine-readable output use `--json`:
 node {baseDir}/../../bin/braynee-self-test --json
 ```
 
-The same self-test runs in CI on every push to master across Ubuntu, macOS, and Windows.
+The same self-test runs in CI on every push to main across Ubuntu, macOS, and Windows.
 
 ## Brain Check Framework
 

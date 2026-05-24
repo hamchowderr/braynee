@@ -219,7 +219,7 @@ Exit 0 = all passed. Non-zero = at least one failure.
 
 ### Continuous integration
 
-`.github/workflows/test.yml` runs the self-test on every push to `master` and every PR, across:
+`.github/workflows/test.yml` runs the self-test on every push to `main` and every PR, across:
 - Ubuntu / macOS / Windows
 - Node 20 + Node 22
 
