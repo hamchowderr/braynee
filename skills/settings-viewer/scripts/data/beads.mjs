@@ -30,7 +30,7 @@ function parseBdLine(line) {
 
 function getCurrentBdUser() {
   try {
-    const name = execSync('git config --global user.name', { timeout: 2000 }).toString().trim();
+    const name = execSync('git config --global user.name', { timeout: 2000, windowsHide: true }).toString().trim();
     return name || '';
   } catch {
     return '';
@@ -50,8 +50,8 @@ export async function loadBeadsStats() {
       if (!existsSync(join(projDir, '.beads'))) continue;
       workspaces++;
       try {
-        const openOut  = execSync('bd list --flat --limit 0',       { cwd: projDir, timeout: 8000 }).toString();
-        const allOut   = execSync('bd list --flat --limit 0 --all', { cwd: projDir, timeout: 8000 }).toString();
+        const openOut  = execSync('bd list --flat --limit 0',       { cwd: projDir, timeout: 8000, windowsHide: true }).toString();
+        const allOut   = execSync('bd list --flat --limit 0 --all', { cwd: projDir, timeout: 8000, windowsHide: true }).toString();
         const openLines   = openOut.split('\n').filter(l => l.startsWith('○'));
         const closedLines = allOut.split('\n').filter(l => l.startsWith('✓') || l.startsWith('×'));
         if (!openLines.length && !closedLines.length) continue;
@@ -62,7 +62,7 @@ export async function loadBeadsStats() {
         // Fetch full detail for open issues
         for (const issue of openIssues) {
           try {
-            const showOut = execSync(`bd show ${issue.id}`, { cwd: projDir, timeout: 6000 }).toString();
+            const showOut = execSync(`bd show ${issue.id}`, { cwd: projDir, timeout: 6000, windowsHide: true }).toString();
             const ownerMatch   = showOut.match(/Owner:\s+(\S+)/);
             const createdMatch = showOut.match(/Created:\s+(\S+)/);
             const updatedMatch = showOut.match(/Updated:\s+(\S+)/);

@@ -53,7 +53,7 @@
           {
             "type": "command",
             "command": "node",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/skills/settings-viewer/scripts/generate.mjs"],
+            "args": ["${CLAUDE_PLUGIN_ROOT}/skills/settings-viewer/scripts/generate.mjs", "--no-open"],
             "async": true
           }
         ]
