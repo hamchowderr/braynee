@@ -111,6 +111,16 @@
             "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/branch-name-check.js"]
           }
         ]
+      },
+      {
+        "matcher": "Bash|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/secret-exposure-guard.js"]
+          }
+        ]
       }
     ],
     "SessionEnd": [

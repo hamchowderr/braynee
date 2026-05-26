@@ -337,6 +337,41 @@ for (const h of ['commit-cadence-nudge.js', 'beads-claim-to-branch.js',
     noise.out.trim() === '' && (noise.status === 0 || noise.status === 2));
 }
 
+// secret-exposure-guard.js — DENY value-printing secret commands (exit 2 + stderr),
+// ALLOW injection (`infisical run`) and writes (`secrets set`), stay SILENT on a
+// non-match, and DENY real secrets written into a .env file. Locks the contract
+// that secret values never reach the transcript.
+function runGuard(payload) {
+  const r = spawnSync(process.execPath, [path.join(PLUGIN_ROOT, 'hooks', 'secret-exposure-guard.js')], {
+    input: JSON.stringify({ session_id: 'self-test', cwd: gateCwd, ...payload }),
+    encoding: 'utf8', timeout: 15_000,
+  });
+  return { out: r.stdout || '', err: r.stderr || '', status: r.status };
+}
+{
+  const bash = (command) => runGuard({ tool_name: 'Bash', tool_input: { command } });
+  const write = (file_path, content) => runGuard({ tool_name: 'Write', tool_input: { file_path, content } });
+
+  assertGate('secret-exposure-guard BLOCKS `infisical secrets get`',
+    bash('infisical secrets get OPENAI_API_KEY --plain').status === 2);
+  assertGate('secret-exposure-guard BLOCKS `infisical export`',
+    bash('infisical export --env=dev').status === 2);
+  assertGate('secret-exposure-guard BLOCKS bare `infisical secrets` (list with values)',
+    bash('infisical secrets --recursive').status === 2);
+  assertGate('secret-exposure-guard BLOCKS `vault kv get`',
+    bash('vault kv get secret/foo').status === 2);
+  assertGate('secret-exposure-guard ALLOWS `infisical run` (injection)',
+    bash('infisical run --recursive --silent -- node app.js').status === 0);
+  assertGate('secret-exposure-guard ALLOWS `infisical secrets set` (write by ref, no value printed)',
+    bash('infisical secrets set NEWKEY="$EXISTING"').status === 0);
+  assertGate('secret-exposure-guard stays SILENT + exit 0 on a non-matching command',
+    (() => { const r = bash('echo hello world'); return r.out.trim() === '' && r.err.trim() === '' && r.status === 0; })());
+  assertGate('secret-exposure-guard BLOCKS a real secret written to .env',
+    write(path.join(gateCwd, '.env'), 'OPENAI_API_KEY=sk-' + 'a'.repeat(48) + '\n').status === 2);
+  assertGate('secret-exposure-guard ALLOWS a placeholder in .env',
+    write(path.join(gateCwd, '.env'), 'OPENAI_API_KEY=YOUR_KEY_HERE\n').status === 0);
+}
+
 try { fs.rmSync(gateCwd, { recursive: true, force: true }); } catch {}
 log(`  ${results.gating.ok} passed | ${results.gating.fail} failed`);
 
