@@ -1,0 +1,95 @@
+# project — internal work. Your own projects, no client coordination overhead.
+# Pour with:  bd mol pour project --var name="..." --var deliverable="..."
+#
+# Use this for: braynee features, FiveM Studio work, Mastra template updates,
+# personal apps, internal tooling — anything without a paying client to sync
+# with. For client work, use the `engagement` formula instead.
+formula     = "project"
+description = """
+Internal project — your own work, no client coordination. Four-step shape:
+scope what you're building, build it, QA against scope, ship. Add sub-issues
+under build for larger projects. For client work, use `engagement`.
+"""
+version = 1
+type    = "workflow"
+
+[vars.name]
+description = "Short project name (e.g. 'braynee-secrets-guard', 'fivem-studio-map-panel')"
+required    = true
+
+[vars.deliverable]
+description = "One-sentence description of what you're building"
+required    = true
+
+# -----------------------------------------------------------------------------
+
+[[steps]]
+id    = "scope"
+title = "Scope: {{name}}"
+description = """
+Write down what {{name}} is and isn't. One paragraph in the project's vault
+note (or a code comment if it's that small) covering:
+
+- The deliverable in one sentence: {{deliverable}}
+- Done criteria: what must be true to consider this shipped?
+- Explicitly out-of-scope: what you are NOT doing.
+
+Keep it short. The point is to commit to a definition before you start
+building, not to write a PRD.
+"""
+
+# -----------------------------------------------------------------------------
+
+[[steps]]
+id    = "build"
+title = "Build: {{name}}"
+needs = ["scope"]
+description = """
+Implement {{deliverable}} against the scope.
+
+- Work in small, reviewable commits (or just commits — no PRs needed for
+  internal work unless you specifically want a review trail).
+- If the build is large, spawn sub-issues under this one and wire them with
+  `bd dep add`. Close this issue only when all sub-work is done.
+- Never commit secrets — `infisical run` to inject; placeholders only in
+  any `.env` files.
+"""
+
+# -----------------------------------------------------------------------------
+
+[[steps]]
+id    = "qa"
+title = "QA: {{name}}"
+needs = ["build"]
+description = """
+Verify {{name}} works against the scope's done criteria. Tier the check to
+the work:
+
+- Code: run the relevant test layer (unit + the live/sandbox layer if there
+  is one — both, per the verify-behavior-not-just-logic rule).
+- Plugin/hook (braynee, insightful): both `bin/braynee-self-test` AND a
+  live `--plugin-dir` sandbox run.
+- Agent / service: end-to-end happy path + 2-3 failure cases.
+- Doc / vault note: read it back end to end, fix any drift.
+
+Every done-criterion gets a tick or a written reason it doesn't apply.
+"""
+
+# -----------------------------------------------------------------------------
+
+[[steps]]
+id    = "ship"
+title = "Ship: {{name}}"
+needs = ["qa"]
+description = """
+Take {{name}} to its final home:
+
+- Code in a deployed app: merge + deploy.
+- Plugin (braynee/insightful/etc.): copy fixed files into the live cache
+  dir at ~/.claude/plugins/cache/<plugin>/ and restart CC. No PR, no push,
+  unless you've explicitly decided to.
+- Doc / vault note: file it under the correct PARA location.
+
+Verify it works in the final location (not just that deploy succeeded).
+Then close this issue with a note pointing at the result.
+"""

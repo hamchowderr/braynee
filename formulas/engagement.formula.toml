@@ -1,0 +1,175 @@
+# engagement — paid client work. Same build shape as `project`, plus the
+# three client-coordination steps internal work doesn't need: discovery,
+# review (sign-off), and handoff.
+#
+# Pour with:
+#   bd mol pour engagement --var client="Acme Co" --var deliverable="..."
+#
+# Use this for: anything you're billing for. For your own projects, use
+# the `project` formula instead.
+formula     = "engagement"
+description = """
+Paid client engagement. Seven-step shape: discovery (human gate) → scope →
+build → QA → client review (human gate) → ship → handoff. Deliverable-
+agnostic; works for landing pages, agents, automations, plugins, whatever.
+For internal work, use `project`.
+"""
+version = 1
+type    = "workflow"
+
+[vars.client]
+description = "Client / engagement name (e.g. Acme Co)"
+required    = true
+
+[vars.deliverable]
+description = "Short description of what you're building for them (e.g. 'Next landing page', 'Mastra RAG agent over their docs', 'WordPress lead-form plugin')"
+required    = true
+
+[vars.reference]
+description = "Optional URL, repo, or vault note to learn the client's current state from"
+required    = false
+default     = ""
+
+# -----------------------------------------------------------------------------
+
+[[steps]]
+id    = "discovery"
+title = "Discovery call with {{client}} — {{deliverable}}"
+type  = "human"
+description = """
+Discovery / kickoff call with {{client}}. Capture into the {{client}}
+project note under ## Discovery:
+
+- Goal: what business outcome does this serve?
+- Constraints: budget, deadline, tech they must / can't use.
+- Audience: who interacts with this, in what context?
+- Success criteria: how do we know it's done?
+- Reference: {{reference}} (if provided, review BEFORE the call so you ask
+  sharper questions).
+- Out-of-scope: what's deliberately NOT included.
+
+`bd gate resolve` this issue once the call is held and findings are written
+down. Downstream is gated on this — don't skip it.
+"""
+
+  [steps.discovery.gate]
+  type    = "human"
+  timeout = "168h"
+
+# -----------------------------------------------------------------------------
+
+[[steps]]
+id    = "scope"
+title = "Scope + acceptance criteria — {{client}} {{deliverable}}"
+needs = ["discovery"]
+description = """
+Turn discovery findings into a concrete scope doc with bulleted acceptance
+criteria.
+
+1. In the {{client}} project note under ## Scope, write the deliverable in
+   one sentence, AC as bullets, and explicit non-goals.
+2. If the engagement warrants a PRD, scaffold one at
+   `2. Areas/Product Manager/PRDs/{{client}}-{{deliverable | slug}}.md`
+   via `/braynee:prd`.
+3. Send the scope to {{client}} for written confirmation (email or chat).
+   Don't move on until they've said yes in writing.
+
+Close with: `bd close <id> --reason "scope confirmed by {{client}} on <date>"`.
+"""
+
+# -----------------------------------------------------------------------------
+
+[[steps]]
+id    = "build"
+title = "Build — {{client}} {{deliverable}}"
+needs = ["scope"]
+description = """
+Implement {{deliverable}} against the confirmed AC. Spawn sub-issues for
+larger builds; wire with `bd dep add`. Close this issue only when all
+sub-work is done.
+
+Universal rules:
+- Only build what's in scope. No invented features.
+- UI work uses shadcn via the Otaku registry — no hand-rolled primitives.
+- Agent work follows the Mastra template patterns (mastra-base).
+- Never commit secrets — `infisical run` to inject; placeholders in .env.
+"""
+
+# -----------------------------------------------------------------------------
+
+[[steps]]
+id    = "qa"
+title = "Internal QA — {{client}} {{deliverable}}"
+needs = ["build"]
+description = """
+Quality pass BEFORE the client sees anything. Adapt checks to deliverable:
+
+- Web / UI: a11y (axe), Lighthouse perf/SEO, keyboard nav, mobile.
+- Agent: happy path + 2-3 failure cases; check token usage + latency.
+- Automation: dry-run with sample data; verify error paths route somewhere.
+- Plugin: install on a clean test env; verify activate/deactivate clean.
+- Server / deploy: health endpoint, logs sane, no secrets in stdout.
+
+Every AC gets a tick or a written explanation. No silent skips.
+"""
+
+# -----------------------------------------------------------------------------
+
+[[steps]]
+id    = "review"
+title = "Client review + sign-off — {{client}}"
+needs = ["qa"]
+type  = "human"
+description = """
+Send {{client}} something they can poke at: preview URL, staging instance,
+demo video, test access — whatever fits the deliverable.
+
+Collect feedback in ONE batch. Schedule a review call or a single async
+pass. Apply changes; redeploy. Repeat only if the client surfaces real
+issues — don't invite endless rounds.
+
+`bd gate resolve` this ONLY when {{client}} has signed off in writing.
+No assumed-yes — the ship step is hard to reverse.
+"""
+
+  [steps.review.gate]
+  type    = "human"
+  timeout = "336h"
+
+# -----------------------------------------------------------------------------
+
+[[steps]]
+id    = "ship"
+title = "Ship — {{client}} {{deliverable}}"
+needs = ["review"]
+description = """
+Take the signed-off thing to production / final home:
+
+- Web app: merge to main, verify production deploy, point custom domain.
+- Agent: promote staging to production on Coolify; swap DNS if relevant.
+- Automation: activate in the production n8n instance.
+- Plugin: upload signed zip to client's site, activate.
+- Server / resource: flip env from staging to production, monitor.
+
+Verify it works end-to-end IN production (not just that deploy succeeded).
+Capture the production URL / location in the {{client}} project note.
+"""
+
+# -----------------------------------------------------------------------------
+
+[[steps]]
+id    = "handoff"
+title = "Handoff + close — {{client}}"
+needs = ["ship"]
+description = """
+Wrap the engagement so {{client}} can operate without you:
+
+1. Handoff doc (README or wiki page): how to use, how to update content,
+   where logs live, who to contact for what.
+2. Access transfer where it makes sense (repo, n8n, domain), or document
+   what stays under Otaku Solutions and why.
+3. Send the handoff doc + final invoice. Capture a testimonial if they're
+   happy.
+4. Update the {{client}} project note: status → shipped, add production
+   URL / location.
+"""
