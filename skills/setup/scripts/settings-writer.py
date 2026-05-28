@@ -21,6 +21,8 @@ from pathlib import Path
 sys.stdout.reconfigure(encoding="utf-8")
 
 SETTINGS_PATH = Path.home() / ".claude" / "settings.json"
+RULES_DIR = Path.home() / ".claude" / "rules"
+RULES_TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "rules-templates"
 
 # Braynee's recommended Claude Code default permission mode. 'plan' makes
 # every session start in plan mode (review-before-act). Overridable via
@@ -159,6 +161,62 @@ def cmd_apply(args):
         print("\nNothing changed.")
 
 
+def cmd_rules(args):
+    """Provision ~/.claude/rules/ with generic universal templates.
+
+    Default behavior: copy each template only if a same-named file doesn't
+    already exist (so we never clobber a user-customized rule). --force
+    overrides. --check shows what would happen without writing.
+    """
+    dry_run = not getattr(args, "yes", False)
+    force = getattr(args, "force", False)
+
+    if not RULES_TEMPLATES_DIR.is_dir():
+        print(
+            f"Templates dir not found: {RULES_TEMPLATES_DIR}\n"
+            "(This should ship with braynee — investigate plugin install.)",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    templates = sorted(RULES_TEMPLATES_DIR.glob("*.md"))
+    if not templates:
+        print(f"No templates in {RULES_TEMPLATES_DIR}.")
+        return
+
+    RULES_DIR.mkdir(parents=True, exist_ok=True)
+    actions = []
+    for tpl in templates:
+        dest = RULES_DIR / tpl.name
+        if dest.exists() and not force:
+            actions.append(("skip-existing", tpl, dest))
+        elif dest.exists() and force:
+            actions.append(("overwrite", tpl, dest))
+        else:
+            actions.append(("create", tpl, dest))
+
+    for action, tpl, dest in actions:
+        symbol = {"create": "○", "overwrite": "↻", "skip-existing": "✓"}[action]
+        verb = {
+            "create": "would create" if dry_run else "created",
+            "overwrite": "would OVERWRITE" if dry_run else "overwrote",
+            "skip-existing": "exists (use --force to overwrite)",
+        }[action]
+        print(f"  {symbol}  {dest.name} — {verb}")
+        if not dry_run and action in ("create", "overwrite"):
+            dest.write_bytes(tpl.read_bytes())
+
+    if dry_run:
+        any_pending = any(a[0] in ("create", "overwrite") for a in actions)
+        print("\nRun with --yes to apply." if any_pending else "\nNothing to add.")
+    else:
+        print(f"\nRules in {RULES_DIR}")
+        print(
+            "\nNext: open each file and replace {{placeholders}} with your "
+            "actual stack (or delete blocks you don't use)."
+        )
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Write braynee settings into ~/.claude/settings.json"
@@ -183,6 +241,17 @@ def main():
         f"default: {RECOMMENDED_DEFAULT_MODE})",
     )
 
+    p_rules = sub.add_parser(
+        "rules",
+        help="Provision ~/.claude/rules/ with universal templates (dev-defaults + secrets)",
+    )
+    p_rules.add_argument("--yes", action="store_true", help="Actually write files")
+    p_rules.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite existing rule files (default: skip existing)",
+    )
+
     args = parser.parse_args()
 
     if args.cmd == "detect":
@@ -191,6 +260,8 @@ def main():
         cmd_check(args)
     elif args.cmd == "apply":
         cmd_apply(args)
+    elif args.cmd == "rules":
+        cmd_rules(args)
     else:
         parser.print_help()
 
