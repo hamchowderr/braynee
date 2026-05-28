@@ -348,6 +348,32 @@ changes the permission mode):
 python3 {baseDir}/scripts/settings-writer.py apply --yes --set-default-mode
 ```
 
+**Path-scoped rules** (`~/.claude/rules/`) — universal templates braynee
+ships for the two most-asked-for rule categories: vault-first dev defaults
+and the "never expose secret values" contract that pairs with the
+PreToolUse `secret-exposure-guard` hook.
+
+Existing files are NEVER overwritten — `--force` is required for that. So
+this is safe to offer at every setup.
+
+```
+Provision braynee's universal rule templates in ~/.claude/rules/
+(dev-defaults.md + secrets.md)? They contain {{placeholders}} you'll fill
+with your own stack / secrets manager. Existing files are skipped.
+  [Yes / No]
+```
+
+If Yes:
+
+```bash
+python3 {baseDir}/scripts/settings-writer.py rules --yes
+```
+
+After the script reports success, prompt the user to open each new file and
+replace `{{auth_provider}}`, `{{agent_framework}}`, `{{frontend_kit}}`,
+`{{linter}}`, `{{secrets_manager}}`, `{{inject_command}}` with their actual
+defaults (or delete the blocks they don't use).
+
 **Status line** (only if `statusLine` is NOT already configured in
 `~/.claude/settings.json` — never overwrite an existing one):
 
