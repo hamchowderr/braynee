@@ -1,4 +1,4 @@
-// session-close.js — shared session-note close + bd prime logic.
+// session-close.js — shared session-note close logic.
 //
 // Extracted from session-end.js so the SessionEnd hook AND the StopFailure
 // hook (cp-9kw) use ONE implementation. An API-error turn-end fires
@@ -23,12 +23,36 @@ const { getVaultRoot } = require(path.join(__dirname, '..', '..', 'scripts', 'li
 const VAULT_DIR = getVaultRoot();
 const SESSIONS_DIR = path.join(VAULT_DIR, '2. Areas', 'Sessions');
 
+// SessionEnd is post-action: CC fires it at quit and does NOT wait for it
+// before terminating — a hook that overruns the (undocumented, short) shutdown
+// window is killed and reported as "failed: Hook cancelled" (cp-15f). So this
+// path must stay near-instant. We only need a note's FRONTMATTER to decide
+// whether it's the active session, never its body — and session bodies grow
+// large. Read just the head for detection; read full content only for the one
+// file we actually rewrite.
+const HEAD_BYTES = 2048;
+
+function readHead(filepath) {
+  let fd;
+  try {
+    fd = fs.openSync(filepath, 'r');
+    const buf = Buffer.alloc(HEAD_BYTES);
+    const n = fs.readSync(fd, buf, 0, HEAD_BYTES, 0);
+    return buf.toString('utf8', 0, n);
+  } catch {
+    return '';
+  } finally {
+    if (fd !== undefined) { try { fs.closeSync(fd); } catch {} }
+  }
+}
+
 function findProjectName(folderName) {
   const projectsDir = path.join(VAULT_DIR, '1. Projects');
   if (!fs.existsSync(projectsDir)) return null;
   for (const file of fs.readdirSync(projectsDir).filter(f => f.endsWith('.md'))) {
     try {
-      const content = fs.readFileSync(path.join(projectsDir, file), 'utf8');
+      // folder:/name: live in frontmatter at the top — head read is enough.
+      const content = readHead(path.join(projectsDir, file));
       const folderMatch = content.match(/^folder:\s*"?([^"\n]+)"?$/m);
       if (folderMatch && folderMatch[1].trim().toLowerCase() === folderName.toLowerCase()) {
         const nameMatch = content.match(/^name:\s*"?([^"\n]+)"?$/m);
@@ -65,11 +89,14 @@ function findActiveSession(projectName) {
       if (seen.has(filepath)) continue;
       seen.add(filepath);
       try {
-        const content = fs.readFileSync(filepath, 'utf8');
-        const statusMatch = content.match(/^status:\s*(\S+)/m);
+        // Detect on the frontmatter head only — bodies can be large and there
+        // may be 100s of notes. Read the FULL file only once we've matched.
+        const head = readHead(filepath);
+        const statusMatch = head.match(/^status:\s*(\S+)/m);
         if (!statusMatch || statusMatch[1] !== 'active') continue;
-        const projectMatch = content.match(/^project:\s*"?\[?\[?([^\]"\n]+)\]?\]?"?/m);
+        const projectMatch = head.match(/^project:\s*"?\[?\[?([^\]"\n]+)\]?\]?"?/m);
         if (projectMatch && projectMatch[1].trim().toLowerCase() === projectName.toLowerCase()) {
+          const content = fs.readFileSync(filepath, 'utf8');
           return { filepath, content };
         }
       } catch { continue; }
@@ -90,10 +117,10 @@ function closeSessionFile(filepath, content) {
 }
 
 /**
- * Close the active session note for the session's anchored code project and
- * run `bd prime` so the next session inherits beads context. Also stops a
- * dangling mtn timer (the StopFailure path needs this; SessionEnd's prior
- * behavior left timer-stop to the Stop hooks that never ran on an API error).
+ * Close the active session note for the session's anchored code project.
+ * Optionally stops a dangling mtn timer (the StopFailure path needs this;
+ * SessionEnd's prior behavior left timer-stop to the Stop hooks that never ran
+ * on an API error). Does NOT run `bd prime` — see note in the body.
  *
  * `data` is the parsed hook stdin ({ session_id, cwd, ... }).
  * Returns { closed: bool, project, file } describing what (if anything) it did.
@@ -105,11 +132,11 @@ function closeActiveSession(data, { stopTimer = false } = {}) {
     const codeRoot = findCodeRoot(sessionDir(data));
     const folderName = codeRoot ? path.basename(codeRoot) : null;
 
-    if (codeRoot) {
-      try {
-        execSync('bd prime', { cwd: codeRoot, encoding: 'utf8', timeout: 5000, stdio: 'ignore', windowsHide: true });
-      } catch {}
-    }
+    // NOTE: no `bd prime` here. Priming at session END is redundant — the next
+    // session's SessionStart hook runs `bd prime` itself, and with stdio
+    // ignored at quit there is no agent to receive this output anyway. It only
+    // added up-to-5s of blocking to a post-action hook CC won't wait for,
+    // which is what triggered "Hook cancelled" at quit (cp-15f).
 
     if (stopTimer) {
       // An unclean end (API error) never ran the Stop timer-stop hooks.

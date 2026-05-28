@@ -1,11 +1,16 @@
 // session-end.js
 // Hook: SessionEnd — Marks the active session note done, writes ended timestamp.
-// Also runs `bd prime` so the next session inherits beads context.
 //
 // The bulk of the session-note write (Goal, Progress from commits, Session
 // Summary) is already done by session-auto-close.js on every Stop. This hook
 // just performs the final status flip and timestamp write so SessionStart on
 // the next launch doesn't try to resume a stale session.
+//
+// cp-15f: keep this near-instant. SessionEnd is post-action — CC fires it at
+// quit and does NOT wait for it to finish, so slow work gets killed and
+// surfaced as "failed: Hook cancelled". The close path therefore does no
+// `bd prime` (the next SessionStart primes itself) and reads only frontmatter
+// heads when scanning for the active note.
 //
 // cp-qqp: this hook is registered SYNCHRONOUS (no "async":true in hooks.json) —
 // an async SessionEnd hook races process death on `Ctrl+D` exit and loses the

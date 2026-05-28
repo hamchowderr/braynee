@@ -71,15 +71,20 @@ function findProjectName(folderName) {
   const projectsDir = path.join(VAULT_DIR, '1. Projects');
   if (!fs.existsSync(projectsDir)) return null;
 
-  const files = fs.readdirSync(projectsDir).filter(f => f.endsWith('.md'));
-  for (const file of files) {
+  // Recurse into project subfolders, not just top-level *.md. The PARA
+  // convention puts multi-note projects in their own folder with the main note
+  // inside (1. Projects/<Name>/<Name>.md). A flat readdirSync missed those, so
+  // findProjectName returned null and the caller auto-created a duplicate flat
+  // file every session (cp-31i; same class as the recursive-audit memory).
+  // Match on the `folder:` frontmatter exactly as before — first match wins.
+  for (const filepath of walkMdFiles(projectsDir)) {
     try {
-      const content = fs.readFileSync(path.join(projectsDir, file), 'utf8');
+      const content = fs.readFileSync(filepath, 'utf8');
       const folderMatch = content.match(/^folder:\s*"?([^"\n]+)"?$/m);
       if (folderMatch && folderMatch[1].trim().toLowerCase() === folderName.toLowerCase()) {
         const nameMatch = content.match(/^name:\s*"?([^"\n]+)"?$/m);
         if (nameMatch) return nameMatch[1].trim();
-        return file.replace('.md', '');
+        return path.basename(filepath).replace(/\.md$/, '');
       }
     } catch (e) {
       continue;
@@ -115,6 +120,16 @@ function autoCreateProjectFile(folderName) {
     // Don't overwrite if it exists with a different folder mapping
     if (fs.existsSync(filePath)) {
       log.warn(HOOK, `auto-create skipped: ${fileName} exists but folder field doesn't match "${folderName}"`);
+      return null;
+    }
+
+    // Safety net (cp-31i): a folder-layout note (1. Projects/<Name>/<Name>.md)
+    // lives in a subfolder, so the flat filePath check above never sees it.
+    // findProjectName should already have resolved it, but if we got here a
+    // nested note still represents this folder — don't write a flat duplicate.
+    const nestedPath = path.join(projectsDir, projectName, `${projectName}.md`);
+    if (fs.existsSync(nestedPath)) {
+      log.warn(HOOK, `auto-create skipped: nested ${projectName}/${projectName}.md already exists for folder "${folderName}"`);
       return null;
     }
 
