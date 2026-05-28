@@ -6,9 +6,11 @@
 //   3. git checkout/switch --orphan main|master -> block (this is how the
 //      braynee-web autonomous build slipped a fresh history onto main)
 // Exit 2 = block (stderr to Claude), exit 0 = allow.
-// Opt-out for solo repos that intentionally work on main:
-//   env BRAYNEE_ALLOW_MAIN_COMMITS=1  (applies to the commit/orphan guards;
-//   pushing directly to main/master stays blocked regardless).
+// Opt-outs for solo repos / no-PR workflows that intentionally work on main:
+//   env BRAYNEE_ALLOW_MAIN_COMMITS=1  -> bypass the commit + orphan-checkout guards
+//   env BRAYNEE_ALLOW_MAIN_PUSH=1     -> bypass the push-to-main guard
+// Each is opt-in and per-invocation. The two are independent so you can allow
+// commits-on-main without also allowing direct pushes (or vice versa).
 // Moved from ~/.claude/hooks/ into braynee so this enforcement ships with the plugin.
 
 const { execSync } = require('child_process');
@@ -18,6 +20,7 @@ const log = require(path.join(__dirname, 'lib', 'hook-logger.js'));
 
 const HOOK = 'check-no-main-push';
 const ALLOW_MAIN = process.env.BRAYNEE_ALLOW_MAIN_COMMITS === '1';
+const ALLOW_MAIN_PUSH = process.env.BRAYNEE_ALLOW_MAIN_PUSH === '1';
 
 let input = '';
 process.stdin.setEncoding('utf8');
@@ -28,19 +31,23 @@ process.stdin.on('end', () => {
     const command = data.tool_input?.command || '';
     const cwd = data.cwd || process.cwd();
 
-    // ---- 1. push to/from main/master (original behavior, unchanged) ----
+    // ---- 1. push to/from main/master ----
+    // Opt-out via env BRAYNEE_ALLOW_MAIN_PUSH=1 (for no-PR workflows where
+    // direct main pushes are the intended ship path after green local tests).
     if (/^\s*git\s+push/i.test(command)) {
       if (/git\s+push.*\b(main|master)\b/i.test(command)) {
+        if (ALLOW_MAIN_PUSH) process.exit(0);
         log.warn(HOOK, `blocked explicit push to main/master`);
-        process.stderr.write('BLOCKED: Do not push directly to main/master. Create a feature branch and PR instead.');
+        process.stderr.write('BLOCKED: Do not push directly to main/master. Create a feature branch and PR instead. Set BRAYNEE_ALLOW_MAIN_PUSH=1 if this repo intentionally uses a no-PR direct-to-main workflow.');
         process.exit(2);
       }
       if (/git\s+push\s*$/.test(command) || /git\s+push\s+origin\s*$/.test(command)) {
         try {
           const branch = execSync('git rev-parse --abbrev-ref HEAD', { cwd, encoding: 'utf8', windowsHide: true }).trim();
           if (branch === 'main' || branch === 'master') {
+            if (ALLOW_MAIN_PUSH) process.exit(0);
             log.warn(HOOK, `blocked implicit push from ${branch}`);
-            process.stderr.write(`BLOCKED: Currently on '${branch}'. Create a feature branch and PR instead of pushing directly.`);
+            process.stderr.write(`BLOCKED: Currently on '${branch}'. Create a feature branch and PR instead of pushing directly. Set BRAYNEE_ALLOW_MAIN_PUSH=1 if this repo intentionally uses a no-PR direct-to-main workflow.`);
             process.exit(2);
           }
         } catch {}
