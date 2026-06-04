@@ -6,6 +6,7 @@
 
 const path = require('path');
 const { findCodeRoot, findBeadsRoot, sessionDir } = require(path.join(__dirname, 'lib', 'is-code-context.js'));
+const map = require(path.join(__dirname, 'lib', 'bd-task-map.js')); // cp-ydy
 
 // cp-068/HD-4.1: non-UserPromptSubmit stdout doesn't reach Claude unless sent
 // via hookSpecificOutput.additionalContext as a FACTUAL statement. Used on the
@@ -46,13 +47,13 @@ process.stdin.on('end', () => {
     // .beads/ from the code root, EXCLUDING the global ~/.beads that
     // `bd init --shared-server` creates — otherwise every project would look
     // beads-initialized and this enforcement guard would never fire.
-    const beadsFound = findBeadsRoot(codeRoot) !== null;
+    const beadsRoot = findBeadsRoot(codeRoot);
 
-    if (!beadsFound) {
+    if (!beadsRoot) {
       process.stderr.write(
         `BLOCKED: Beads is not initialized in this project. ` +
         `Run \`bd init\` in the project root before creating tasks with TaskCreate. ` +
-        `Task subject was: "${data.task_subject || '(unknown)'}"`
+        `Task subject was: "${data.task_title || data.task_subject || '(unknown)'}"`
       );
       process.exit(2);
     }
@@ -61,7 +62,12 @@ process.stdin.on('end', () => {
     // CC-task <-> beads mirror stays consistent. Not an auto-create — without a
     // stable id map that would duplicate the issue when the task was already
     // mirrored from a `bd create` (the normal flow). beads stays source of truth.
-    const subject = (data.task_subject || data.task_name || '').replace(/"/g, '\\"').slice(0, 140);
+    const subject = (data.task_title || data.task_subject || data.task_name || '').replace(/"/g, '\\"').slice(0, 140);
+    // cp-ydy: ensure a map entry keyed by title. TaskCreated carries no stable
+    // task id (assigned after the hook fires), so we can only seed the title
+    // here — TaskCompleted binds the cc_task_id to it later. If `bd create`
+    // already recorded a bd_id under this title, this is a no-op merge.
+    try { map.upsert(path.join(beadsRoot, '.beads'), { title: subject }); } catch {}
     emit(
       `A Claude Code task "${subject}" was created. ` +
       `beads is the source of truth: it is out of sync unless a beads issue tracks this work. ` +
