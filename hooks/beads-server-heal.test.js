@@ -55,17 +55,17 @@ test('isDbNotFound ignores unrelated errors', () => {
 // ── pidLooksLikeDolt (injected runner — no real processes) ───────────────────
 test('pidLooksLikeDolt true for a dolt process (win32 tasklist CSV)', () => {
   const runner = () => '"dolt.exe","17864","Console","1","112,000 K"';
-  assert.ok(pidLooksLikeDolt(17864, runner));
+  assert.ok(pidLooksLikeDolt(17864, runner, 'win32'));   // force the win32 parse path on any OS
 });
 
 test('pidLooksLikeDolt true for a dolt process (posix ps comm)', () => {
   const runner = () => 'dolt\n';
-  assert.ok(pidLooksLikeDolt(17864, runner));
+  assert.ok(pidLooksLikeDolt(17864, runner, 'linux'));   // force the posix parse path on any OS
 });
 
 test('pidLooksLikeDolt false for a non-dolt process', () => {
   const runner = () => '"node.exe","1234","Console","1","50,000 K"';
-  assert.ok(!pidLooksLikeDolt(1234, runner));
+  assert.ok(!pidLooksLikeDolt(1234, runner, 'win32'));
 });
 
 test('pidLooksLikeDolt false when lookup throws (never kill the unknown)', () => {

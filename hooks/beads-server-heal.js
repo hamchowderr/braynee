@@ -76,11 +76,15 @@ function isDbNotFound(text) {
 // Best-effort: does this PID belong to a dolt process? Cross-platform, no deps.
 // Returns true only on a positive identification; false when unknown (so an
 // unidentifiable PID is never killed).
-function pidLooksLikeDolt(pid, runner) {
+function pidLooksLikeDolt(pid, runner, platform) {
   if (!pid || pid <= 0) return false;
   const run = runner || defaultRunner;
+  // `platform` is injectable so the win32 (tasklist CSV) and posix (ps comm)
+  // parse paths are both testable on any OS — otherwise a win32-format fixture
+  // can never pass on a Linux/macOS CI runner (the matrix that caught this).
+  const plat = platform || process.platform;
   try {
-    if (process.platform === 'win32') {
+    if (plat === 'win32') {
       const out = run('tasklist', ['/FI', `PID eq ${pid}`, '/NH', '/FO', 'CSV']);
       return /(^|[",])"?dolt(\.exe)?"?/i.test(out) || /dolt\.exe/i.test(out);
     }
