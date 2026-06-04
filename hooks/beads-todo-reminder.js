@@ -14,6 +14,9 @@
 
 const fs = require('fs');
 const path = require('path');
+// cp-ydy: record bd_id<->title into the stable id map so back-prop can resolve
+// the exact issue later (best-effort — a map failure must never break the mirror).
+const map = require(path.join(__dirname, 'lib', 'bd-task-map.js'));
 
 // cp-psc / HD-4.1 + HD-R2.2: PostToolUse stdout is NOT added to Claude's
 // context — only UserPromptSubmit/UserPromptExpansion/SessionStart stdout is.
@@ -69,6 +72,10 @@ process.stdin.on('end', () => {
       title = title.replace(/"/g, '\\"').slice(0, 140);
 
       if (idMatch) {
+        // cp-ydy: persist the bd_id<->title link; TaskCompleted later binds the
+        // cc_task_id to this entry by title (the only join point, since the CC
+        // task id does not exist until completion time).
+        try { map.upsert(path.join(cwd, '.beads'), { bdId: idMatch[1], title }); } catch {}
         emit(
           `beads issue ${idMatch[1]} was created ("${title}"). ` +
           `The Claude Code todo list and the TaskNotes vault mirror are out of sync with beads for this issue until the todo list includes it as a pending item ` +

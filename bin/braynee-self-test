@@ -190,6 +190,9 @@ const mockInput = JSON.stringify({
 });
 for (const hookFile of listFiles(path.join(PLUGIN_ROOT, 'hooks'), ['.js'])) {
   const name = path.basename(hookFile);
+  // *.test.js are unit tests (run in section 7), not hooks — don't invoke them
+  // here with mock stdin (they'd run their suite and muddy this section).
+  if (name.endsWith('.test.js') || name.endsWith('.test.mjs')) continue;
   const r = spawnSync(process.execPath, [hookFile], {
     input: mockInput,
     encoding: 'utf8',
@@ -255,6 +258,7 @@ for (const s of scripts) {
 // ── 7. Unit tests (lib/*.test.js under hooks/ and scripts/) ──────────────────
 log('\n=== 7. Unit tests ===');
 const testFiles = [
+  ...listFiles(path.join(PLUGIN_ROOT, 'hooks'), ['.test.js', '.test.mjs']),
   ...listFiles(path.join(PLUGIN_ROOT, 'hooks', 'lib'), ['.test.js', '.test.mjs']),
   ...listFiles(path.join(PLUGIN_ROOT, 'scripts', 'lib'), ['.test.js', '.test.mjs']),
 ];
@@ -331,10 +335,21 @@ function assertGate(label, cond) {
 // session notes), so only assert the property we now depend on: a non-matching
 // command produces no stdout and a clean exit (the self-gate fires first).
 for (const h of ['commit-cadence-nudge.js', 'beads-claim-to-branch.js',
-                 'beads-status-sync.js', 'beads-dashboard-refresh.js', 'mtn-to-beads-sync.js']) {
+                 'beads-status-sync.js', 'beads-dashboard-refresh.js', 'mtn-to-beads-sync.js',
+                 'beads-close-gate.js']) {
   const noise = runHook(h, 'echo hello world');
   assertGate(`${h} stays SILENT + exit 0 on a non-matching command`,
     noise.out.trim() === '' && (noise.status === 0 || noise.status === 2));
+}
+
+// beads-close-gate.js (cp-9f2.5) — must NEVER block when it can't read the
+// target issue (bd absent/uninitialized): a `bd close` against a bare-marker
+// repo stays silent + non-blocking. The flag/block decision itself is unit-
+// tested in §7; here we lock the graceful "don't get in the way" contract.
+{
+  const r = runHook('beads-close-gate.js', 'bd close zz-000 --reason "x"');
+  assertGate('beads-close-gate stays SILENT when the target issue is unreadable (bare-marker repo)',
+    r.out.trim() === '' && (r.status === 0 || r.status === 2));
 }
 
 // secret-exposure-guard.js — DENY value-printing secret commands (exit 2 + stderr),
@@ -370,6 +385,20 @@ function runGuard(payload) {
     write(path.join(gateCwd, '.env'), 'OPENAI_API_KEY=sk-' + 'a'.repeat(48) + '\n').status === 2);
   assertGate('secret-exposure-guard ALLOWS a placeholder in .env',
     write(path.join(gateCwd, '.env'), 'OPENAI_API_KEY=YOUR_KEY_HERE\n').status === 0);
+}
+
+// beads-server-heal.js — SessionStart heal (cp-6j5). The kill path only runs
+// against a REAL initialized .beads/; against a bare marker dir (no metadata/
+// config/issues/dolt) it must stay completely silent and exit 0, so it never
+// touches a server during a smoke run. (No session_id → sessionDir uses cwd
+// directly, bypassing the cross-section anchor cache.)
+{
+  const r = spawnSync(process.execPath, [path.join(PLUGIN_ROOT, 'hooks', 'beads-server-heal.js')], {
+    input: JSON.stringify({ cwd: gateCwd, source: 'self-test' }),
+    encoding: 'utf8', timeout: 15_000,
+  });
+  assertGate('beads-server-heal stays SILENT + exit 0 on a bare-marker .beads/',
+    (r.stdout || '').trim() === '' && (r.status === 0 || r.status === 2));
 }
 
 try { fs.rmSync(gateCwd, { recursive: true, force: true }); } catch {}
@@ -426,6 +455,37 @@ for (const fp of [...walkCode(path.join(PLUGIN_ROOT, 'hooks')), ...walkCode(path
   }
 }
 log(`  ${results.winhide.ok} files clean | ${results.winhide.fail} with un-hidden spawns`);
+
+// ── 10. Agent definition assertions (autopilot) ──────────────────────────────
+// Locks two autopilot.md regressions:
+//  - cp-9f2.1: the model must not be re-pinned to Haiku — a build-to-ship run
+//    needs the session model (model: inherit), not the old hardcoded haiku.
+//  - cp-9f2.7: every bd command must use a flag that exists on the installed bd.
+//    `bd update --add-note` and `bd dep add ... --kind` are NOT real flags; they
+//    print help and silently no-op, so the agent's note/dep steps never persist.
+log('\n=== 10. Agent definition assertions ===');
+results.agents = { ok: 0, fail: 0, errors: [] };
+function assertAgent(label, cond) {
+  if (cond) { results.agents.ok++; log(`  OK: ${label}`); }
+  else { results.agents.fail++; results.agents.errors.push({ test: label }); log(`  FAIL: ${label}`); }
+}
+{
+  const apPath = path.join(PLUGIN_ROOT, 'agents', 'autopilot.md');
+  const ap = fs.existsSync(apPath) ? fs.readFileSync(apPath, 'utf8') : '';
+  const modelMatch = ap.match(/^model:\s*(\S+)\s*$/m);
+  assertAgent('autopilot.md declares a model', !!modelMatch);
+  assertAgent('autopilot.md model is not pinned to haiku (cp-9f2.1)',
+    !!modelMatch && modelMatch[1] !== 'haiku');
+  assertAgent('autopilot.md uses no `--add-note` flag (cp-9f2.7)',
+    !/\bbd\b[^\n]*--add-note\b/.test(ap));
+  assertAgent('autopilot.md has no `bd dep add ... --kind` on one line (cp-9f2.7)',
+    !/bd dep add[^\n]*--kind\b/.test(ap));
+  assertAgent('autopilot.md documents a local quality gate (biome + Tier-1, hard-stop on red) (cp-9f2.6)',
+    /biome check/i.test(ap) && /tier-1/i.test(ap) && /red gate is a hard stop/i.test(ap));
+  assertAgent('autopilot.md ship mode is opt-in + prod stays human-gated (cp-9f2.2)',
+    /ship mode \(opt-in/i.test(ap) && /double opt-in/i.test(ap) && /human-gated/i.test(ap));
+}
+log(`  ${results.agents.ok} passed | ${results.agents.fail} failed`);
 
 // ── Summary ──────────────────────────────────────────────────────────────────
 const totalOk = Object.values(results).reduce((s, r) => s + r.ok, 0);

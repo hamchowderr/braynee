@@ -65,6 +65,30 @@ export async function loadClaudeData() {
     }
   } catch {}
 
+  // Read path-scoped rules (~/.claude/rules/*.md) — frontmatter `paths:` glob list + markdown body
+  let rules = [];
+  try {
+    for (const f of rd(join(home, '.claude', 'rules')).sort()) {
+      if (!f.endsWith('.md')) continue;
+      try {
+        const md = readFileSync(join(home, '.claude', 'rules', f), 'utf8');
+        const fm = md.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
+        let paths = [], body = md;
+        if (fm) {
+          body = fm[2];
+          const pathsBlock = fm[1].match(/paths:\s*\n([\s\S]*?)(?=\n\S|$)/);
+          if (pathsBlock) {
+            paths = pathsBlock[1]
+              .split('\n')
+              .map(l => l.match(/-\s*["']?([^"'\n]+?)["']?\s*$/)?.[1])
+              .filter(Boolean);
+          }
+        }
+        rules.push({ file: f, paths, body: body.trim() });
+      } catch {}
+    }
+  } catch {}
+
   // Read local plugins
   try {
     for (const e of rd(join(home, '.claude', 'plugins', 'local'), { withFileTypes: true })) {
@@ -202,7 +226,7 @@ export async function loadClaudeData() {
   return {
     s, c, claudeMd, insights, ig: _ig,
     installedSkills, localPlugins, mcpJson, installedPlugins,
-    customAgents, allProjects, totalJSONLSessions,
+    customAgents, rules, allProjects, totalJSONLSessions,
     permissions, hooks, env, enabledPlugins, statusLine,
     voice, sMcp, uMcp, gen,
     acct, prefs, projects, skillUsage,

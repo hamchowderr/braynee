@@ -29,6 +29,9 @@ const { getVaultRoot } = require('./lib/vault-root.js');
 // beads-status-sync hook never sees them and seeded backlogs got zero
 // TaskNotes. Mirror them here using the SAME shared implementation.
 const TN = require('../hooks/lib/tasknotes-mirror.js');
+// cp-9f2.3/.4: pure parse + DoD + dependency-edge logic (unit-tested in
+// scripts/lib/prd-seed-core.test.js via bin/braynee-self-test §7).
+const CORE = require('./lib/prd-seed-core.js');
 
 const VAULT = getVaultRoot();
 const PRD_DIR = path.join(VAULT, '2. Areas', 'Product Manager', 'PRDs');
@@ -42,6 +45,7 @@ if (!args[0]) {
 }
 const target = args[0];
 const dryRun = args.includes('--dry-run');
+const noDod = args.includes('--no-dod');
 
 const PRIORITY_FLAG = { P0: '0', P1: '1', P2: '2', P3: '3' };
 
@@ -81,27 +85,8 @@ function parseFrontmatter(content) {
   return { fm, fmRaw, body: normalized.slice(m[0].length) };
 }
 
-function parseAcceptanceCriteria(body) {
-  const m = body.match(/##\s+Acceptance Criteria\s*\n([\s\S]*?)(?=\n##\s+|\n*$)/i);
-  if (!m) return [];
-  const lines = m[1].split('\n');
-  const items = [];
-  let currentMilestone = null;
-  for (const line of lines) {
-    const milestoneMatch = line.match(/^###\s+Milestone:\s+(.+?)\s*$/);
-    if (milestoneMatch) { currentMilestone = milestoneMatch[1].trim(); continue; }
-    const itemMatch = line.match(/^\s*-\s+\[\s\]\s+\*\*\[(P[0-3])\]\s+(.+?)\*\*\s*(?:[—-]\s*(.+))?$/);
-    if (itemMatch) {
-      items.push({
-        priority: itemMatch[1],
-        title: itemMatch[2].trim(),
-        description: (itemMatch[3] || '').trim(),
-        milestone: currentMilestone,
-      });
-    }
-  }
-  return items;
-}
+// parseAcceptanceCriteria moved to ./lib/prd-seed-core.js (CORE) — it now also
+// parses per-line `{after: ...}` gating annotations (cp-9f2.3).
 
 function updateFrontmatter(content, updates) {
   const normalized = stripBom(content).replace(/\r\n/g, '\n');
@@ -121,7 +106,7 @@ function updateFrontmatter(content, updates) {
 // label. This is the verification handle — we never trust `bd create` exit
 // codes for persistence (a create can exit 0 without durably landing in a
 // fresh project's shared-server/namespace state). Returns a Set of titles.
-function persistedTitles(prdLabel, repoDir) {
+function persistedIssues(prdLabel, repoDir) {
   let out;
   try {
     out = execSync(
@@ -139,11 +124,44 @@ function persistedTitles(prdLabel, repoDir) {
     console.error(`Could not parse \`bd list --json\` output from target repo.`);
     return null;
   }
+  // titles: reconcile handle (create only missing). byTitle: title→id, used to
+  // resolve dependency edges into `bd dep add` after issues persist (cp-9f2.3).
   const titles = new Set();
+  const byTitle = new Map();
   for (const issue of Array.isArray(parsed) ? parsed : []) {
-    if (issue && typeof issue.title === 'string') titles.add(issue.title.trim());
+    if (issue && typeof issue.title === 'string') {
+      const t = issue.title.trim();
+      titles.add(t);
+      if (issue.id && !byTitle.has(t)) byTitle.set(t, issue.id);
+    }
   }
-  return titles;
+  return { titles, byTitle };
+}
+
+// cp-9f2.3: add dependency edges via `bd dep add <issue> <depends-on>` once both
+// endpoints persist. Idempotent — an edge that already exists is counted as
+// skipped, not failed; an endpoint not yet persisted (partial seed) is deferred
+// to the next re-run.
+function addDependencyEdges(edges, byTitle, repoDir) {
+  // `bd dep add` is idempotent (verified: a duplicate add succeeds and does not
+  // create a second edge), so we report ensure-semantics, not "newly added".
+  let ensured = 0, deferred = 0, failed = 0;
+  for (const e of edges) {
+    const fromId = byTitle.get(e.fromTitle.trim());
+    const toId = byTitle.get(e.toTitle.trim());
+    if (!fromId || !toId) { deferred++; continue; }   // endpoint not persisted yet (partial seed)
+    try {
+      execSync(`bd dep add ${fromId} ${toId}`, {
+        cwd: repoDir, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true,
+      });
+      ensured++;
+    } catch (err) {
+      const msg = (err.stderr?.toString() || err.message || '').toLowerCase();
+      if (/already|exist|duplicate/.test(msg)) { ensured++; }   // present (some bd builds error on dup)
+      else { failed++; console.log(`    ✗ dep ${fromId} -> ${toId}: ${(err.stderr?.toString() || err.message).split('\n')[0]}`); }   // e.g. a cycle
+    }
+  }
+  return { ensured, deferred, failed };
 }
 
 // cp-8ru: mirror every persisted PRD issue to TaskNotes via the shared
@@ -203,16 +221,40 @@ if (!fs.existsSync(path.join(repoDir, '.beads'))) {
   process.exit(1);
 }
 
-const items = parseAcceptanceCriteria(body);
+const items = CORE.parseAcceptanceCriteria(body);
 if (items.length === 0) {
   console.error(`No seedable items found in ## Acceptance Criteria section.`);
   console.error(`Expected lines like: - [ ] **[P0] Title** — description`);
   process.exit(1);
 }
 
+// cp-9f2.4: append the standard Quality & Deploy (DoD) milestone so the
+// definition-of-done becomes beads on every project, sourced from the global
+// ship-pipeline rule. Skipped via --no-dod, `dod: false` in PRD frontmatter, if
+// the rule file is absent, or if the PRD already authored that milestone.
+const shipPipelinePath = path.join(os.homedir(), '.claude', 'rules', 'ship-pipeline.md');
+if (noDod || fm.dod === false) {
+  console.log('DoD milestone: skipped (--no-dod or `dod: false`).');
+} else {
+  const dodItems = CORE.buildDodItems({ shipPipelinePath });
+  if (dodItems.length === 0) {
+    console.log(`DoD milestone: skipped — ship-pipeline rule not found at ${shipPipelinePath}.`);
+  } else if (items.some(i => i.milestone === CORE.DOD_MILESTONE)) {
+    console.log(`DoD milestone: PRD already defines "${CORE.DOD_MILESTONE}" — not injecting.`);
+  } else {
+    items.push(...dodItems);
+    console.log(`DoD milestone: +${dodItems.length} standard "${CORE.DOD_MILESTONE}" issues injected.`);
+  }
+}
+
+// cp-9f2.3: derive dependency edges (per-line `{after:}` annotations + gated
+// milestones) so `bd ready` enforces order: scaffold → build → test → deploy.
+const depEdges = CORE.computeDependencyEdges(items);
+
 console.log(`PRD: ${prdPath}`);
 console.log(`Target repo: ${repoDir}`);
-console.log(`${items.length} acceptance criteria found.\n`);
+console.log(`${items.length} acceptance criteria found` +
+  `${depEdges.length ? `, ${depEdges.length} dependency edge(s) planned` : ''}.\n`);
 
 const prdLabel = `prd:${path.basename(prdPath, '.md')}`;
 
@@ -227,18 +269,23 @@ function buildCreateCmd(item) {
 
 if (dryRun) {
   for (const item of items) console.log(`[dry-run] ${buildCreateCmd(item)}`);
-  console.log(`\nDone. ${items.length}/${items.length} issues would be created.`);
+  if (depEdges.length) {
+    console.log(`\n[dry-run] Planned dependencies (bd dep add <issue> <depends-on>):`);
+    for (const e of depEdges) console.log(`[dry-run]   "${e.fromTitle}" depends-on "${e.toTitle}"  (${e.reason})`);
+  }
+  console.log(`\nDone. ${items.length}/${items.length} issues would be created` +
+    `${depEdges.length ? `, ${depEdges.length} dep edge(s) would be added` : ''}.`);
   process.exit(0);
 }
 
 // --- Reconcile: only create acceptance criteria not already persisted ---
-const before = persistedTitles(prdLabel, repoDir);
+const before = persistedIssues(prdLabel, repoDir);
 if (before === null) {
   console.error(`\nAborting: could not verify existing seeded issues in target repo.`);
   process.exit(1);
 }
 
-const missing = items.filter(it => !before.has(it.title.trim()));
+const missing = items.filter(it => !before.titles.has(it.title.trim()));
 const alreadyPresent = items.length - missing.length;
 if (alreadyPresent > 0) {
   console.log(`${alreadyPresent}/${items.length} acceptance criteria already present in target — reconciling, creating only the ${missing.length} missing.\n`);
@@ -257,12 +304,18 @@ for (const item of missing) {
 }
 
 // --- Verify persistence: re-query the target repo, never trust exit codes ---
-const after = persistedTitles(prdLabel, repoDir);
+const after = persistedIssues(prdLabel, repoDir);
 if (after === null) {
   console.error(`\nAborting: created issues but could not re-verify persistence in target repo. Leaving PRD seeded: false so it stays re-runnable.`);
   process.exit(1);
 }
-const verifiedCount = items.filter(it => after.has(it.title.trim())).length;
+const verifiedCount = items.filter(it => after.titles.has(it.title.trim())).length;
+
+// cp-9f2.3: issues now persisted with ids — add the planned dependency edges.
+if (depEdges.length) {
+  const dep = addDependencyEdges(depEdges, after.byTitle, repoDir);
+  console.log(`Dependencies: ${dep.ensured} ensured, ${dep.deferred} deferred (endpoint pending), ${dep.failed} failed.`);
+}
 
 // cp-8ru: mirror persisted issues to TaskNotes (full or partial seed alike).
 const tn = mirrorSeededToTasknotes(prdLabel, repoDir);

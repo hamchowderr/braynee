@@ -149,6 +149,31 @@ export function renderAgentsPanel(d) {
   </div>`;
 }
 
+export function renderRulesPanel(d) {
+  const { rules } = d;
+  const cards = rules.length ? rules.map(r => `
+    <div class="card">
+      <div class="card-head"><div class="card-head-dot" style="background:var(--purple)"></div>${esc(r.file)}<span style="margin-left:auto;color:var(--ink-3)">${r.paths.length} scope${r.paths.length === 1 ? '' : 's'}</span></div>
+      <div class="card-body">
+        <div class="rule-scope-lbl">Applies to paths</div>
+        ${r.paths.length ? `<div class="chips">${r.paths.map(p => `<span class="chip chip-val">${esc(p)}</span>`).join('')}</div>` : `<p class="nil">— no path scope (frontmatter empty) —</p>`}
+        <pre class="md-source" style="margin-top:14px">${esc(r.body)}</pre>
+      </div>
+    </div>`).join('') : `<p class="nil">— no rules in ~/.claude/rules/ —</p>`;
+  return `<div id="panel-rules" class="panel">
+    <div class="section-head">
+      <div class="section-title">Rules</div>
+      <div class="section-tag">${rules.length} path-scoped rule${rules.length === 1 ? '' : 's'} · ~/.claude/rules/</div>
+    </div>
+    <div class="card" style="margin-bottom:14px;border-color:rgba(180,142,255,.2);background:rgba(180,142,255,.03)">
+      <div class="card-body" style="font-size:11px;color:var(--ink-2);padding:10px 16px;">
+        <strong style="color:var(--purple)">Path-scoped:</strong> each rule auto-loads into Claude's context only when you touch files matching its glob(s). The <code>paths:</code> frontmatter drives the scope shown on each card.
+      </div>
+    </div>
+    ${cards}
+  </div>`;
+}
+
 export function renderClaudeMdPanel(d) {
   const { claudeMd } = d;
   return `<div id="panel-claudemd" class="panel">

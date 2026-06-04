@@ -211,6 +211,9 @@ body {
 
 .md-source { font-family: var(--mo); font-size: 12px; line-height: 1.7; color: var(--ink); white-space: pre-wrap; word-break: break-word; tab-size: 2; }
 
+/* ── RULES ──────────────────────────────────────────────── */
+.rule-scope-lbl { font-size: 9px; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 8px; }
+
 .footer { padding: 8px 32px; font-size: 10px; color: var(--ink-3); border-top: 1px solid var(--line); background: var(--bg-2); letter-spacing: .06em; flex-shrink: 0; }
 
 /* ── AGENTS ─────────────────────────────────────────────── */
@@ -288,28 +291,33 @@ export function renderSidebar() {
   return `<nav class="sidebar">
   <div class="nav-item active" onclick="nav('braynee',this)" style="padding:12px 20px;margin-bottom:4px"><span class="nav-icon">🧠</span> <strong>Braynee</strong></div>
   <div class="sidebar-section" style="margin-top:8px">Claude Code</div>
-  <div class="nav-item" onclick="nav('general',this)"><span class="nav-icon">◈</span> General</div>
-  <div class="nav-item" onclick="nav('permissions',this)"><span class="nav-icon">⬡</span> Permissions</div>
-  <div class="nav-item" onclick="nav('hooks',this)"><span class="nav-icon">⟳</span> Hooks</div>
-  <div class="nav-item" onclick="nav('plugins',this)"><span class="nav-icon">⊞</span> Plugins</div>
-  <div class="nav-item" onclick="nav('mcp',this)"><span class="nav-icon">⌥</span> MCP Servers</div>
-  <div class="nav-item" onclick="nav('agents',this)"><span class="nav-icon">◈</span> Agents</div>
-  <div class="sidebar-section" style="margin-top:16px">Data</div>
-  <div class="nav-item" onclick="nav('projects',this)"><span class="nav-icon">▤</span> Projects</div>
-  <div class="nav-item" onclick="nav('skills',this)"><span class="nav-icon">◎</span> Skill Usage</div>
-  <div class="nav-item" onclick="nav('iskills',this)"><span class="nav-icon">▣</span> Installed Skills</div>
-  <div class="nav-item" onclick="nav('lplugins',this)"><span class="nav-icon">⊞</span> Local Plugins</div>
-  <div class="nav-item" onclick="nav('prefs',this)"><span class="nav-icon">≡</span> Preferences</div>
+  <div class="nav-item" onclick="nav('general',this)"><span class="nav-icon">⚙️</span> General</div>
+  <div class="nav-item" onclick="nav('permissions',this)"><span class="nav-icon">🔐</span> Permissions</div>
+  <div class="nav-item" onclick="nav('hooks',this)"><span class="nav-icon">🪝</span> Hooks</div>
+  <div class="nav-item" onclick="nav('plugins',this)"><span class="nav-icon">🧩</span> Plugins</div>
+  <div class="nav-item" onclick="nav('mcp',this)"><span class="nav-icon">🔌</span> MCP Servers</div>
+  <div class="nav-item" onclick="nav('agents',this)"><span class="nav-icon">🤖</span> Agents</div>
+  <div class="sidebar-section" style="margin-top:16px">User Settings</div>
   <div class="nav-item" onclick="nav('claudemd',this)"><span class="nav-icon">📄</span> CLAUDE.md</div>
+  <div class="nav-item" onclick="nav('rules',this)"><span class="nav-icon">📐</span> Rules</div>
+  <div class="nav-item" onclick="nav('prefs',this)"><span class="nav-icon">🎛️</span> Preferences</div>
+  <div class="sidebar-section" style="margin-top:16px">Data</div>
+  <div class="nav-item" onclick="nav('projects',this)"><span class="nav-icon">📁</span> Projects</div>
+  <div class="nav-item" onclick="nav('skills',this)"><span class="nav-icon">📊</span> Skill Usage</div>
+  <div class="nav-item" onclick="nav('iskills',this)"><span class="nav-icon">🧰</span> Installed Skills</div>
+  <div class="nav-item" onclick="nav('lplugins',this)"><span class="nav-icon">🗂️</span> Local Plugins</div>
   <div class="sidebar-section" style="margin-top:16px">Insights</div>
-  <div class="nav-item" onclick="nav('analytics',this)"><span class="nav-icon">◉</span> Analytics</div>
-  <div class="nav-item" onclick="nav('tools',this)"><span class="nav-icon">⌁</span> Tool Usage</div>
-  <div class="nav-item" onclick="nav('iprojects',this)"><span class="nav-icon">⬙</span> Project Hours</div>
-  <div class="nav-item" onclick="nav('beads',this)"><span class="nav-icon">◈</span> Beads</div>
+  <div class="nav-item" onclick="nav('analytics',this)"><span class="nav-icon">📈</span> Analytics</div>
+  <div class="nav-item" onclick="nav('tools',this)"><span class="nav-icon">🔧</span> Tool Usage</div>
+  <div class="nav-item" onclick="nav('iprojects',this)"><span class="nav-icon">⏱️</span> Project Hours</div>
+  <div class="nav-item" onclick="nav('beads',this)"><span class="nav-icon">🔗</span> Beads</div>
 </nav>`;
 }
 
-export function renderNavJS() {
+export function renderNavJS(opts = {}) {
+  // Artifact mode: portable/offline single file — the 30s beads live-reload is
+  // pointless (data is baked in at generate time), so strip the timers.
+  const liveReload = !opts.artifact;
   return `<script>
 let _beadsTimer = null;
 
@@ -320,7 +328,7 @@ function nav(id, el) {
   el.classList.add('active');
   sessionStorage.setItem('braynee-panel', id);
   if (_beadsTimer) { clearInterval(_beadsTimer); _beadsTimer = null; }
-  if (id === 'beads') { _beadsTimer = setInterval(() => location.reload(), 30000); }
+  ${liveReload ? `if (id === 'beads') { _beadsTimer = setInterval(() => location.reload(), 30000); }` : ``}
 }
 
 (function() {
@@ -332,7 +340,7 @@ function nav(id, el) {
     document.querySelectorAll('.nav-item').forEach(n => {
       if (n.getAttribute('onclick') === "nav('" + saved + "',this)") n.classList.add('active');
     });
-    if (saved === 'beads') { _beadsTimer = setInterval(() => location.reload(), 30000); }
+    ${liveReload ? `if (saved === 'beads') { _beadsTimer = setInterval(() => location.reload(), 30000); }` : ``}
   }
   renderBeads();
 })();
