@@ -9,6 +9,10 @@ sync-state.json
 last-touched
 .exclusive-lock
 
+# bd<->CC-task id map (braynee back-prop, cp-ydy) — per-machine runtime state
+cc-task-map.json
+cc-task-map.json.tmp
+
 # Daemon runtime (lock, log, pid)
 daemon.*
 
@@ -44,6 +48,7 @@ ephemeral.sqlite3-wal
 ephemeral.sqlite3-shm
 
 # Dolt server management (auto-started by bd)
+dolt-config.log
 dolt-server.pid
 dolt-server.log
 dolt-server.lock

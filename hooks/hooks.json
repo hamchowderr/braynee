@@ -72,6 +72,16 @@
           {
             "type": "command",
             "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/beads-server-heal.js"],
+            "statusMessage": "Checking beads server health..."
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
             "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/beads-work-surface.js"],
             "statusMessage": "Surfacing beads work queue..."
           }
@@ -109,6 +119,11 @@
             "type": "command",
             "command": "node",
             "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/branch-name-check.js"]
+          },
+          {
+            "type": "command",
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/beads-close-gate.js"]
           }
         ]
       },
