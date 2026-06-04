@@ -12,7 +12,7 @@ import { computeAllHookCmds, computeBrayneeHealth, computeHooksLive } from './da
 import { renderCSS, renderTopbar, renderSidebar, renderNavJS } from './html/shell.mjs';
 import { esc } from './html/utils.mjs';
 
-import { renderGeneralPanel, renderPermissionsPanel, renderHooksPanel, renderPluginsPanel, renderMcpPanel, renderAgentsPanel, renderClaudeMdPanel } from './panels/config.mjs';
+import { renderGeneralPanel, renderPermissionsPanel, renderHooksPanel, renderPluginsPanel, renderMcpPanel, renderAgentsPanel, renderRulesPanel, renderClaudeMdPanel } from './panels/config.mjs';
 import { renderProjectsPanel, renderSkillUsagePanel, renderInstalledSkillsPanel, renderLocalPluginsPanel, renderPrefsPanel } from './panels/data.mjs';
 import { renderAnalyticsPanel, renderToolUsagePanel, renderProjectHoursPanel } from './panels/insights.mjs';
 import { renderBrayneePanel } from './panels/braynee.mjs';
@@ -47,14 +47,22 @@ const pluginAuthor = pluginMeta.author?.name || '';
 // Bundle all data for panels
 const d = { ...claudeData, vaultStats, beadsStats, brayneeHealth, hooksLive, ts, pluginVersion, pluginAuthor };
 
-const html = `<!DOCTYPE html>
+// One template, two sources: the interactive local dashboard and a fully
+// self-contained, offline-portable artifact (no external fonts, no live-reload)
+// that can be shared or dropped into a Claude artifact canvas. `artifact` toggles
+// the portability tweaks; the panels + data layer are identical.
+function buildHtml({ artifact = false } = {}) {
+  // Artifact mode drops the Google Fonts <link> so the file is fully offline —
+  // the CSS font stacks fall back to the system monospace/sans gracefully.
+  const fontLinks = artifact ? '' : `<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=Syne:wght@700;800&display=swap" rel="stylesheet">`;
+  return `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Braynee</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+${fontLinks}
 ${renderCSS()}
 </head>
 <body>
@@ -77,6 +85,7 @@ ${renderSidebar()}
   ${renderInstalledSkillsPanel(d)}
   ${renderLocalPluginsPanel(d)}
   ${renderPrefsPanel(d)}
+  ${renderRulesPanel(d)}
   ${renderClaudeMdPanel(d)}
   ${renderAnalyticsPanel(d)}
   ${renderToolUsagePanel(d)}
@@ -87,15 +96,23 @@ ${renderSidebar()}
 
 ${renderBeadsDrawer()}
 
-<div class="footer">GENERATED ${esc(ts.toUpperCase())} &nbsp;·&nbsp; ${esc(claudeData.acct.organizationName || '')} &nbsp;·&nbsp; BRAYNEE v${esc(pluginVersion)}${pluginAuthor ? ' · ' + esc(pluginAuthor) : ''}</div>
+<div class="footer">GENERATED ${esc(ts.toUpperCase())} &nbsp;·&nbsp; ${esc(claudeData.acct.organizationName || '')} &nbsp;·&nbsp; BRAYNEE v${esc(pluginVersion)}${pluginAuthor ? ' · ' + esc(pluginAuthor) : ''}${artifact ? ' · PORTABLE ARTIFACT' : ''}</div>
 
 ${renderBeadsJS(beadsStats)}
-${renderNavJS()}
+${renderNavJS({ artifact })}
 </body>
 </html>`;
+}
 
+const html = buildHtml();
 writeFileSync(outPath, html, 'utf8');
 console.log('Generated: ' + outPath);
+
+// Second source: the self-contained portable artifact (always emitted, fresh
+// off the same data). Shareable, offline, droppable into an artifact canvas.
+const artifactPath = join(outDir, 'braynee-dashboard.html');
+writeFileSync(artifactPath, buildHtml({ artifact: true }), 'utf8');
+console.log('Generated artifact: ' + artifactPath);
 
 // cp-sjc: opening is the default for an explicit/manual run (the /health skill,
 // SKILL.md, the global Brain Check command) — but the SessionStart hook must
