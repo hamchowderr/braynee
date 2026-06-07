@@ -1,7 +1,1 @@
-[
-  {
-    "name": "hook-watcher",
-    "command": "node \"${CLAUDE_PLUGIN_ROOT}/monitors/hook-watcher.mjs\"",
-    "description": "Hook diagnostics — surfaces errors from braynee hook scripts as Claude notifications"
-  }
-]
+[]

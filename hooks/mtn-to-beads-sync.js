@@ -14,8 +14,10 @@ const log = require(path.join(__dirname, 'lib', 'hook-logger.js'));
 const { findCodeRoot } = require(path.join(__dirname, 'lib', 'is-code-context.js'));
 
 const HOOK = 'mtn-to-beads-sync';
+const { overCap } = require(path.join(__dirname, 'lib', 'dolt-guard.js'));
 
 function run(cmd, opts = {}) {
+  if (overCap()) return null; // dolt-guard: never risk spawning a dolt server during a flood
   try {
     return execSync(cmd, { encoding: 'utf8', timeout: 8000, stdio: ['pipe', 'pipe', 'ignore'], windowsHide: true, ...opts }).trim();
   } catch { return null; }

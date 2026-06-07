@@ -28,7 +28,10 @@ const DASHBOARD_SCRIPT = path.join(__dirname, '..', 'scripts', 'beads-dashboard.
 
 const PRIORITY_MAP = { 0: 'critical', 1: 'high', 2: 'medium', 3: 'low', 4: 'low' };
 
+const { overCap } = require(path.join(__dirname, 'lib', 'dolt-guard.js'));
+
 function run(cmd, opts = {}) {
+  if (overCap()) return null; // dolt-guard: never risk spawning a dolt server during a flood
   try {
     return execSync(cmd, { encoding: 'utf8', timeout: 10000, stdio: ['pipe', 'pipe', 'ignore'], windowsHide: true, ...opts }).trim();
   } catch { return null; }

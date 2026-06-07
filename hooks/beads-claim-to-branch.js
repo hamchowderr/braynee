@@ -16,6 +16,7 @@ const path = require('path');
 const log = require(path.join(__dirname, 'lib', 'hook-logger.js'));
 
 const HOOK = 'beads-claim-to-branch';
+const { overCap } = require(path.join(__dirname, 'lib', 'dolt-guard.js'));
 
 function run(cmd, opts = {}) {
   try { return execSync(cmd, { encoding: 'utf8', timeout: 8000, stdio: ['pipe', 'pipe', 'ignore'], windowsHide: true, ...opts }).trim(); }
@@ -67,7 +68,8 @@ process.stdin.on('end', () => {
       process.exit(0);
     }
 
-    const showJson = run(`bd show ${issueId} --json`, { cwd });
+    // dolt-guard: skip the bd query during a dolt-server flood (fall back to defaults).
+    const showJson = overCap() ? null : run(`bd show ${issueId} --json`, { cwd });
     let title = issueId, type = 'feature';
     if (showJson) {
       try {

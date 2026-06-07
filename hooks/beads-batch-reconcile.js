@@ -10,32 +10,27 @@
 // A batched / piped `bd create … && bd create … | tail` strips that line, so
 // beads-status-sync AND beads-todo-reminder both miss the new issues — no
 // TaskNote gets created. Stacking more per-call parsers can't fix this (they
-// share the same brittle input — HD-3.3). A single PostToolBatch sweep of
-// `bd list` for the repo is structurally immune to batch shaping: it mirrors
-// any issue that has no TaskNote yet, however it was created.
+// share the same brittle input — HD-3.3). A single PostToolBatch sweep of the
+// repo's issues.jsonl is structurally immune to batch shaping: it mirrors any
+// issue that has no TaskNote yet, however it was created.
 //
 // Idempotent: ensureMtnTask() dedupes by bd issue ID via a filesystem scan of
 // the TaskNotes dir, so re-running every batch only ever creates the missing
 // mirrors. Registered async (no model-call latency cost).
 //
-// Scope-safe: runs `bd list --json` at the repo's .beads root (findBeadsRoot,
-// which EXCLUDES the global ~/.beads). NEVER uses `--all` (cp-o4g: --all
-// overrides the per-repo filter on the shared Dolt server and spans every
-// project's namespace).
+// Scope-safe + server-free: reads the repo's .beads/issues.jsonl at the .beads
+// root (findBeadsRoot, which EXCLUDES the global ~/.beads). Reading the per-repo
+// jsonl is inherently scoped to THIS project (no cp-o4g `--all` trap) and never
+// queries the shared Dolt server, so concurrent multi-session batches don't pile
+// up orphan dolt servers (cp-6j5 / dolt-guard).
 
-const { execSync } = require('child_process');
 const path = require('path');
 const log = require(path.join(__dirname, 'lib', 'hook-logger.js'));
 const { findBeadsRoot, findCodeRoot, sessionDir } = require(path.join(__dirname, 'lib', 'is-code-context.js'));
+const { readIssues } = require(path.join(__dirname, 'lib', 'read-issues-jsonl.js'));
 const TN = require(path.join(__dirname, 'lib', 'tasknotes-mirror.js'));
 
 const HOOK = 'beads-batch-reconcile';
-
-function run(cmd, opts = {}) {
-  try {
-    return execSync(cmd, { encoding: 'utf8', timeout: 10000, stdio: ['pipe', 'pipe', 'ignore'], windowsHide: true, ...opts }).trim();
-  } catch { return null; }
-}
 
 // Resolve the project display-name from a vault project file, mirroring the
 // derivation beads-status-sync uses, so the +project tag matches.
@@ -74,13 +69,12 @@ process.stdin.on('end', () => {
     const beadsRoot = findBeadsRoot(eventCwd) || findBeadsRoot(sessionDir(data));
     if (!beadsRoot) { process.exit(0); }
 
-    // NEVER --all (cp-o4g). Repo-scoped list at the .beads root.
-    const raw = run('bd list --json', { cwd: beadsRoot });
-    if (!raw) { process.exit(0); }
-
-    let issues;
-    try { issues = JSON.parse(raw); } catch { process.exit(0); }
-    if (!Array.isArray(issues) || issues.length === 0) { process.exit(0); }
+    // Read the repo's issues.jsonl directly — repo-scoped by construction (no
+    // cp-o4g --all trap) and server-free, so concurrent sessions don't hammer
+    // the shared Dolt server (cp-6j5 / dolt-guard). bd auto-exports to jsonl on
+    // create, so freshly-created issues are present by this PostToolBatch sweep.
+    const issues = readIssues(beadsRoot);
+    if (!issues.length) { process.exit(0); }
 
     const codeRoot = findCodeRoot(beadsRoot) || beadsRoot;
     const projectSlug = projectSlugFor(codeRoot);
