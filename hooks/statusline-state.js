@@ -87,38 +87,36 @@ function extractGoal(content) {
   return firstLine.replace(/^[-*#]\s*/, '').trim().substring(0, 120);
 }
 
-// Query beads for open issue count and in-progress item — fast-fail if server not ready
+// Read open/ready counts straight from the project's .beads/issues.jsonl — the
+// source of truth. NO `bd`, NO server, NO process spawn.
+//
+// WHY (cp-6j5 / dolt-guard): this used to run `bd` 3× on EVERY Write/Edit/Bash.
+// When the shared Dolt server is wedged, each `bd` makes bd auto-start a new dolt
+// sql-server, and "3× per tool" floods the machine with hundreds of them until it
+// crashes. A status bar never needs a live DB query — the JSONL is right there.
 function getBeadsData(projectDir) {
-  return new Promise((resolve) => {
-    if (!fs.existsSync(path.join(projectDir, '.beads'))) return resolve(null);
-    const { spawn } = require('child_process');
-
-    function runBd(args) {
-      return new Promise((res) => {
-        const dl = setTimeout(() => { p.kill(); res(''); }, 1000);
-        const p = spawn('bd', args, { cwd: projectDir, stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true });
-        let o = '';
-        p.stdout.on('data', c => { o += c; });
-        p.on('close', () => { clearTimeout(dl); res(o); });
-        p.on('error', () => { clearTimeout(dl); res(''); });
-      });
+  try {
+    const jsonl = path.join(projectDir, '.beads', 'issues.jsonl');
+    if (!fs.existsSync(jsonl)) return null;
+    let openCount = 0;
+    let readyCount = 0;
+    for (const line of fs.readFileSync(jsonl, 'utf8').split('\n')) {
+      const s = line.trim();
+      if (!s) continue;
+      let issue;
+      try { issue = JSON.parse(s); } catch { continue; }
+      const status = issue && issue.status;
+      if (!status || status === 'closed') continue;
+      openCount++;
+      // "ready" ≈ actionable now: open (not in_progress / blocked / deferred).
+      // A cheap, server-free approximation — good enough for a status bar.
+      if (status === 'open') readyCount++;
     }
-
-    const deadline = setTimeout(() => resolve(null), 2000);
-    Promise.all([
-      runBd(['list', '--flat', '--status=open']),
-      runBd(['count', '--status=open']),
-      runBd(['ready']),
-    ]).then(([openOut, countOut, readyOut]) => {
-      clearTimeout(deadline);
-      const openLines = openOut.split('\n').filter(l => l.trim() && !l.startsWith('─') && !l.startsWith('No issues'));
-      const openCount = openLines.length || 0;
-      const readyLines = readyOut.split('\n').filter(l => /^[○◐●]/.test(l.trim()));
-      const readyCount = readyLines.length || 0;
-      if (!openCount && !readyCount) return resolve(null);
-      resolve({ openCount, readyCount });
-    }).catch(() => { clearTimeout(deadline); resolve(null); });
-  });
+    if (!openCount && !readyCount) return null;
+    return { openCount, readyCount };
+  } catch {
+    return null;
+  }
 }
 
 async function main() {
@@ -147,7 +145,7 @@ async function main() {
 
     const session = findActiveSession(projectName);
     const goal = session ? extractGoal(session.content) : '';
-    const beads = await getBeadsData(codeRoot);
+    const beads = getBeadsData(codeRoot); // synchronous JSONL read — no bd, no spawn
 
     const state = {
       goal,

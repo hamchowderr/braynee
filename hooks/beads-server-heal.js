@@ -200,6 +200,45 @@ function killPid(pid) {
 
 function emit(md) { process.stdout.write(md); }
 
+// The Dolt port this project talks to: the explicit per-project port file, else
+// the shared-server port file. Used to locate a wedged server when bd's start
+// error doesn't name the port (the handshake-wedge case).
+function configuredPort(beadsRoot) {
+  const candidates = [
+    path.join(beadsRoot, '.beads', 'dolt-server.port'),
+    path.join(os.homedir(), '.beads', 'shared-server', 'dolt-server.port'),
+  ];
+  for (const f of candidates) {
+    try {
+      const p = Number(String(fs.readFileSync(f, 'utf8')).trim());
+      if (p > 0) return p;
+    } catch {}
+  }
+  return null;
+}
+
+// Reclaim a port held by a wedged/squatted dolt server that is NOT serving our DB
+// (our probe already failed). Generalizes the old "in use by another project"
+// path so it also fixes the handshake-wedge — where our own shared server listens
+// on the port but aborts every handshake, so `bd dolt start` fails without the
+// clean "in use by another" message (the recurring cp-6j5 failure).
+// SAFETY: still triple-gated — we only kill a process that (a) listens on OUR
+// configured port, (b) is confirmed a dolt process, while (c) our DB probe failed.
+function reclaimPort(cwd, port, pidHint) {
+  if (!port) return false;
+  const pid = pidHint || pidOnPort(port);
+  if (!pid || !pidLooksLikeDolt(pid)) {
+    log.warn(HOOK, `port ${port}: no confirmed dolt PID to reclaim (pid=${pid || '?'})`);
+    return false;
+  }
+  const killed = killPid(pid);
+  log.warn(HOOK, `reclaim port ${port}: kill wedged dolt PID ${pid}: ${killed ? 'ok' : 'FAILED'}`);
+  if (!killed) return false;
+  clearStaleLocks(cwd);
+  const start = bd('dolt start', cwd);
+  return start.ok && probeHealthy(cwd).ok;
+}
+
 function heal(cwd) {
   // 1. Already healthy? Silent.
   if (probeHealthy(cwd).ok) {
@@ -221,33 +260,26 @@ function heal(cwd) {
     return;
   }
 
-  // 3. Port-in-use: a wedged/foreign dolt server squats the port and is not
-  //    serving our DB (our probe already failed). Reclaim it — triple-gated.
+  // 3. Reclaim a wedged/squatted port. Two ways we get here:
+  //    (a) bd named it: "port in use by another project's dolt server (PID N)";
+  //    (b) the HANDSHAKE-WEDGE — our own shared server listens on the configured
+  //        port but aborts every handshake, so `bd dolt start` fails WITHOUT the
+  //        clean "in use by another" message (the recurring cp-6j5 failure).
+  //    In both cases the DB probe already proved nothing is serving our DB, so
+  //    reclaiming the port (kill the dolt process on it, restart) is safe.
   const info = parseStartError(start.err);
-  if (info.isPortInUse) {
-    const port = info.port;
-    const pid = info.pid || pidOnPort(port);
-    log.warn(HOOK, `port ${port || '?'} squatted by PID ${pid || '?'} (not serving our DB)`);
-
-    if (pid && pidLooksLikeDolt(pid)) {
-      const killed = killPid(pid);
-      log.warn(HOOK, `kill squatter PID ${pid}: ${killed ? 'ok' : 'FAILED'}`);
-      if (killed) {
-        clearStaleLocks(cwd);
-        start = bd('dolt start', cwd);
-        if (start.ok && probeHealthy(cwd).ok) {
-          log.info(HOOK, `healed: cleared squatter PID ${pid}, restarted server`);
-          emit(
-            `# Beads server healed\n\n` +
-            `A wedged Dolt server (PID ${pid}) was squatting port ${port} without ` +
-            `serving this project's database — the recurring cp-6j5 failure. braynee ` +
-            `killed it and restarted the shared server; \`bd\` is working again.\n\n`
-          );
-          return;
-        }
-      }
-    } else {
-      log.warn(HOOK, `PID ${pid || '?'} not confirmed as dolt — refusing to kill`);
+  const port = info.port || configuredPort(cwd);
+  if (port) {
+    log.warn(HOOK, `port ${port} unhealthy (wedged/squatted, not serving our DB) — reclaiming`);
+    if (reclaimPort(cwd, port, info.pid)) {
+      log.info(HOOK, `healed: reclaimed wedged/squatted port ${port}, restarted server`);
+      emit(
+        `# Beads server healed\n\n` +
+        `The shared Dolt server on port ${port} was wedged — listening but refusing ` +
+        `every connection (the recurring cp-6j5 failure). braynee killed it and ` +
+        `restarted the shared server; \`bd\` is working again. No action needed.\n\n`
+      );
+      return;
     }
   }
 

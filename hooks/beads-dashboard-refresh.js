@@ -23,6 +23,10 @@ process.stdin.on('end', () => {
     // Only fire on bd commands
     if (!/^bd(\s|$)/.test(cmd.trim())) process.exit(0);
 
+    // Hard cap (dolt-guard): if the machine is already flooded with dolt servers,
+    // do nothing that could start another. Going quiet during a runaway is correct.
+    if (require(path.join(__dirname, 'lib', 'dolt-guard.js')).overCap()) process.exit(0);
+
     // F-3.2a: this is a per-bd-command PostToolUse refresh (it deliberately
     // tracks whichever project a bd command ran in, including projects opened
     // mid-session from the vault), so it correctly keys off the event cwd —
