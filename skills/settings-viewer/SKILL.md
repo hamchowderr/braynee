@@ -17,10 +17,31 @@ Generates a visual HTML dashboard of the user's Claude Code settings and usage a
 ## How to execute
 
 ```bash
-node "{baseDir}/scripts/generate.mjs"
+node "{baseDir}/scripts/dashboard.mjs"
 ```
 
-This regenerates fresh every run. The output is written to `~/.claude/temp/settings-viewer.html` and opened automatically. If the browser doesn't open automatically, open that file manually.
+`dashboard.mjs` opens the dashboard in whichever **delivery mode** the user has chosen (see below). It defaults to **file mode** — identical to the old behavior — so this just works out of the box.
+
+---
+
+## Delivery modes
+
+The dashboard can be delivered two ways, selected by the `BRAYNEE_DASHBOARD_MODE` env var (set it in `~/.claude/settings.json` under `env`):
+
+| Mode | What happens | When to use |
+|:-----|:-------------|:------------|
+| `file` *(default)* | `generate.mjs` rebuilds `~/.claude/temp/settings-viewer.html` and opens it. A fresh static snapshot each run. | Simplest; no running process. |
+| `server` | A persistent localhost server (`127.0.0.1:7717`) serves the dashboard **live** from a warm cache, refreshing in the background. `dashboard.mjs` ensures it's up and opens its URL. | Always-current data without re-running the slow build; reachable from a browser tab you leave open. |
+
+Optional in server mode: `BRAYNEE_DASHBOARD_PORT` (default `7717`), `BRAYNEE_DASHBOARD_REFRESH_MS` (default 5 min).
+
+**Server mode is a singleton** — one managed instance shared across all Claude Code sessions (started lazily on first open, kept alive after). It binds `127.0.0.1` only, so it's private to the machine with no inbound exposure.
+
+**Viewing inside Obsidian:** point the Custom Frames "Braynee" frame at `http://127.0.0.1:7717` (server mode) instead of the `settings-viewer.html` file, so the in-Obsidian tab is always live.
+
+**Reaching it from your phone:** keep the server bound to localhost and expose it to your own devices over Tailscale with `tailscale serve --bg 7717` (tailnet-only HTTPS, never `tailscale funnel`). No public exposure.
+
+> Note: as of the delivery-modes change, the dashboard no longer regenerates on every session start — it's on-demand (this skill) in file mode, and continuously live in server mode.
 
 ---
 
