@@ -7,7 +7,7 @@ export function renderCSS() {
 :root {
   --ink:    #f0ede8;
   --ink-2:  #9e9890;
-  --ink-3:  #5a5650;
+  --ink-3:  #8b8479;
   --bg:     #090b0e;
   --bg-2:   #0f1215;
   --bg-3:   #161a1f;
@@ -26,6 +26,10 @@ export function renderCSS() {
 }
 
 html, body { height: 100%; }
+
+/* Hide scrollbars across the dashboard — scrolling still works via wheel/trackpad. */
+* { scrollbar-width: none; -ms-overflow-style: none; }
+*::-webkit-scrollbar { width: 0; height: 0; background: transparent; }
 
 body {
   background: var(--bg);
@@ -244,12 +248,12 @@ body {
 .bf { background: var(--bg-3); border: 1px solid var(--line-2); color: var(--ink-3); font-family: var(--mo); font-size: 10px; letter-spacing: .06em; text-transform: uppercase; padding: 3px 10px; cursor: pointer; transition: all .1s; }
 .bf:hover { color: var(--ink-2); border-color: var(--amber); }
 .bf.bf-active { background: rgba(245,166,35,.1); border-color: var(--amber); color: var(--amber); }
-.bt-head { display: flex; align-items: center; padding: 7px 16px; border-bottom: 1px solid var(--line); background: var(--bg-4); font-size: 9px; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3); }
+.bt-head { display: flex; align-items: center; padding: 7px 16px; border-bottom: 1px solid var(--line); background: var(--bg-4); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3); }
 .bt-row { display: flex; align-items: center; padding: 9px 16px; border-bottom: 1px solid var(--line); font-size: 11px; transition: background .08s; cursor: pointer; }
 .bt-row:last-child { border-bottom: none; }
 .bt-row:hover { background: var(--bg-4); }
 .bt-cell { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-shrink: 0; }
-.bd-id { font-family: var(--mo); font-size: 10px; color: var(--ink-3); }
+.bd-id { font-family: var(--mo); font-size: 11px; color: var(--ink-3); }
 #bd-rows { overflow-y: auto; max-height: 520px; }
 
 /* ── BEADS DRAWER ───────────────────────────────────────── */
@@ -270,6 +274,16 @@ body {
 .bd-section-text { font-size: 12px; color: var(--ink-2); line-height: 1.65; white-space: pre-wrap; word-break: break-word; }
 .bd-section-nil { font-size: 11px; color: var(--ink-3); font-style: italic; }
 .bd-id-label { font-family: var(--mo); font-size: 10px; color: var(--ink-3); letter-spacing: .04em; }
+
+/* ── SESSIONS ───────────────────────────────────────────── */
+.sess-search { flex: 0 1 320px; background: var(--bg-2); border: 1px solid var(--line-2); color: var(--ink); font-family: var(--mo); font-size: 11px; padding: 4px 10px; letter-spacing: 0; text-transform: none; outline: none; transition: border-color .12s; }
+.sess-search::placeholder { color: var(--ink-3); }
+.sess-search:focus { border-color: var(--amber); }
+#sess-rows { overflow-y: auto; max-height: 600px; }
+#sess-rows .bt-row { align-items: flex-start; }
+.sess-resume { background: var(--bg-4); border: 1px solid var(--line-2); color: var(--ink-2); font-family: var(--mo); font-size: 10px; letter-spacing: .04em; padding: 3px 8px; cursor: pointer; transition: all .1s; white-space: nowrap; }
+.sess-resume:hover { color: var(--amber); border-color: var(--amber); }
+.sess-resume.sess-copied { color: var(--green); border-color: rgba(61,220,132,.4); }
 </style>`;
 }
 
@@ -302,6 +316,7 @@ export function renderSidebar() {
   <div class="nav-item" onclick="nav('rules',this)"><span class="nav-icon">📐</span> Rules</div>
   <div class="nav-item" onclick="nav('prefs',this)"><span class="nav-icon">🎛️</span> Preferences</div>
   <div class="sidebar-section" style="margin-top:16px">Data</div>
+  <div class="nav-item" onclick="nav('sessions',this)"><span class="nav-icon">💬</span> Sessions</div>
   <div class="nav-item" onclick="nav('projects',this)"><span class="nav-icon">📁</span> Projects</div>
   <div class="nav-item" onclick="nav('skills',this)"><span class="nav-icon">📊</span> Skill Usage</div>
   <div class="nav-item" onclick="nav('iskills',this)"><span class="nav-icon">🧰</span> Installed Skills</div>

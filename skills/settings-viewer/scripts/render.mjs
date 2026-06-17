@@ -14,6 +14,7 @@ import { fileURLToPath } from 'url';
 import { loadClaudeData } from './data/claude.mjs';
 import { loadVaultStats } from './data/vault.mjs';
 import { loadBeadsStats } from './data/beads.mjs';
+import { loadSessions } from './data/sessions.mjs';
 import { computeAllHookCmds, computeBrayneeHealth, computeHooksLive } from './data/braynee.mjs';
 
 import { renderCSS, renderTopbar, renderSidebar, renderNavJS } from './html/shell.mjs';
@@ -24,6 +25,7 @@ import { renderProjectsPanel, renderSkillUsagePanel, renderInstalledSkillsPanel,
 import { renderAnalyticsPanel, renderToolUsagePanel, renderProjectHoursPanel } from './panels/insights.mjs';
 import { renderBrayneePanel } from './panels/braynee.mjs';
 import { renderBeadsPanel, renderBeadsDrawer, renderBeadsJS } from './panels/beads.mjs';
+import { renderSessionsPanel, renderSessionsJS } from './panels/sessions.mjs';
 
 // Plugin metadata — read at runtime so version + author never drift from
 // .claude-plugin/plugin.json. render.mjs is at skills/settings-viewer/scripts/
@@ -40,10 +42,11 @@ function loadPluginMeta() {
 // the panels consume. Called once for file mode; once per request for server
 // mode (which is what keeps server-mode data live).
 export async function loadDashboardData() {
-  const [claudeData, vaultStats, beadsStats] = await Promise.all([
+  const [claudeData, vaultStats, beadsStats, sessionsData] = await Promise.all([
     loadClaudeData(),
     loadVaultStats(),
     loadBeadsStats(),
+    loadSessions(),
   ]);
 
   const allHookCmds = computeAllHookCmds(claudeData.s);
@@ -52,7 +55,7 @@ export async function loadDashboardData() {
   const ts = new Date().toLocaleString();
   const { pluginVersion, pluginAuthor } = loadPluginMeta();
 
-  return { ...claudeData, vaultStats, beadsStats, brayneeHealth, hooksLive, ts, pluginVersion, pluginAuthor };
+  return { ...claudeData, vaultStats, beadsStats, sessionsData, brayneeHealth, hooksLive, ts, pluginVersion, pluginAuthor };
 }
 
 // One template, two sources: the interactive local dashboard and a fully
@@ -88,6 +91,7 @@ ${renderSidebar()}
   ${renderPluginsPanel(d)}
   ${renderMcpPanel(d)}
   ${renderAgentsPanel(d)}
+  ${renderSessionsPanel(d)}
   ${renderProjectsPanel(d)}
   ${renderSkillUsagePanel(d)}
   ${renderInstalledSkillsPanel(d)}
@@ -107,6 +111,7 @@ ${renderBeadsDrawer()}
 <div class="footer">GENERATED ${esc(d.ts.toUpperCase())} &nbsp;·&nbsp; ${esc(d.acct.organizationName || '')} &nbsp;·&nbsp; BRAYNEE v${esc(d.pluginVersion)}${d.pluginAuthor ? ' · ' + esc(d.pluginAuthor) : ''}${artifact ? ' · PORTABLE ARTIFACT' : ''}</div>
 
 ${renderBeadsJS(d.beadsStats)}
+${renderSessionsJS(d)}
 ${renderNavJS({ artifact })}
 </body>
 </html>`;
