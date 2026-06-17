@@ -30,7 +30,7 @@ function ok(name, cond) {
 }
 
 // ── truncateDesc ─────────────────────────────────────────────────────────────
-eq('cap constant is 180', MAX_DESC_LEN, 180);
+eq('cap constant is 130', MAX_DESC_LEN, 130);
 eq('short description is unchanged', truncateDesc('a short note'), 'a short note');
 eq('empty/undefined → empty string', truncateDesc(undefined), '');
 {
