@@ -158,7 +158,7 @@ function openBdDrawer(issue) {
       bodyHtml += '<div class="bd-section">'
         + '<div class="bd-section-label">' + label + '</div>'
         + (text
-          ? '<div class="bd-section-text">' + esc(text).replace(/\\n/g,'<br>').replace(/\n/g,'<br>') + '</div>'
+          ? '<div class="bd-section-text">' + esc(text).replace(/\\\\n/g,'<br>').replace(/\\n/g,'<br>') + '</div>'
           : '<div class="bd-section-nil">— none —</div>')
         + '</div>';
     }

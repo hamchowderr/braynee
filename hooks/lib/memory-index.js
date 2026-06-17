@@ -73,9 +73,9 @@ const SECTION_ORDER = ['User', 'Feedback', 'Projects', 'References'];
 // only the first 200 lines / 25KB of MEMORY.md at session start, so an unbounded
 // description (some have been 300+ chars) bloats the index past the cap and it
 // silently truncates. Capping the description here makes that physically
-// impossible from this code path. 180 keeps the most context per line while
-// staying compact (cp-1nl).
-const MAX_DESC_LEN = 180;
+// impossible from this code path. 130 keeps useful context per line while
+// staying compact and matching the vault's ≤150-char index guideline (cp-1nl).
+const MAX_DESC_LEN = 130;
 
 function truncateDesc(desc) {
   if (!desc) return '';
