@@ -16,6 +16,7 @@ const fs = require('fs');
 const { findSessionViaQmd } = require('./lib/qmd-search');
 const log = require(path.join(__dirname, 'lib', 'hook-logger.js'));
 const { findCodeRoot, sessionDir } = require(path.join(__dirname, 'lib', 'is-code-context.js'));
+const { isIgnoredFolder } = require(path.join(__dirname, 'lib', 'ignore-folders.js'));
 const { findTranscriptDir } = require(path.join(__dirname, 'lib', 'transcript-dir.js'));
 
 const HOOK = 'session-auto-track';
@@ -622,6 +623,15 @@ process.stdin.on('end', () => {
       projectName = findProjectName(folderName);
 
       if (!projectName) {
+        // Don't invent a stub project for a generic/parent/working dir (~/code,
+        // scripts, web, a sandbox, ...). Only AUTO-creation is gated — if the
+        // user has a real project note for this folder, findProjectName above
+        // already resolved it, so legitimately-named projects still track.
+        if (isIgnoredFolder(folderName)) {
+          log.info(HOOK, `skip auto-create: "${folderName}" is an ignored generic dir (no project note) — add a real 1. Projects note to track it`);
+          if (output.length) process.stdout.write(output.join('\n'));
+          process.exit(0);
+        }
         log.warn(HOOK, `no project file in vault for folder "${folderName}" — auto-creating`);
         projectName = autoCreateProjectFile(folderName);
       }

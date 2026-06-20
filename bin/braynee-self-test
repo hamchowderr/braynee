@@ -387,6 +387,42 @@ function runGuard(payload) {
     write(path.join(gateCwd, '.env'), 'OPENAI_API_KEY=YOUR_KEY_HERE\n').status === 0);
 }
 
+// vault-search-guard.js (cp-m3g) — DENY Glob/Grep/Bash-search aimed at the vault
+// (steer to QMD), ALLOW the identical search in a code repo. Locks the contract
+// that vault content is searched via QMD, never a cwd-sensitive filesystem tool.
+{
+  const vaultDir = fs.mkdtempSync(path.join(os.tmpdir(), 'braynee-vault-'));
+  const codeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'braynee-code-'));
+  const runVG = (payload, cwd) => spawnSync(
+    process.execPath, [path.join(PLUGIN_ROOT, 'hooks', 'vault-search-guard.js')],
+    {
+      input: JSON.stringify({ session_id: 'self-test', cwd: cwd || codeDir, ...payload }),
+      encoding: 'utf8', timeout: 15_000,
+      env: { ...process.env, BRAYNEE_VAULT: vaultDir, BRAYNEE_ALLOW_VAULT_GREP: '' },
+    });
+  try {
+    assertGate('vault-search-guard BLOCKS Glob with a vault path',
+      runVG({ tool_name: 'Glob', tool_input: { pattern: '**/*.md', path: vaultDir } }).status === 2);
+    assertGate('vault-search-guard ALLOWS Glob with a code-repo path',
+      runVG({ tool_name: 'Glob', tool_input: { pattern: '**/*.ts', path: codeDir } }).status === 0);
+    assertGate('vault-search-guard BLOCKS path-less Grep when cwd is the vault',
+      runVG({ tool_name: 'Grep', tool_input: { pattern: 'foo' } }, vaultDir).status === 2);
+    assertGate('vault-search-guard ALLOWS path-less Grep when cwd is a code repo',
+      runVG({ tool_name: 'Grep', tool_input: { pattern: 'foo' } }, codeDir).status === 0);
+    assertGate('vault-search-guard BLOCKS `grep` of an explicit vault path',
+      runVG({ tool_name: 'Bash', tool_input: { command: `grep -r foo "${vaultDir}/notes"` } }).status === 2);
+    assertGate('vault-search-guard ALLOWS a stdout filter `qmd … | grep -v` (no vault path)',
+      runVG({ tool_name: 'Bash', tool_input: { command: 'node qmd-wrapper.mjs search x | grep -v transcript' } }, vaultDir).status === 0);
+    assertGate('vault-search-guard ALLOWS `grep -r` in a code repo',
+      runVG({ tool_name: 'Bash', tool_input: { command: 'grep -r foo .' } }, codeDir).status === 0);
+    assertGate('vault-search-guard stays SILENT + exit 0 on a non-search Bash command',
+      runVG({ tool_name: 'Bash', tool_input: { command: 'echo hello' } }, vaultDir).status === 0);
+  } finally {
+    try { fs.rmSync(vaultDir, { recursive: true, force: true }); } catch {}
+    try { fs.rmSync(codeDir, { recursive: true, force: true }); } catch {}
+  }
+}
+
 // beads-server-heal.js — SessionStart heal (cp-6j5). The kill path only runs
 // against a REAL initialized .beads/; against a bare marker dir (no metadata/
 // config/issues/dolt) it must stay completely silent and exit 0, so it never
