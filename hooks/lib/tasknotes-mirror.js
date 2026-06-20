@@ -49,23 +49,43 @@ function sanitizeTitle(title) {
 function findTasknoteForIssueId(issueId) {
   if (!issueId) return null;
   if (!fs.existsSync(TASKNOTES_DIR)) return null;
+
+  // Candidate ids: the exact id, plus the Brainy<->Braynee rename swap — task
+  // tags and beads ids diverged across that rename (tag `braynee-web-x`, beads
+  // id `brainy-web-x`), so a close of one must still find the note of the other.
+  const ids = [issueId];
+  if (issueId.startsWith('braynee')) ids.push(issueId.replace(/^braynee/, 'brainy'));
+  else if (issueId.startsWith('brainy')) ids.push(issueId.replace(/^brainy/, 'braynee'));
+
+  const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  // tags appear as a YAML flow array `tags: [a, b]` or a block list of `- tag`.
+  const tagRe = (id) => new RegExp(`(^|[\\s,\\[])${esc(id)}([\\s,\\]]|$)`, 'm');
+
+  let notes;
   try {
-    for (const name of fs.readdirSync(TASKNOTES_DIR)) {
-      if (!name.endsWith('.md')) continue;
+    notes = fs.readdirSync(TASKNOTES_DIR).filter((n) => n.endsWith('.md')).map((name) => {
       const filepath = path.join(TASKNOTES_DIR, name);
-      try {
-        const content = fs.readFileSync(filepath, 'utf8');
-        const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
-        if (!fmMatch) continue;
-        // tags appear either as a YAML flow array `tags: [a, b]` or as a
-        // block list of `  - tag` lines. Match both with a simple substring
-        // check inside the frontmatter block.
-        const fm = fmMatch[1];
-        const re = new RegExp(`(^|[\\s,\\[])${issueId.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\$&')}([\\s,\\]]|$)`, 'm');
-        if (re.test(fm)) return filepath;
-      } catch { continue; }
+      let fm = '';
+      try { fm = (fs.readFileSync(filepath, 'utf8').match(/^---\n([\s\S]*?)\n---/) || [, ''])[1]; } catch {}
+      return { filepath, fm };
+    });
+  } catch { return null; }
+
+  // Pass 1: exact tag match for any candidate id.
+  for (const { filepath, fm } of notes) {
+    if (fm && ids.some((id) => tagRe(id).test(fm))) return filepath;
+  }
+  // Pass 2: sub-issue. beads closes the full `parent.N`, but the task note tags
+  // the PARENT id and carries the `.N` in its title — match parent tag + `.N`.
+  for (const id of ids) {
+    const sub = id.match(/^(.+)\.(\d+)$/);
+    if (!sub) continue;
+    const parentRe = tagRe(sub[1]);
+    const titleRe = new RegExp(`\\s\\.${sub[2]}\\s*['"]?\\s*$`, 'm');
+    for (const { filepath, fm } of notes) {
+      if (fm && parentRe.test(fm) && titleRe.test((fm.match(/^title:\s*(.+)$/m) || [, ''])[1])) return filepath;
     }
-  } catch {}
+  }
   return null;
 }
 
@@ -104,20 +124,29 @@ function ensureMtnTask(issueId, title, priority, projectSlug) {
   const safeTitle = sanitizeTitle(title);
   const mtnText = `${safeTitle} +${projectSlug} [${priority}] #task #${issueId}`;
   run(`mtn create ${JSON.stringify(mtnText)}`);
-  // mtn writes the project as a non-resolving `[[projects/<slug>]]` link. Repoint
-  // it at the real vault note so the task isn't a graph orphan. Best-effort: if the
-  // slug doesn't map to a project note, leave mtn's default untouched.
+  // Post-create cleanup of the note mtn just wrote (best-effort):
+  //  - repoint the project from mtn's non-resolving `[[projects/<slug>]]` to the
+  //    real vault note so the task isn't a graph orphan.
+  //  - guarantee a `status` field. Older mtn omitted it, which renders as the
+  //    "none" status and drops the task out of Open/Today/Overdue Base filters.
   try {
     const file = findTasknoteForIssueId(issueId);
     if (file) {
+      let content = fs.readFileSync(file, 'utf8');
+      let changed = false;
       const target = resolveProjectLink(projectSlug, VAULT_DIR);
-      if (target) {
-        const content = fs.readFileSync(file, 'utf8');
-        const fixed = content.replace(/\[\[projects\/[^\]]+\]\]/g, `[[${target}]]`);
-        if (fixed !== content) fs.writeFileSync(file, fixed);
+      if (target && /\[\[projects\/[^\]]+\]\]/.test(content)) {
+        content = content.replace(/\[\[projects\/[^\]]+\]\]/g, `[[${target}]]`);
+        changed = true;
       }
+      const m = content.match(/^(﻿?---\r?\n)([\s\S]*?)(\r?\n---)/);
+      if (m && !/^status:/m.test(m[2])) {
+        content = m[1] + m[2] + '\nstatus: open' + m[3] + content.slice(m[0].length);
+        changed = true;
+      }
+      if (changed) fs.writeFileSync(file, content);
     }
-  } catch { /* non-fatal: keep mtn's link */ }
+  } catch { /* non-fatal: keep mtn's output as-is */ }
   return safeTitle;
 }
 
