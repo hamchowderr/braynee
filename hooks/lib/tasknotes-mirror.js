@@ -15,6 +15,7 @@ const fs = require('fs');
 const { execSync } = require('child_process');
 
 const { getVaultRoot } = require(path.join(__dirname, '..', '..', 'scripts', 'lib', 'vault-root.js'));
+const { resolveProjectLink } = require(path.join(__dirname, 'project-resolver.js'));
 const VAULT_DIR = getVaultRoot();
 const TASKNOTES_DIR = path.join(VAULT_DIR, '2. Areas', 'TaskNotes', 'Tasks');
 
@@ -87,6 +88,20 @@ function ensureMtnTask(issueId, title, priority, projectSlug) {
   const safeTitle = sanitizeTitle(title);
   const mtnText = `${safeTitle} +${projectSlug} [${priority}] #task #${issueId}`;
   run(`mtn create ${JSON.stringify(mtnText)}`);
+  // mtn writes the project as a non-resolving `[[projects/<slug>]]` link. Repoint
+  // it at the real vault note so the task isn't a graph orphan. Best-effort: if the
+  // slug doesn't map to a project note, leave mtn's default untouched.
+  try {
+    const file = findTasknoteForIssueId(issueId);
+    if (file) {
+      const target = resolveProjectLink(projectSlug, VAULT_DIR);
+      if (target) {
+        const content = fs.readFileSync(file, 'utf8');
+        const fixed = content.replace(/\[\[projects\/[^\]]+\]\]/g, `[[${target}]]`);
+        if (fixed !== content) fs.writeFileSync(file, fixed);
+      }
+    }
+  } catch { /* non-fatal: keep mtn's link */ }
   return safeTitle;
 }
 

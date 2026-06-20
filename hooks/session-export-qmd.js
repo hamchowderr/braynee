@@ -20,6 +20,7 @@ const summary = require(path.join(__dirname, 'lib', 'session-summary.js'));
 const HOOK = 'session-export-qmd';
 
 const { getVaultRoot } = require(path.join(__dirname, '..', 'scripts', 'lib', 'vault-root.js'));
+const { resolveProjectLink } = require(path.join(__dirname, 'lib', 'project-resolver.js'));
 const VAULT_DIR = getVaultRoot();
 const TRANSCRIPTS_DIR = path.join(VAULT_DIR, '2. Areas', 'Sessions', 'Transcripts');
 const CLAUDE_PROJECTS_DIR = path.join(os.homedir(), '.claude', 'projects');
@@ -121,49 +122,10 @@ function parseJsonl(filepath) {
   return { messages, meta: sessionMeta };
 }
 
-// Resolve a cwd folder slug (e.g. "resincraft", "myrp-build", "sophon-make-app")
-// to the real project note under "1. Projects/" (or "4. Archives/Projects/") so the
-// transcript carries a graph-visible `project: "[[...]]"` wikilink and isn't orphaned.
-// Matching: alphanumeric-normalized exact, then safe prefix (project basename >=6 chars).
-function resolveProjectLink(folderName) {
-  try {
-    const norm = (s) => String(s).toLowerCase().replace(/[^a-z0-9]/g, '');
-    const target = norm(folderName);
-    if (!target) return null;
-    const candidates = new Map(); // norm(basename) -> rel path without .md
-    const walk = (dir) => {
-      let entries;
-      try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
-      for (const e of entries) {
-        const full = path.join(dir, e.name);
-        if (e.isDirectory()) { walk(full); continue; }
-        if (!e.name.endsWith('.md')) continue;
-        const base = e.name.replace(/\.md$/, '');
-        if (base.startsWith('_')) continue; // skip _index.md placeholders
-        const rel = path.relative(VAULT_DIR, full).split(path.sep).join('/').replace(/\.md$/, '');
-        const n = norm(base);
-        if (n && !candidates.has(n)) candidates.set(n, rel);
-      }
-    };
-    walk(path.join(VAULT_DIR, '1. Projects'));
-    walk(path.join(VAULT_DIR, '4. Archives', 'Projects'));
-    if (candidates.has(target)) return candidates.get(target);
-    let best = null; // longest prefix match
-    for (const [n, rel] of candidates) {
-      if (n.length >= 6 && target.startsWith(n) && target.length > n.length) {
-        if (!best || n.length > best.n.length) best = { n, rel };
-      }
-    }
-    return best ? best.rel : null;
-  } catch {
-    return null;
-  }
-}
-
 function buildMarkdown(messages, meta) {
   const date = meta.timestamp ? new Date(meta.timestamp).toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
   const folderName = meta.cwd ? path.basename(meta.cwd) : 'unknown';
-  const projectLink = resolveProjectLink(folderName);
+  const projectLink = resolveProjectLink(folderName, VAULT_DIR);
 
   const parts = [];
 
