@@ -181,6 +181,16 @@ log('\n=== 4. Run each hook with mock stdin ===');
 // beads-aware hooks exercise their context-detection path.
 const smokeCwd = fs.mkdtempSync(path.join(os.tmpdir(), 'braynee-smoke-'));
 fs.mkdirSync(path.join(smokeCwd, '.beads'), { recursive: true });
+// cp-9qq: isolate the VAULT too. Many hooks (session-auto-track, vault-changelog,
+// memory-index-sync, session-export-qmd, …) resolve getVaultRoot(); without an
+// override that is the REAL vault, so this mock run auto-created a
+// `1. Projects/Braynee Smoke <id>.md` stub in it on EVERY self-test run and never
+// cleaned it up. Point BRAYNEE_VAULT at a throwaway vault so all vault writes land
+// in a temp dir that is removed below.
+const smokeVault = fs.mkdtempSync(path.join(os.tmpdir(), 'braynee-smoke-vault-'));
+fs.mkdirSync(path.join(smokeVault, '.obsidian'), { recursive: true });
+fs.mkdirSync(path.join(smokeVault, '1. Projects'), { recursive: true });
+fs.mkdirSync(path.join(smokeVault, '2. Areas', 'Sessions'), { recursive: true });
 const mockInput = JSON.stringify({
   session_id: 'self-test',
   cwd: smokeCwd,
@@ -197,6 +207,7 @@ for (const hookFile of listFiles(path.join(PLUGIN_ROOT, 'hooks'), ['.js'])) {
     input: mockInput,
     encoding: 'utf8',
     timeout: 15_000,
+    env: { ...process.env, BRAYNEE_VAULT: smokeVault },
   });
   // Hooks are allowed to exit 0 (success) or 2 (blocking). Anything else is a crash.
   if (r.status === 0 || r.status === 2) {
@@ -209,6 +220,7 @@ for (const hookFile of listFiles(path.join(PLUGIN_ROOT, 'hooks'), ['.js'])) {
   }
 }
 try { fs.rmSync(smokeCwd, { recursive: true, force: true }); } catch {}
+try { fs.rmSync(smokeVault, { recursive: true, force: true }); } catch {}
 log(`  ${results.hooks.ok} ran cleanly | ${results.hooks.fail} crashed`);
 
 // ── 5. Boot-test each monitor (verify it can start) ──────────────────────────
