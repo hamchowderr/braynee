@@ -75,8 +75,24 @@ function findMtnTaskByIssueId(issueId) {
   return findTasknoteForIssueId(issueId) ? '#' + issueId : null;
 }
 
+// Mark the mirrored task note done. The previous version ran `mtn complete
+// "#<id>"`, but `mtn complete` takes <pathOrTitle> — a `#tag` never resolves
+// (and mtn complete crashes on some Windows paths), so every completion was a
+// silent no-op and finished work stayed "open". Write the canonical done state
+// (status: done + completedDate) straight to the note's frontmatter instead.
 function completeMtnTaskByIssueId(issueId) {
-  run(`mtn complete ${JSON.stringify('#' + issueId)}`);
+  const file = findTasknoteForIssueId(issueId);
+  if (!file) return;
+  try {
+    const content = fs.readFileSync(file, 'utf8');
+    const m = content.match(/^(﻿?---\r?\n)([\s\S]*?)(\r?\n---)/);
+    if (!m) return;
+    let fm = m[2];
+    const date = new Date().toISOString().slice(0, 10);
+    fm = /^status:.*$/m.test(fm) ? fm.replace(/^status:.*$/m, 'status: done') : fm + '\nstatus: done';
+    fm = /^completedDate:.*$/m.test(fm) ? fm.replace(/^completedDate:.*$/m, `completedDate: '${date}'`) : fm + `\ncompletedDate: '${date}'`;
+    fs.writeFileSync(file, m[1] + fm + m[3] + content.slice(m[0].length));
+  } catch { /* non-fatal: leave task as-is */ }
 }
 
 // Create the matching TaskNote if one does not already exist for this issue.
