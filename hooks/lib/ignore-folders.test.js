@@ -43,16 +43,30 @@ eq('surrounding whitespace trimmed', isIgnoredFolder('  web  ', EMPTY_ENV, NO_CO
 
 eq('real project "foreman" is NOT ignored', isIgnoredFolder('foreman', EMPTY_ENV, NO_CONFIG_HOME), false);
 eq('real project "myrp-build-web" is NOT ignored', isIgnoredFolder('myrp-build-web', EMPTY_ENV, NO_CONFIG_HOME), false);
-eq('"agents" is NOT a default (left to user override)', isIgnoredFolder('agents', EMPTY_ENV, NO_CONFIG_HOME), false);
+
+// Monorepo package/subdir names are now DEFAULT-ignored (cp-zpa) — they recurred
+// as junk project stubs (e.g. a session from `foreman/packages/agents` stamped
+// out an "Agents" project; a `server/` dir stamped out "Server").
+eq('"agents" is now a default-ignored monorepo name', isIgnoredFolder('agents', EMPTY_ENV, NO_CONFIG_HOME), true);
+eq('"app" is now a default-ignored monorepo name', isIgnoredFolder('app', EMPTY_ENV, NO_CONFIG_HOME), true);
+eq('"api" is now a default-ignored monorepo name', isIgnoredFolder('api', EMPTY_ENV, NO_CONFIG_HOME), true);
+eq('"packages" is now a default-ignored monorepo name', isIgnoredFolder('packages', EMPTY_ENV, NO_CONFIG_HOME), true);
+eq('"server" is now a default-ignored monorepo name', isIgnoredFolder('server', EMPTY_ENV, NO_CONFIG_HOME), true);
+eq('"core" is now a default-ignored monorepo name', isIgnoredFolder('core', EMPTY_ENV, NO_CONFIG_HOME), true);
+eq('"client" is now a default-ignored monorepo name', isIgnoredFolder('client', EMPTY_ENV, NO_CONFIG_HOME), true);
+// Exact-basename match only — a real product whose name merely CONTAINS a
+// monorepo word is still tracked (no substring false-positives).
+eq('"api-gateway" (real product) is NOT ignored', isIgnoredFolder('api-gateway', EMPTY_ENV, NO_CONFIG_HOME), false);
+eq('"core-banking" (real product) is NOT ignored', isIgnoredFolder('core-banking', EMPTY_ENV, NO_CONFIG_HOME), false);
 
 eq('empty string is not ignored', isIgnoredFolder('', EMPTY_ENV, NO_CONFIG_HOME), false);
 eq('null is not ignored', isIgnoredFolder(null, EMPTY_ENV, NO_CONFIG_HOME), false);
 ok('DEFAULT_IGNORE_FOLDERS is a non-empty array', Array.isArray(DEFAULT_IGNORE_FOLDERS) && DEFAULT_IGNORE_FOLDERS.length > 0);
 
 // ── Env override ─────────────────────────────────────────────────────────────
-const ENV_EXTRA = { BRAYNEE_IGNORE_FOLDERS: 'claude-plugins, Agents ,' };
+const ENV_EXTRA = { BRAYNEE_IGNORE_FOLDERS: 'claude-plugins, Frontend ,' };
 eq('env adds "claude-plugins"', isIgnoredFolder('claude-plugins', ENV_EXTRA, NO_CONFIG_HOME), true);
-eq('env extra is case-insensitive ("agents")', isIgnoredFolder('agents', ENV_EXTRA, NO_CONFIG_HOME), true);
+eq('env extra is case-insensitive ("frontend")', isIgnoredFolder('frontend', ENV_EXTRA, NO_CONFIG_HOME), true);
 eq('env extras do not drop defaults', isIgnoredFolder('code', ENV_EXTRA, NO_CONFIG_HOME), true);
 eq('empty env token ignored, unrelated name still false', isIgnoredFolder('sophon', ENV_EXTRA, NO_CONFIG_HOME), false);
 
@@ -65,7 +79,7 @@ try {
   eq('config file adds "my-monorepo"', isIgnoredFolder('my-monorepo', EMPTY_ENV, cfgHome), true);
   eq('config entry is case-insensitive ("playground")', isIgnoredFolder('playground', EMPTY_ENV, cfgHome), true);
   eq('config override keeps defaults', isIgnoredFolder('code', EMPTY_ENV, cfgHome), true);
-  eq('config + env merge', isIgnoredFolder('agents', ENV_EXTRA, cfgHome), true);
+  eq('config + env merge (env-added "frontend")', isIgnoredFolder('frontend', ENV_EXTRA, cfgHome), true);
 
   // Malformed config must not throw and must fall back to defaults.
   fs.writeFileSync(configPath(cfgHome), '{ this is not json', 'utf8');

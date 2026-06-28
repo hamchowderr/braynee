@@ -30,16 +30,24 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
-// Universally-generic folder basenames — never a sellable/trackable product on
-// their own. Kept deliberately conservative: anything that is plausibly a real
-// product name (app, api, agent, ...) is left OUT and handled by the
-// manual-project-note override instead.
+// Generic folder basenames — rarely a sellable/trackable product on their own.
+// Includes common monorepo package/subdir names (app, api, agents, packages,
+// server, ...) which recurred as junk stubs in practice (e.g. a session from
+// `foreman/packages/agents` stamped out an "Agents" project; a `server/` dir
+// stamped out "Server"). This is SAFE because session-auto-track checks for a
+// manual project note FIRST — any real product intentionally foldered with one
+// of these names still tracks via the manual-note override; the ignore-list
+// only stops braynee from INVENTING a project.
 const DEFAULT_IGNORE_FOLDERS = [
   'code', 'codes', 'repo', 'repos', 'project', 'projects',
   'src', 'source', 'dev', 'development', 'work', 'workspace',
   'sandbox', 'scratch', 'tmp', 'temp', 'test', 'tests',
   'web', 'www', 'site', 'docs', 'scripts', 'bin', 'lib',
   'build', 'dist', 'node_modules', 'desktop', 'documents', 'downloads',
+  // monorepo package/subdir names — recurred as junk stubs; override still
+  // tracks any real product foldered with one of these.
+  'agents', 'app', 'apps', 'api', 'packages', 'package', 'server', 'services',
+  'service', 'core', 'worker', 'workers', 'shared', 'common', 'client',
 ];
 
 // Path to the optional per-user override file. homeDir is injectable for tests.
