@@ -46,7 +46,7 @@ export function renderSkillUsageJS(d) {
 }
 
 export function renderInstalledSkillsPanel(d) {
-  const { installedSkills, skillUsage, localSkillCount, pluginSkillSourceCount } = d;
+  const { installedSkills, localSkillCount, pluginSkillSourceCount } = d;
   return `<div id="panel-iskills" class="panel">
     <div class="section-head">
       <div class="section-title">Installed Skills</div>
@@ -54,7 +54,7 @@ export function renderInstalledSkillsPanel(d) {
     </div>
     <div class="card">
       <div class="card-head"><div class="card-head-dot"></div>All Skills</div>
-      <div class="card-body">${installedSkillsGrid(installedSkills, skillUsage)}</div>
+      <div class="card-body">${installedSkillsGrid(installedSkills)}</div>
     </div>
   </div>`;
 }
