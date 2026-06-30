@@ -225,7 +225,7 @@ export function installedSkillsGrid(skills, usage) {
       return `<div class="iskill-card">
         <div class="iskill-top">
           <span class="iskill-name">${esc(sk.name)}</span>
-          ${uses > 0 ? `<span class="iskill-uses">${uses}×</span>` : `<span class="iskill-uses" style="color:var(--ink-3)">unused</span>`}
+          ${uses > 0 ? `<span class="iskill-uses" title="invoked ${uses} time${uses !== 1 ? 's' : ''} (from .claude.json usage history)">${uses} use${uses !== 1 ? 's' : ''}</span>` : `<span class="iskill-uses" style="color:var(--ink-3)" title="never invoked">unused</span>`}
         </div>
         <div class="iskill-id">${esc(sk.id)}</div>
         <div class="iskill-desc">${esc(desc.slice(0, 160))}${desc.length > 160 ? '…' : ''}</div>
