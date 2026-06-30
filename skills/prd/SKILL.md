@@ -8,7 +8,7 @@ description: >
   Use when user says "new PRD", "draft PRD", "create PRD", "write a PRD",
   "PRD for <X>", "audit PRDs", "seed beads from PRD", "convert PRD to issues".
 argument-hint: [new <Name> | audit | seed <Name>]
-allowed-tools: Bash(node:*), Bash(bd:*), Bash(obsidian:*), Read, Write, Edit
+allowed-tools: Bash(node:*), Bash(bd:*), Bash(obsidian:*), Read, Write, Edit, AskUserQuestion
 ---
 
 # PRD Skill
@@ -116,10 +116,44 @@ incomplete or the criterion is out of scope.
 - `### Milestone: <name>` → bd label `milestone:<name>`
 - Lines without the `- [ ] **[Pn]**` shape are ignored
 
+## The `new` interview — clarify BEFORE scaffolding
+
+`/braynee:prd new <Name>` must run a short structured interview **before any file is
+written**, so the PRD is scoped by the user's answers instead of left full of
+template placeholders. Use Claude Code's native **AskUserQuestion** for the discrete
+decisions; ask conversationally for the open-ended ones.
+
+**First, read the brief.** Whatever the user already stated (in the prompt, the
+linked `1. Projects/<Name>.md`, or recent session) is already answered — do NOT
+re-ask it. Interview only the gaps. The flow is re-runnable: on a later pass, skip
+anything already filled in the PRD.
+
+**Lock the MVP gate (AskUserQuestion — discrete choices):**
+- **Auth** — Clerk · Supabase Auth · custom/JWT · none *(+ note SSO / org-team needs)*
+- **Monetization** — free-only · freemium · paid-only · usage-based *(+ free-tier limits & paywall trigger)*
+- **Stack / deploy target** — informs Architecture and the eventual `deploy_target`
+
+**Then capture conversationally (no clean fixed options):**
+- **Core Features (3–5)** — the forcing function; push back if it's >5 or vague.
+- **North Star metric** + the activation moment.
+- **Primary persona** + the job they're hiring the product for.
+- **Out-of-scope for V1** — at least two explicit non-goals.
+
+**After the interview:**
+1. `node {baseDir}/scripts/prd-new.mjs "<Name>"` scaffolds the schema.
+2. **Fill the scaffold from the answers** with Edit — replace every placeholder in
+   **MVP Definition** (Auth / Freemium / Core Features) and derive **Acceptance
+   Criteria** (one `- [ ] **[Pn] title** — body` per core feature, milestone-grouped).
+   No `<…>`, `...`, or `…` placeholder may remain in those two sections.
+3. **Genuinely-undecided** items go under **Risks & Open Questions** as
+   `- **Open question:** <the unresolved decision>` — never invent an answer just to
+   clear a placeholder. (The `prd-seed-gate` hook warns if open questions or unfilled
+   MVP placeholders remain at seed time.)
+
 ## Workflow
 
 1. **Brainstorm in vault** → free-form notes in `1. Projects/<Name>.md`
-2. **Draft PRD** → `node prd-new.mjs <Name>` scaffolds the file → fill in sections
+2. **Interview + draft** → run the `new` interview above, then `node prd-new.mjs <Name>` scaffolds and you fill MVP Definition + Acceptance Criteria from the answers (no placeholders left)
 3. **Audit** → `node prd-audit.mjs` confirms schema is clean
 4. **Seed** → `node prd-seed.mjs <Name>` creates bd issues, flips `seeded: true`
 5. **Build** → in the project repo (`<projects-root>/<slug>/`), `bd ready` shows the seeded backlog
