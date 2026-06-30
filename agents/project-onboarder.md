@@ -59,6 +59,9 @@ tags: [{relevant tags}]
 
 ## Stack
 
+## Secrets
+<!-- Expected key NAMES only — real values go in your secrets manager / .env.local, never here. -->
+
 ## Links
 - [[{name}-PRD]]
 ```
@@ -105,6 +108,52 @@ Decision: Initialize {name} as a {category} project.
 - `notes.md` — relationship context (create if not exists)
 - `engagements/{year}-{quarter}-{short-description}/` folder
 
+## Secrets Home (names + placeholders only)
+
+A new project needs a home for its API keys — but you record **only the key
+NAMES, never values**. This captures what the project will need so the user
+fills real values later in their own secrets manager / `.env.local`.
+
+**1. Infer the expected key NAMES from the stack.** Use the one-liner +
+category; ask the user to confirm or extend. Small starting sets:
+
+| Stack signal | Likely key NAMES |
+|---|---|
+| AI agent / Mastra / LLM app | `ANTHROPIC_API_KEY`, `DATABASE_URL` |
+| Next.js + Supabase | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` |
+| Stripe billing | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` |
+| Clerk auth | `CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY` |
+| Web scraping | `FIRECRAWL_API_KEY` |
+
+Keep it small. Confirm with the user before writing — they know their stack.
+
+**2. Always: record the NAMES in the vault project note.** Append a `## Secrets`
+section to `1. Projects/{name}.md` listing the expected NAMES (names only),
+followed by the line: *"Real values go in your secrets manager / `.env.local` —
+never here."*
+
+**3. If a secrets manager is configured, seed placeholders there too.** Check
+`~/.claude/rules/secrets.md` — if `{{secrets_manager}}` has been replaced with a
+real manager + inject command, offer to seed the same NAMES as `YOUR_KEY_HERE`
+placeholders **scoped to this project**. This is manager-agnostic; the manager's
+own CLI does the work. Worked example for **Infisical** (folder-per-project
+layout):
+```bash
+infisical secrets folders create -n "{name}" -p /                    # scoped folder for the project
+infisical secrets set NAME=YOUR_KEY_HERE --path="/{name}" --silent   # one per inferred NAME
+```
+Relies on the user's existing manager login / default project. If it can't
+resolve the project, print the exact command with a `--projectId <id>`
+placeholder for the user to run. **Never hardcode a project ID.**
+
+**Guardrails (non-negotiable):**
+- Placeholder values only (`YOUR_KEY_HERE`). NEVER a real secret value — they
+  never touch the transcript or any file.
+- NEVER run a value-printing read (`<manager> secrets get` / `secrets` /
+  `export`) — that violates the `secret-exposure-guard` hook.
+- Additive: the vault `## Secrets` names list is the universal artifact; the
+  manager seed is an optional power-user convenience.
+
 ## After Creating Files
 
 1. Create a Beads issue for the project:
@@ -117,7 +166,9 @@ bd create --title="Project: {name}" --description="New {category} project scaffo
 node "${CLAUDE_PLUGIN_ROOT}/scripts/qmd-wrapper.mjs" vsearch "{name} {description}"
 ```
 
-3. Report what was created and the Beads issue ID.
+3. Report what was created, the Beads issue ID, and the expected secret NAMES
+   recorded (names only) — plus whether they were seeded into a configured
+   secrets manager or just captured in the project note.
 
 ## Guardrails
 

@@ -33,6 +33,10 @@ note (or a code comment if it's that small) covering:
 - The deliverable in one sentence: {{deliverable}}
 - Done criteria: what must be true to consider this shipped?
 - Explicitly out-of-scope: what you are NOT doing.
+- Secrets home: capture the expected key NAMES (names only) and seed them as
+  `YOUR_KEY_HERE` placeholders — scoped to this project in your secrets manager
+  (e.g. Infisical `--path=/{{name}}`) and/or a `.env.example`. Never a real
+  value; never run a value-printing read (the get / list / export family).
 
 Keep it short. The point is to commit to a definition before you start
 building, not to write a PRD.
