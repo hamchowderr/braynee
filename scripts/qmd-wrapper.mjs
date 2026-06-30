@@ -37,10 +37,15 @@ if (!qmdJs) {
   process.exit(127);
 }
 
-const res = spawnSync(process.execPath, [qmdJs, ...process.argv.slice(2)], {
-  stdio: 'inherit',
-  timeout: 60_000,
-  windowsHide: true, // no console-window flash when invoked from hooks
-});
+// Fast, hook-driven commands (search/vsearch/query/get) must never hang, so they
+// keep the 60s cap. Maintenance commands (embed/update/cleanup/bench) legitimately
+// run for minutes on a large corpus — capping them silently SIGTERMs the job
+// mid-batch (exit 1, no error), so they run uncapped.
+const args = process.argv.slice(2);
+const LONG_RUNNING = new Set(['embed', 'update', 'cleanup', 'bench']);
+const spawnOpts = { stdio: 'inherit', windowsHide: true };
+if (!LONG_RUNNING.has(args[0])) spawnOpts.timeout = 60_000;
+
+const res = spawnSync(process.execPath, [qmdJs, ...args], spawnOpts);
 
 process.exit(res.status ?? 1);
