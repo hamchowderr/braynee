@@ -24,7 +24,7 @@ Secret values flow **source-of-truth → process env**. They must never land in 
 
 | Manager | Inject command |
 |---|---|
-| **Infisical** | `infisical run --recursive --silent -- <cmd>` |
+| **Infisical** | `infisical run --path=/<project> --silent -- <cmd>` (scoped to the project's folder — avoid `--recursive`, which injects every project's keys) |
 | **Doppler** | `doppler run -- <cmd>` |
 | **1Password** | `op run -- <cmd>` |
 | **HashiCorp Vault** | `vault kv get -format=json … \| jq … \| envsubst` (or a wrapper script) |
