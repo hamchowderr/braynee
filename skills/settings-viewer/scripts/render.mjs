@@ -18,11 +18,12 @@ import { loadSessions } from './data/sessions.mjs';
 import { computeAllHookCmds, computeBrayneeHealth, computeHooksLive } from './data/braynee.mjs';
 
 import { renderCSS, renderTopbar, renderSidebar, renderNavJS } from './html/shell.mjs';
+import { renderChartLib, renderChartRuntime } from './html/charts.mjs';
 import { esc } from './html/utils.mjs';
 
 import { renderGeneralPanel, renderPermissionsPanel, renderHooksPanel, renderPluginsPanel, renderMcpPanel, renderAgentsPanel, renderRulesPanel, renderClaudeMdPanel } from './panels/config.mjs';
-import { renderProjectsPanel, renderSkillUsagePanel, renderInstalledSkillsPanel, renderLocalPluginsPanel, renderPrefsPanel } from './panels/data.mjs';
-import { renderAnalyticsPanel, renderToolUsagePanel, renderProjectHoursPanel } from './panels/insights.mjs';
+import { renderProjectsPanel, renderSkillUsagePanel, renderInstalledSkillsPanel, renderLocalPluginsPanel, renderPrefsPanel, renderProjectsJS, renderSkillUsageJS } from './panels/data.mjs';
+import { renderAnalyticsPanel, renderToolUsagePanel, renderProjectHoursPanel, renderAnalyticsJS, renderToolUsageJS, renderProjectHoursJS } from './panels/insights.mjs';
 import { renderBrayneePanel } from './panels/braynee.mjs';
 import { renderBeadsPanel, renderBeadsDrawer, renderBeadsJS } from './panels/beads.mjs';
 import { renderSessionsPanel, renderSessionsJS } from './panels/sessions.mjs';
@@ -49,6 +50,14 @@ export async function loadDashboardData() {
     loadSessions(),
   ]);
 
+  // Un-mangle Projects-panel names: claude.mjs builds allProjects from encoded dir
+  // names (lossy decode), but the sessions loader recovered the real name from each
+  // transcript's cwd. Reconcile by encoded dir so `mastra-rag` stops reading `rag`.
+  const nameByEncoded = sessionsData.nameByEncoded || {};
+  for (const p of claudeData.allProjects || []) {
+    if (p.encoded && nameByEncoded[p.encoded]) p.name = nameByEncoded[p.encoded];
+  }
+
   const allHookCmds = computeAllHookCmds(claudeData.s);
   const brayneeHealth = computeBrayneeHealth(claudeData.s, allHookCmds);
   const hooksLive = computeHooksLive();
@@ -66,7 +75,7 @@ export function buildHtml(d, { artifact = false } = {}) {
   // Artifact mode drops the Google Fonts <link> so the file is fully offline —
   // the CSS font stacks fall back to the system monospace/sans gracefully.
   const fontLinks = artifact ? '' : `<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=Syne:wght@700;800&display=swap" rel="stylesheet">`;
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">`;
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -75,6 +84,7 @@ export function buildHtml(d, { artifact = false } = {}) {
 <title>Braynee</title>
 ${fontLinks}
 ${renderCSS()}
+${renderChartLib()}
 </head>
 <body>
 
@@ -112,6 +122,12 @@ ${renderBeadsDrawer()}
 
 ${renderBeadsJS(d.beadsStats)}
 ${renderSessionsJS(d)}
+${renderChartRuntime()}
+${renderAnalyticsJS(d)}
+${renderToolUsageJS(d)}
+${renderProjectHoursJS(d)}
+${renderSkillUsageJS(d)}
+${renderProjectsJS(d)}
 ${renderNavJS({ artifact })}
 </body>
 </html>`;

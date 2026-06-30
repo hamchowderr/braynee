@@ -129,23 +129,37 @@ export function renderMcpPanel(d) {
       <div class="card-body">${mcpCards(uMcp)}</div>
     </div>
     <div class="card">
-      <div class="card-head"><div class="card-head-dot" style="background:var(--purple)"></div>~/.claude/.mcp.json (plugin-written) · ${Object.keys(mcpJson).length} servers · credentials masked</div>
+      <div class="card-head"><div class="card-head-dot" style="background:var(--purple)"></div>~/.claude/.mcp.json (cwd-scoped file · not plugin-managed) · ${Object.keys(mcpJson).length} servers · credentials masked</div>
       <div class="card-body">${mcpCards(mcpJson, true)}</div>
     </div>
   </div>`;
 }
 
 export function renderAgentsPanel(d) {
-  const { customAgents } = d;
+  const { customAgents, pluginAgents = [] } = d;
+  const byPlugin = {};
+  for (const a of pluginAgents) (byPlugin[a.plugin] ||= []).push(a);
+  const pluginGroups = Object.entries(byPlugin).sort(([a], [b]) => a.localeCompare(b));
+  const total = customAgents.length + pluginAgents.length;
   return `<div id="panel-agents" class="panel">
     <div class="section-head">
       <div class="section-title">Agents</div>
-      <div class="section-tag">${customAgents.length} custom agents · ~/.claude/agents/</div>
+      <div class="section-tag">${total} agents · ${customAgents.length} custom · ${pluginAgents.length} from plugins</div>
     </div>
     <div class="card">
-      <div class="card-head"><div class="card-head-dot" style="background:var(--green)"></div>Custom Agent Definitions</div>
+      <div class="card-head"><div class="card-head-dot" style="background:var(--green)"></div>Custom Agent Definitions · ~/.claude/agents/</div>
       <div class="card-body">${agentsPanel(customAgents)}</div>
     </div>
+    ${pluginGroups.map(([plugin, agents]) => `
+    <div class="card">
+      <div class="card-head"><div class="card-head-dot" style="background:var(--purple)"></div>${esc(plugin)} plugin · ${agents.length} agent${agents.length === 1 ? '' : 's'}</div>
+      <div class="card-body"><div class="agent-list">${agents.map(a => `
+        <div class="agent-card" style="border-left-color:var(--purple)">
+          <div class="agent-name" style="color:var(--purple)">${esc(plugin)}:${esc(a.name)}</div>
+          <div class="agent-file">${esc(a.file)}</div>
+          ${a.desc ? `<div class="agent-desc">${esc(a.desc.slice(0, 200))}${a.desc.length > 200 ? '…' : ''}</div>` : ''}
+        </div>`).join('')}</div></div>
+    </div>`).join('')}
   </div>`;
 }
 

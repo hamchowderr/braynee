@@ -3,13 +3,14 @@ import { esc } from '../html/utils.mjs';
 // Sessions panel — browse + search EVERY Claude Code session on disk, not just
 // the ~50 the native /resume picker shows per folder.
 //
-// Layout mirrors the Beads panel: a project sidebar on the left (click to scope),
-// a search box that spans ALL projects, and a row per session. The full dataset
-// is embedded once and a client-side renderer filters it, so browsing + search
-// are instant. The dashboard can't launch a terminal, so each row's action is a
-// one-click copy of `claude --resume <id>` (run it from the shown project dir).
+// Layout mirrors the Beads board: a horizontal project pill bar (click to scope),
+// a search box that spans ALL projects, and a paginated row-per-session table. The
+// full dataset is embedded once and a client-side renderer filters + pages it, so
+// browsing + search are instant and you page through rather than scroll a wall.
+// The dashboard can't launch a terminal, so each row's action is a one-click copy
+// of `claude --resume <id>` (run it from the shown project dir).
 
-const VISIBLE_CAP = 250; // DOM rows rendered at once; search/scope re-filter the full set
+const PAGE_SIZE = 15; // rows per page — paginate instead of one long scroll
 
 export function renderSessionsPanel(d) {
   const s = d.sessionsData || { sessions: [], totalSessions: 0, totalSizeBytes: 0, projectCount: 0, oldestMs: 0, newestMs: 0 };
@@ -44,33 +45,25 @@ export function renderSessionsPanel(d) {
 
     ${s.totalSessions === 0
       ? `<div class="card"><div class="card-body"><p class="nil">— no sessions found under ~/.claude/projects/ —</p></div></div>`
-      : `<div class="beads-layout">
-      <div class="beads-proj-sidebar">
-        <div class="beads-proj-item active" data-proj="__all__" onclick="selectSessProj(this)">
-          <span class="bd-proj-name" style="font-weight:500">All Projects</span>
-          <span class="bd-badge bd-badge-open">${s.totalSessions}</span>
-        </div>
-        ${projects.map(([name, count]) => `
-        <div class="beads-proj-item" data-proj="${esc(name)}" onclick="selectSessProj(this)">
-          <span class="bd-proj-name" title="${esc(name)}">${esc(name)}</span>
-          <span class="bd-badge bd-badge-zero">${count}</span>
-        </div>`).join('')}
+      : `<div class="beads-toolbar">
+      <div class="bd-pills">
+        <div class="bd-pill active" data-proj="__all__" onclick="selectSessProj(this)">All Projects <span class="bd-badge bd-badge-open">${s.totalSessions}</span></div>
+        ${projects.map(([name, count]) => `<div class="bd-pill" data-proj="${esc(name)}" onclick="selectSessProj(this)" title="${esc(name)}">${esc(name)} <span class="bd-badge bd-badge-zero">${count}</span></div>`).join('')}
       </div>
-      <div class="beads-main">
-        <div class="beads-filters">
-          <input id="sess-search" class="sess-search" type="text" placeholder="search prompt, project, or id…" oninput="searchSessions(this.value)" autocomplete="off" spellcheck="false">
-          <span id="sess-count" style="margin-left:auto;font-size:10px;color:var(--ink-3);text-transform:none;letter-spacing:0"></span>
-        </div>
-        <div class="bt-head">
-          <span class="bt-cell" style="flex:0 0 86px">Date</span>
-          <span class="bt-cell" style="flex:0 0 110px">Project</span>
-          <span class="bt-cell" style="flex:1">First Message</span>
-          <span class="bt-cell" style="flex:0 0 52px;text-align:right">Size</span>
-          <span class="bt-cell" style="flex:0 0 92px;text-align:right">Resume</span>
-        </div>
-        <div id="sess-rows"></div>
+      <input id="sess-search" class="sess-search" type="text" placeholder="search prompt, project, or id…" oninput="searchSessions(this.value)" autocomplete="off" spellcheck="false">
+    </div>
+    <div class="bd-count" id="sess-count"></div>
+    <div class="card" style="padding:0">
+      <div class="bt-head">
+        <span class="bt-cell" style="flex:0 0 86px">Date</span>
+        <span class="bt-cell" style="flex:0 0 110px">Project</span>
+        <span class="bt-cell" style="flex:1">First Message</span>
+        <span class="bt-cell" style="flex:0 0 52px;text-align:right">Size</span>
+        <span class="bt-cell" style="flex:0 0 92px;text-align:right">Resume</span>
       </div>
-    </div>`}
+      <div id="sess-rows"></div>
+    </div>
+    <div class="bd-pager" id="sess-pager"></div>`}
   </div>`;
 }
 
@@ -78,25 +71,44 @@ export function renderSessionsJS(d) {
   const s = d.sessionsData || { sessions: [] };
   return `<script>
 const SESSIONS_DATA = ${JSON.stringify(s.sessions)};
-const SESS_CAP = ${VISIBLE_CAP};
+const SESS_PAGE_SIZE = ${PAGE_SIZE};
 let _sessProj = '__all__';
 let _sessQuery = '';
+let _sessPage = 1;
 
 function _sessEsc(x){return String(x==null?'':x).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function _sessDate(ms){try{return new Date(ms).toISOString().slice(0,10);}catch(e){return '—';}}
 function _sessSize(b){if(b>=1048576)return (b/1048576).toFixed(1)+'M';if(b>=1024)return Math.round(b/1024)+'K';return b+'B';}
 
 function selectSessProj(el){
-  document.querySelectorAll('#panel-sessions .beads-proj-item').forEach(i=>i.classList.remove('active'));
+  document.querySelectorAll('#panel-sessions .bd-pill').forEach(i=>i.classList.remove('active'));
   el.classList.add('active');
   _sessProj=el.dataset.proj;
+  _sessPage=1;
   renderSessions();
 }
-function searchSessions(v){_sessQuery=v||'';renderSessions();}
+function searchSessions(v){_sessQuery=v||'';_sessPage=1;renderSessions();}
+
+function _sessPagerHtml(page,pages){
+  const win=[],add=n=>{if(n>=1&&n<=pages&&win.indexOf(n)===-1)win.push(n);};
+  add(1);add(2);add(page-1);add(page);add(page+1);add(pages-1);add(pages);
+  win.sort((a,b)=>a-b);
+  let html='<button onclick="sessGoPage('+(page-1)+')"'+(page<=1?' disabled':'')+'>‹ Prev</button>';
+  let prev=0;
+  for(const n of win){
+    if(n-prev>1)html+='<span class="pg-ellipsis">…</span>';
+    html+='<button class="pg-num'+(n===page?' active':'')+'" onclick="sessGoPage('+n+')">'+n+'</button>';
+    prev=n;
+  }
+  html+='<button onclick="sessGoPage('+(page+1)+')"'+(page>=pages?' disabled':'')+'>Next ›</button>';
+  return html;
+}
+function sessGoPage(n){if(n<1)return;_sessPage=n;renderSessions();const m=document.querySelector('.main');if(m)m.scrollTop=0;}
 
 function renderSessions(){
   const rows=document.getElementById('sess-rows');
   const count=document.getElementById('sess-count');
+  const pager=document.getElementById('sess-pager');
   if(!rows)return;
   let list=SESSIONS_DATA;
   if(_sessProj!=='__all__') list=list.filter(s=>s.project===_sessProj);
@@ -108,9 +120,20 @@ function renderSessions(){
       return terms.every(t=>hay.includes(t));
     });
   }
-  const shown=list.slice(0,SESS_CAP);
-  if(count) count.textContent='showing '+shown.length+' of '+list.length+(list.length>SESS_CAP?' · refine to see more':'');
-  if(!shown.length){rows.innerHTML='<div style="padding:20px 16px;font-size:11px;color:var(--ink-3)">— no matching sessions —</div>';return;}
+  const scope=_sessProj==='__all__'?'':' · '+_sessProj;
+  if(!list.length){
+    if(count)count.textContent='0 sessions'+scope;
+    rows.innerHTML='<div style="padding:20px 16px;font-size:11px;color:var(--ink-3)">— no matching sessions —</div>';
+    if(pager)pager.innerHTML='';
+    return;
+  }
+  const pages=Math.max(1,Math.ceil(list.length/SESS_PAGE_SIZE));
+  if(_sessPage>pages)_sessPage=pages;
+  if(_sessPage<1)_sessPage=1;
+  const start=(_sessPage-1)*SESS_PAGE_SIZE;
+  const shown=list.slice(start,start+SESS_PAGE_SIZE);
+  if(count)count.textContent='Showing '+(start+1)+'–'+(start+shown.length)+' of '+list.length+scope;
+  if(pager)pager.innerHTML=pages>1?_sessPagerHtml(_sessPage,pages):'';
   rows.innerHTML=shown.map(s=>{
     const preview=s.preview?_sessEsc(s.preview):'<span style="color:var(--ink-3);font-style:italic">(no preview)</span>';
     const branch=s.gitBranch?' <span style="color:var(--ink-3)">· '+_sessEsc(s.gitBranch)+'</span>':'';

@@ -201,6 +201,35 @@ export async function loadClaudeData() {
     } catch {}
   }
 
+  // Read plugin-provided agents (e.g. braynee:beads-auditor) — these live in each
+  // plugin's installPath/agents/*.md, NOT ~/.claude/agents/, so the custom-agents
+  // scan above misses them. Mirror the plugin-skills loop.
+  let pluginAgents = [];
+  for (const [pluginId, installs] of Object.entries(installedPlugins)) {
+    if (!Array.isArray(installs) || !installs.length) continue;
+    const installPath = installs[0]?.installPath;
+    if (!installPath) continue;
+    const pluginShortName = pluginId.split('@')[0];
+    try {
+      const agentsDir = join(installPath, 'agents');
+      for (const f of rd(agentsDir)) {
+        if (!f.endsWith('.md')) continue;
+        try {
+          const md = readFileSync(join(agentsDir, f), 'utf8');
+          const nameMatch = md.match(/^name:\s*(.+)$/m);
+          const descMatch = md.match(/^description:\s*(.+)$/m);
+          pluginAgents.push({
+            file: f,
+            name: nameMatch?.[1]?.trim() || f.replace('.md', ''),
+            desc: descMatch?.[1]?.trim() || '',
+            plugin: pluginShortName,
+          });
+        } catch {}
+      }
+    } catch {}
+  }
+  pluginAgents.sort((a, b) => a.plugin.localeCompare(b.plugin) || a.name.localeCompare(b.name));
+
   // Destructure settings
   const { permissions: permissions = {}, hooks = {}, env = {}, enabledPlugins = {}, statusLine, mcpServers: sMcp = {}, voice: voiceObj, ...gen } = s;
   const voice = voiceObj || {};
@@ -226,7 +255,7 @@ export async function loadClaudeData() {
   return {
     s, c, claudeMd, insights, ig: _ig,
     installedSkills, localPlugins, mcpJson, installedPlugins,
-    customAgents, rules, allProjects, totalJSONLSessions,
+    customAgents, pluginAgents, rules, allProjects, totalJSONLSessions,
     permissions, hooks, env, enabledPlugins, statusLine,
     voice, sMcp, uMcp, gen,
     acct, prefs, projects, skillUsage,

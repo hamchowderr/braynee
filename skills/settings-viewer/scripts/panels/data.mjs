@@ -1,36 +1,48 @@
-import { esc, projectRows, skillBars, installedSkillsGrid, localPluginsPanel, kvTable } from '../html/utils.mjs';
+import { esc, installedSkillsGrid, localPluginsPanel, kvTable } from '../html/utils.mjs';
+import { chartBox, barChartHeight, renderBarChartJS } from '../html/charts.mjs';
 
 export function renderProjectsPanel(d) {
   const { allProjects } = d;
+  const n = Math.min(25, allProjects.length);
   return `<div id="panel-projects" class="panel">
     <div class="section-head">
       <div class="section-title">Projects</div>
-      <div class="section-tag">${allProjects.length} total · source: ~/.claude/projects/</div>
-    </div>
-    <div class="card" style="margin-bottom:14px;border-color:rgba(245,166,35,.2);background:rgba(245,166,35,.03)">
-      <div class="card-body" style="font-size:11px;color:var(--ink-2);padding:10px 16px;">
-        <strong style="color:var(--amber)">Ground truth:</strong> ~/.claude/projects/ (${allProjects.length} dirs) · bars = conversation size · columns: MB · sessions · last cost
-      </div>
+      <div class="section-tag">${allProjects.length} total · top ${n} by conversation size · source: ~/.claude/projects/</div>
     </div>
     <div class="card">
-      <div class="card-head"><div class="card-head-dot"></div>All Projects</div>
-      <div class="card-body">${projectRows(allProjects)}</div>
+      <div class="card-head"><div class="card-head-dot"></div>Conversation Size (MB)</div>
+      <div class="card-body">${allProjects.length ? chartBox('projects-chart', barChartHeight(n)) : `<p class="nil">— no data —</p>`}</div>
     </div>
   </div>`;
 }
 
+export function renderProjectsJS(d) {
+  const { allProjects } = d;
+  const sizes = {};
+  for (const p of allProjects) sizes[p.name] = Math.round((p.sizeBytes / 1048576) * 10) / 10;
+  return renderBarChartJS('projects', 'projects-chart', sizes, { color: '#f5a623', horizontal: true, limit: 25, suffix: 'MB' });
+}
+
 export function renderSkillUsagePanel(d) {
   const { skillUsage } = d;
+  const n = Math.min(20, Object.keys(skillUsage || {}).length);
   return `<div id="panel-skills" class="panel">
     <div class="section-head">
       <div class="section-title">Skill Usage</div>
-      <div class="section-tag">invocation frequency from .claude.json</div>
+      <div class="section-tag">invocation frequency from .claude.json · top ${n}</div>
     </div>
     <div class="card">
-      <div class="card-head"><div class="card-head-dot"></div>Top 20 by Use Count</div>
-      <div class="card-body">${skillBars(skillUsage)}</div>
+      <div class="card-head"><div class="card-head-dot" style="background:var(--blue)"></div>Top Skills by Use Count</div>
+      <div class="card-body">${Object.keys(skillUsage || {}).length ? chartBox('skills-chart', barChartHeight(n)) : `<p class="nil">— no usage data —</p>`}</div>
     </div>
   </div>`;
+}
+
+export function renderSkillUsageJS(d) {
+  const { skillUsage } = d;
+  const counts = {};
+  for (const [name, x] of Object.entries(skillUsage || {})) counts[name] = x.usageCount || 0;
+  return renderBarChartJS('skills', 'skills-chart', counts, { color: '#5bc0f8', horizontal: true, limit: 20 });
 }
 
 export function renderInstalledSkillsPanel(d) {

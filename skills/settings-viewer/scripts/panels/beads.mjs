@@ -15,36 +15,20 @@ export function renderBeadsPanel(beadsStats) {
 
     ${beadsStats.projectsData.length === 0
       ? `<div class="card"><div class="card-body"><p class="nil">— no beads databases found in your projects root (set BRAYNEE_PROJECTS_DIR if your repos are not under ~/code) —</p></div></div>`
-      : `<div class="beads-layout">
-      <div class="beads-proj-sidebar">
-        <div class="beads-proj-item active" data-proj="__all__" onclick="selectBeadsProj(this)">
-          <span class="bd-proj-name" style="font-weight:500">All Projects</span>
-          <span class="bd-badge bd-badge-open">${beadsStats.totalOpen}</span>
-        </div>
-        ${beadsStats.projectsData.map(p => `
-        <div class="beads-proj-item" data-proj="${esc(p.name)}" onclick="selectBeadsProj(this)">
-          <span class="bd-proj-name">${esc(p.name)}</span>
-          <span class="bd-badge ${p.open > 0 ? 'bd-badge-open' : 'bd-badge-zero'}">${p.open}</span>
-        </div>`).join('')}
+      : `<div class="beads-toolbar">
+      <div class="bd-pills">
+        <div class="bd-pill active" data-proj="__all__" onclick="selectBeadsProj(this)">All Projects <span class="bd-badge bd-badge-open">${beadsStats.totalOpen}</span></div>
+        ${beadsStats.projectsData.map(p => `<div class="bd-pill" data-proj="${esc(p.name)}" onclick="selectBeadsProj(this)">${esc(p.name)} <span class="bd-badge ${p.open > 0 ? 'bd-badge-open' : 'bd-badge-zero'}">${p.open}</span></div>`).join('')}
       </div>
-      <div class="beads-main">
-        <div class="beads-filters">
-          <button class="bf bf-active" onclick="filterBeads(this,'open')">Open</button>
-          <button class="bf" onclick="filterBeads(this,'closed')">Closed</button>
-          <button class="bf" onclick="filterBeads(this,'all')">All</button>
-          <span id="bd-filter-label" style="margin-left:auto;font-size:10px;color:var(--ink-3)"></span>
-        </div>
-        <div class="bt-head">
-          <span class="bt-cell" style="width:20px"></span>
-          <span class="bt-cell" style="flex:0 0 160px">ID</span>
-          <span class="bt-cell" style="flex:1">Title</span>
-          <span class="bt-cell" style="width:64px">Type</span>
-          <span class="bt-cell" style="width:32px">P</span>
-          <span class="bt-cell" style="width:130px">Assignee</span>
-        </div>
-        <div id="bd-rows"></div>
+      <div class="bd-filters">
+        <button class="bf bf-active" onclick="filterBeads(this,'open')">Open</button>
+        <button class="bf" onclick="filterBeads(this,'closed')">Closed</button>
+        <button class="bf" onclick="filterBeads(this,'all')">All</button>
       </div>
-    </div>`}
+    </div>
+    <div class="bd-count" id="bd-count"></div>
+    <div class="bd-grid" id="bd-grid"></div>
+    <div class="bd-pager" id="bd-pager"></div>`}
   </div>`;
 }
 
@@ -70,11 +54,14 @@ const BEADS_DATA = ${JSON.stringify(beadsStats.projectsData)};
 const BEADS_CURRENT_USER = ${JSON.stringify(beadsStats.currentUser || '')};
 let _bdProj = '__all__';
 let _bdFilter = 'open';
+let _bdPage = 1;
+const BD_PAGE_SIZE = 12; // 3 cols × 4 rows — a full page fits with no scroll
 
 function selectBeadsProj(el) {
-  document.querySelectorAll('.beads-proj-item').forEach(i => i.classList.remove('active'));
+  document.querySelectorAll('.bd-pill').forEach(i => i.classList.remove('active'));
   el.classList.add('active');
   _bdProj = el.dataset.proj;
+  _bdPage = 1;
   renderBeads();
 }
 
@@ -82,13 +69,38 @@ function filterBeads(el, status) {
   document.querySelectorAll('.bf').forEach(b => b.classList.remove('bf-active'));
   el.classList.add('bf-active');
   _bdFilter = status;
+  _bdPage = 1;
   renderBeads();
 }
 
+// Windowed page bar: ‹ Prev  1 2 … 7 8 9 … 20 21  Next ›
+function _bdPagerHtml(page, pages) {
+  const win = [], add = n => { if (n >= 1 && n <= pages && win.indexOf(n) === -1) win.push(n); };
+  add(1); add(2); add(page - 1); add(page); add(page + 1); add(pages - 1); add(pages);
+  win.sort((a, b) => a - b);
+  let html = '<button onclick="bdGoPage(' + (page - 1) + ')"' + (page <= 1 ? ' disabled' : '') + '>‹ Prev</button>';
+  let prev = 0;
+  for (const n of win) {
+    if (n - prev > 1) html += '<span class="pg-ellipsis">…</span>';
+    html += '<button class="pg-num' + (n === page ? ' active' : '') + '" onclick="bdGoPage(' + n + ')">' + n + '</button>';
+    prev = n;
+  }
+  html += '<button onclick="bdGoPage(' + (page + 1) + ')"' + (page >= pages ? ' disabled' : '') + '>Next ›</button>';
+  return html;
+}
+
+function bdGoPage(n) {
+  if (n < 1) return;
+  _bdPage = n;
+  renderBeads();
+  const m = document.querySelector('.main'); if (m) m.scrollTop = 0;
+}
+
 function renderBeads() {
-  const rows = document.getElementById('bd-rows');
-  const label = document.getElementById('bd-filter-label');
-  if (!rows) return;
+  const grid = document.getElementById('bd-grid');
+  const count = document.getElementById('bd-count');
+  if (!grid) return;
+  const esc = s => String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   const projsToShow = _bdProj === '__all__' ? BEADS_DATA : BEADS_DATA.filter(p => p.name === _bdProj);
   const issues = [];
   for (const p of projsToShow) {
@@ -97,28 +109,47 @@ function renderBeads() {
     if (_bdFilter === 'closed' || _bdFilter === 'all')
       (p.closedIssues || []).forEach(i => issues.push({ ...i, proj: p.name }));
   }
-  if (label) label.textContent = issues.length + ' issue' + (issues.length !== 1 ? 's' : '');
+  // Open first, then by priority (P0 = most urgent), then id — so the cards a
+  // viewer cares about land at the top-left of the grid.
+  const sw = s => s === 'open' ? 0 : s === 'closed' ? 1 : 2;
+  const pr = i => { const n = parseInt(i.priority, 10); return isNaN(n) ? 9 : n; };
+  issues.sort((a, b) => sw(a.status) - sw(b.status) || pr(a) - pr(b) || String(a.id).localeCompare(String(b.id)));
+
+  const pager = document.getElementById('bd-pager');
+  const scope = _bdProj === '__all__' ? ' · all projects' : ' · ' + _bdProj;
   if (!issues.length) {
-    rows.innerHTML = '<div style="padding:20px 16px;font-size:11px;color:var(--ink-3)">— no issues —</div>';
+    if (count) count.textContent = '0 issues' + scope;
+    grid.innerHTML = '<div class="bd-empty">— no issues —</div>';
+    if (pager) pager.innerHTML = '';
     return;
   }
-  rows.innerHTML = issues.map((i, idx) => {
+  const pages = Math.max(1, Math.ceil(issues.length / BD_PAGE_SIZE));
+  if (_bdPage > pages) _bdPage = pages;
+  if (_bdPage < 1) _bdPage = 1;
+  const start = (_bdPage - 1) * BD_PAGE_SIZE;
+  const pageIssues = issues.slice(start, start + BD_PAGE_SIZE);
+  if (count) count.textContent = 'Showing ' + (start + 1) + '–' + (start + pageIssues.length) + ' of ' + issues.length + scope;
+  if (pager) pager.innerHTML = pages > 1 ? _bdPagerHtml(_bdPage, pages) : '';
+  grid.innerHTML = pageIssues.map(i => {
     const dot = i.status === 'open'
-      ? '<span style="color:var(--amber)">○</span>'
+      ? '<span class="bd-card-dot" style="color:var(--amber)">○</span>'
       : i.status === 'closed'
-      ? '<span style="color:var(--green)">✓</span>'
-      : '<span style="color:var(--red)">×</span>';
-    const typeCls = i.type === 'bug' ? 'color:var(--red)' : i.type === 'feature' ? 'color:var(--blue)' : 'color:var(--ink-3)';
+      ? '<span class="bd-card-dot" style="color:var(--green)">✓</span>'
+      : '<span class="bd-card-dot" style="color:var(--red)">×</span>';
+    const typeColor = i.type === 'bug' ? 'var(--red)' : i.type === 'feature' ? 'var(--blue)' : 'var(--ink-3)';
     const isMine = BEADS_CURRENT_USER && i.assignee && i.assignee.toLowerCase() === BEADS_CURRENT_USER.toLowerCase();
-    const projPrefix = _bdProj === '__all__' ? '<span style="color:var(--ink-3);font-size:9px">' + (i.proj||'') + ' </span>' : '';
-    const hasDetail = i.detail !== null && i.detail !== undefined;
-    return '<div class="bt-row" onclick="openBdDrawer(' + JSON.stringify(i).replace(/</g,'\\u003c').replace(/>/g,'\\u003e').replace(/"/g,'&quot;') + ')" title="' + (hasDetail ? 'Click to view details' : '') + '">'
-      + '<span class="bt-cell" style="width:20px;font-size:14px">' + dot + '</span>'
-      + '<span class="bt-cell" style="flex:0 0 160px"><span class="bd-id">' + projPrefix + (i.id||'') + '</span></span>'
-      + '<span class="bt-cell" style="flex:1;color:var(--ink)">' + (i.title||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') + '</span>'
-      + '<span class="bt-cell" style="width:64px;' + typeCls + '">' + (i.type||'') + '</span>'
-      + '<span class="bt-cell" style="width:32px;color:var(--ink-3)">P' + (i.priority||'?') + '</span>'
-      + '<span class="bt-cell" style="width:130px;' + (isMine ? 'color:var(--amber)' : 'color:var(--ink-3)') + '">' + (i.assignee ? '@' + i.assignee : '—') + '</span>'
+    const projTag = _bdProj === '__all__' ? '<span class="bd-card-proj">' + esc(i.proj || '') + ' · </span>' : '';
+    const payload = JSON.stringify(i).replace(/</g,'\\u003c').replace(/>/g,'\\u003e').replace(/"/g,'&quot;');
+    return '<div class="bd-card' + (isMine ? ' is-mine' : '') + '" onclick="openBdDrawer(' + payload + ')">'
+      + '<div class="bd-card-top">' + dot
+      + '<span class="bd-card-id">' + projTag + esc(i.id) + '</span>'
+      + (i.type ? '<span class="bd-card-type" style="color:' + typeColor + '">' + esc(i.type) + '</span>' : '')
+      + '</div>'
+      + '<div class="bd-card-title">' + esc(i.title) + '</div>'
+      + '<div class="bd-card-foot">'
+      + '<span class="bd-card-pri">P' + (i.priority || '?') + '</span>'
+      + '<span' + (isMine ? ' style="color:var(--amber)"' : '') + '>' + (i.assignee ? '@' + esc(i.assignee) : '—') + '</span>'
+      + '</div>'
       + '</div>';
   }).join('');
 }
