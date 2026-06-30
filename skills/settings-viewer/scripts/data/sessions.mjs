@@ -150,6 +150,7 @@ export async function loadSessions() {
       files.push({
         id: f.slice(0, -6), // strip ".jsonl"
         path: join(dirPath, f),
+        encoded: d.name,
         projectName,
         projectPath: decodedPath,
         mtimeMs: stat.mtimeMs,
@@ -165,16 +166,32 @@ export async function loadSessions() {
   // 3) Extract a preview for each (bounded per-file reads, run concurrently in
   //    capped batches so thousands of files don't open thousands of fds at once).
   const sessions = [];
+  // encoded dir name → accurate project name (from a transcript's real cwd). The
+  // Projects panel (built in claude.mjs, which never reads transcripts) reuses this
+  // to un-mangle names the lossy dir-decode would otherwise wreck.
+  const nameByEncoded = {};
   const BATCH = 48;
   for (let i = 0; i < files.length; i += BATCH) {
     const batch = files.slice(i, i + BATCH);
     const heads = await Promise.all(batch.map(f => readSessionHead(f.path)));
     batch.forEach((f, j) => {
       const h = heads[j];
+      // Prefer the transcript's real cwd for the display name — the encoded dir
+      // name decodes lossily ('-' and '/' both became '-', so `mastra-rag` would
+      // read as `rag`). h.cwd is the un-mangled path, so its last segment is the
+      // true project name; fall back to the decoded name only when cwd is absent.
+      const realCwd = h.cwd || f.projectPath;
+      const accurate = realCwd && /[/\\]/.test(realCwd);
+      const project = accurate
+        ? (realCwd.split(/[/\\]/).filter(Boolean).pop() || f.projectName)
+        : f.projectName;
+      // Record the name for the encoded dir; an accurate (cwd-derived) name wins
+      // over a decode-fallback already stored.
+      if (f.encoded && (accurate || !nameByEncoded[f.encoded])) nameByEncoded[f.encoded] = project;
       sessions.push({
         id: f.id,
-        project: f.projectName,
-        cwd: h.cwd || f.projectPath,
+        project,
+        cwd: realCwd,
         gitBranch: h.gitBranch || '',
         mtimeMs: f.mtimeMs,
         sizeBytes: f.sizeBytes,
@@ -194,9 +211,10 @@ export async function loadSessions() {
     projectCount,
     oldestMs: mtimes.length ? Math.min(...mtimes) : 0,
     newestMs: mtimes.length ? Math.max(...mtimes) : 0,
+    nameByEncoded,
   };
 }
 
 function emptyResult() {
-  return { sessions: [], totalSessions: 0, totalSizeBytes: 0, projectCount: 0, oldestMs: 0, newestMs: 0 };
+  return { sessions: [], totalSessions: 0, totalSizeBytes: 0, projectCount: 0, oldestMs: 0, newestMs: 0, nameByEncoded: {} };
 }

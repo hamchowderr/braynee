@@ -74,7 +74,7 @@ export function hookCoveragePanel(h) {
   }).join('');
   return `<div class="hcov-summary">
     <div class="hcov-bar-wrap"><div class="hcov-bar" style="width:${pct}%"></div></div>
-    <span class="hcov-label">${covered}/${total} events wired &nbsp;·&nbsp; ${pct}% coverage</span>
+    <span class="hcov-label" title="How many of Claude Code's ${total} hook lifecycle events have at least one hook configured">${covered} of ${total} hook events have a hook &nbsp;·&nbsp; ${pct}% coverage</span>
   </div>
   <div class="hcev-grid">${tiles}</div>`;
 }
