@@ -1,0 +1,89 @@
+# braynee-release — ship a new braynee plugin version, no-PR workflow.
+# Pour with:  bd mol pour braynee-release --var version=2.1.6
+#
+# Per CLAUDE.md ("No PRs. No pushes. Test in a directory."): braynee is a
+# locally-installed CC plugin; verification happens in a --plugin-dir sandbox,
+# and the new version is deployed by copying source into the live cache dir.
+# No PR, no GitHub push unless the user explicitly asks for one.
+formula     = "braynee-release"
+description = """
+Ship a new braynee version. Verify in --plugin-dir sandbox, then deploy by
+copying source into the live cache dir, then bump version in plugin.json AND
+marketplace.json. No PR. No push. Restart Claude Code to pick up hooks.json.
+"""
+version = 1
+type    = "workflow"
+
+[vars.version]
+description = "New semver version (e.g. 2.1.6)"
+required    = true
+pattern     = "^\\d+\\.\\d+\\.\\d+$"
+
+# -----------------------------------------------------------------------------
+
+[[steps]]
+id    = "selftest"
+title = "Self-test braynee (expect 0 failed) for {{version}}"
+description = """
+Run the headless layer-1 assertions:
+
+  node bin/braynee-self-test
+
+Must end with "N passed, 0 failed". Catches JS/regex regressions across
+hooks. Does NOT exercise the CC↔hooks.json boundary — that's the sandbox
+step below.
+"""
+
+# -----------------------------------------------------------------------------
+
+[[steps]]
+id    = "sandbox"
+title = "Verify {{version}} in --plugin-dir sandbox"
+needs = ["selftest"]
+description = """
+Layer-2 live test:
+
+  node scripts/hook-sandbox.mjs
+
+Prints a `claude --plugin-dir <source> --debug-file <jsonl>` command. Run
+it, exercise whatever changed (bd commands for beads hooks, git commands
+for git hooks, etc.), then verify:
+- hook fired: grep `~/.claude/braynee-hooks.log` at your timestamps;
+- model saw it: read the --debug-file JSONL for `additionalContext` in
+  the relevant tool result.
+
+This is the boundary check that headless tests can't do — exercise it.
+"""
+
+# -----------------------------------------------------------------------------
+
+[[steps]]
+id    = "deploy-cache"
+title = "Deploy to live cache as {{version}}"
+needs = ["sandbox"]
+description = """
+Copy changed source into the running cache dir:
+
+  ~/.claude/plugins/cache/braynee/braynee/{{version}}/
+
+If hooks.json changed, restart Claude Code to pick it up. Other changes
+take effect on next session start.
+
+This IS the release for braynee — no PR, no GitHub push needed. The marketplace
++ plugin.json bumps below are bookkeeping so the version number matches.
+"""
+
+# -----------------------------------------------------------------------------
+
+[[steps]]
+id    = "bump"
+title = "Bump version to {{version}} in plugin.json AND marketplace.json"
+needs = ["deploy-cache"]
+description = """
+Edit BOTH .claude-plugin/plugin.json and .claude-plugin/marketplace.json to
+{{version}}. They MUST match — bumping only one makes `claude plugin install`
+a silent no-op for anyone else who installs braynee.
+
+Commit ONLY if the user explicitly asks for it. The cache deploy above is
+the actual release; the version bump is just so future installs match.
+"""

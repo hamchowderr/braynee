@@ -1,0 +1,100 @@
+# autonomous-ship — scope -> CI green -> human merge -> deploy -> verify-live.
+# Pour with (deploy_target is required; pick one of the supported targets):
+#   bd mol pour autonomous-ship \
+#     --var name=my-feature --var repo=owner/name \
+#     --var branch=feature/my-feature --var deploy_target=vercel
+#
+# Two gates make this autonomous-but-safe:
+#   - gh:run  (declared below on ci-green) — resolves when blocking CI is green.
+#     await_id="{{ci_workflow}}" is a workflow-name HINT; `bd gate discover`
+#     (or gh:run self-discovery) fills the actual run id by SHA/branch/time.
+#   - gh:pr   (NOT declared here) — created at RUNTIME by the open-pr step once a
+#     PR number exists, blocking `ship` until a HUMAN merges. Autopilot NEVER
+#     merges. See the open-pr description for the exact wiring sequence.
+formula = "autonomous-ship"
+version = 1
+type    = "workflow"
+description = "Scope -> wait CI green (gh:run) -> wait merge (gh:pr, human) -> deploy -> verify-live. Agnostic via vars."
+
+[vars.name]
+required = true
+[vars.repo]
+description = "owner/name — for gh + gates"
+required = true
+[vars.branch]
+description = "feature branch to push"
+required = true
+[vars.ci_workflow]
+description = "blocking CI workflow file/name (EXCLUDE the advisory Claude Code Review workflow)"
+required = false
+default  = "ci.yml"
+[vars.gate_cmd]
+description = "local verify cmd; empty = compose from lint+typecheck+test"
+required = false
+default  = ""
+[vars.deploy_target]
+description = "vercel | coolify-docker | pm2-vps | railway | npm-publish | electron-builder | plugin-cache"
+required = true
+[vars.secret_source]
+description = "dotenv | infisical"
+required = false
+default  = "dotenv"
+
+[[steps]]
+id = "scope"
+title = "Scope: {{name}}"
+description = "One paragraph: deliverable, done-criteria, explicit non-goals."
+
+[[steps]]
+id = "ci-harness"
+title = "Ensure CI exists: {{name}}"
+needs = ["scope"]
+description = "Confirm .github/workflows/{{ci_workflow}} runs lint+typecheck+test on pull_request. If absent, author it with braynee's generator: `node <braynee-plugin>/scripts/gen-ci-workflow.mjs --name {{ci_workflow}} --branch main` — it detects the package manager + lint/typecheck/test and, if NONE are found, writes a FAILING guard step so the gh:run gate can never go vacuously green. The workflow is named 'CI'; do NOT count the advisory 'Claude Code Review' workflow as the gate."
+
+[[steps]]
+id = "build"
+title = "Build: {{name}}"
+needs = ["ci-harness"]
+description = "Implement against scope. Run {{gate_cmd}} (or lint+typecheck+test if empty). Hard-stop on red."
+
+[[steps]]
+id = "open-pr"
+title = "Open PR + wire gates: {{name}}"
+needs = ["build"]
+description = """
+RUNTIME GATE WIRING (gh:pr cannot be declared statically — no PR number exists at pour):
+1. git push -u origin {{branch}}
+2. bd gate discover --branch {{branch}}            # fills the gh:run gate await_id
+3. gh pr create --fill --base main --head {{branch}}
+   NUM=$(gh pr view {{branch}} --json number --jq .number)
+4. bd gate create --type=gh:pr --blocks <SHIP_ISSUE_ID> --await-id "$NUM" -r "wait human merge"
+   (get <SHIP_ISSUE_ID> from `bd mol show` after pour)
+5. Report PR URL + preview; bd gate add-waiter; then STOP. NEVER merge.
+"""
+
+[[steps]]
+id = "ci-green"
+title = "CI green: {{name}}"
+needs = ["open-pr"]
+
+# Gate MUST use the array-of-tables nested form `[steps.gate]` (attaches to the
+# step directly above) — NOT `[steps.ci-green.gate]`. The `.<id>.` path segment
+# is read as a non-existent Step field and SILENTLY DROPPED by BurntSushi/toml
+# (the `Gate` field has no toml tag), so the gate never materializes at pour.
+# Verified against bd 1.0.3 source (internal/formula/parser.go + cook.go).
+[steps.gate]
+type     = "gh:run"
+await_id = "{{ci_workflow}}"
+timeout  = "2h"
+
+[[steps]]
+id = "ship"
+title = "Ship: {{name}} -> {{deploy_target}}"
+needs = ["ci-green"]
+description = "Blocked by the runtime gh:pr gate until a HUMAN merges. Then deploy per {{deploy_target}}; secrets via {{secret_source}} (infisical run / .env). Presence-check CI secrets via `gh secret list` — never read values."
+
+[[steps]]
+id = "verify-live"
+title = "Verify {{name}} live"
+needs = ["ship"]
+description = "Behavioral verification — drive the DEPLOYED artifact and prove it works (behavior, not 'deploy succeeded'). WEB: use Playwright (skills/playwright/SKILL.md) — `npx playwright init-agents --loop=claude`, then author/repair an e2e with the Test Agents (Planner/Generator, Healer) or record one via `playwright codegen`, and run it headless with `playwright test`; emit a trace artifact on failure (the gh:run gate runs the suite in CI). ELECTRON: drive it via Playwright `_electron`. CLI/API: a smoke/curl check. Close-evidence MUST cite the trace / test result, never the bare word 'verified'."

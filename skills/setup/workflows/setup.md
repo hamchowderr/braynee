@@ -422,6 +422,10 @@ git -C "{vault_path}" commit -m "initial vault setup via second-brain plugin"
 # a second server on the bound port and fail.
 cd "{vault_path}" && bd init --shared-server --external --skip-agents --skip-hooks --non-interactive
 
+# Provision braynee's workflow formulas into ~/.beads/formulas/ so `bd mol pour`
+# works with no manual copy (autonomous-ship, project, engagement, braynee-release).
+python3 ${CLAUDE_PLUGIN_ROOT}/skills/setup/scripts/provision-formulas.py
+
 # QMD (search index — rebuild after scaffold)
 node ${CLAUDE_PLUGIN_ROOT}/scripts/qmd-wrapper.mjs index
 ```

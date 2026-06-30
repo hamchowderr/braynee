@@ -52,7 +52,10 @@ project note under ## Discovery:
 down. Downstream is gated on this — don't skip it.
 """
 
-  [steps.discovery.gate]
+  # Must be `[steps.gate]` (attaches to the step directly above — discovery).
+  # `[steps.discovery.gate]` is silently dropped by the toml parser (the `.<id>.`
+  # path segment has no Step field), so the gate would never materialize at pour.
+  [steps.gate]
   type    = "human"
   timeout = "168h"
 
@@ -132,7 +135,9 @@ issues — don't invite endless rounds.
 No assumed-yes — the ship step is hard to reverse.
 """
 
-  [steps.review.gate]
+  # `[steps.gate]` attaches to the step directly above (review) — see the discovery
+  # gate note; `[steps.review.gate]` would be silently dropped at pour.
+  [steps.gate]
   type    = "human"
   timeout = "336h"
 
