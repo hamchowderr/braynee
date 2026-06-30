@@ -185,7 +185,6 @@ code, .mono, .bd-id, .mcp-cmd, .hook-cmd { font-family: var(--mo); }
 .iskill-card:hover { border-color: var(--amber); }
 .iskill-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .iskill-name { font-size: 13px; font-weight: 600; color: var(--ink); }
-.iskill-uses { font-size: 10px; color: var(--amber); background: color-mix(in srgb, var(--amber) 12%, transparent); border: 1px solid color-mix(in srgb, var(--amber) 24%, transparent); border-radius: 999px; padding: 1px 8px; white-space: nowrap; }
 .iskill-id { font-size: 10px; color: var(--blue); font-family: var(--mo); }
 .iskill-desc { font-size: 12px; color: var(--ink-2); line-height: 1.5; }
 .iskill-group { margin-bottom: 24px; }
