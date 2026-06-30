@@ -533,7 +533,65 @@ function assertAgent(label, cond) {
   assertAgent('autopilot.md ship mode is opt-in + prod stays human-gated (cp-9f2.2)',
     /ship mode \(opt-in/i.test(ap) && /double opt-in/i.test(ap) && /human-gated/i.test(ap));
 }
+{
+  // cp-ci9.2: the beads-auditor must hold its key contracts — tool-restricted,
+  // warns about the bd batch-write clobber, enforces supersede, gates writes on approval.
+  const baPath = path.join(PLUGIN_ROOT, 'agents', 'beads-auditor.md');
+  const ba = fs.existsSync(baPath) ? fs.readFileSync(baPath, 'utf8') : '';
+  assertAgent('beads-auditor.md exists (cp-ci9.2)', !!ba);
+  assertAgent('beads-auditor declares tools + model', /^tools:/m.test(ba) && /^model:/m.test(ba));
+  assertAgent('beads-auditor warns about the bd batch-write flush (clobber gotcha)',
+    /bd export --all --include-memories/.test(ba));
+  assertAgent('beads-auditor enforces supersede for reversed decisions',
+    /supersede/i.test(ba));
+  assertAgent('beads-auditor gates mutations on approval',
+    /only after approval|only on approval|go-ahead/i.test(ba));
+}
 log(`  ${results.agents.ok} passed | ${results.agents.fail} failed`);
+
+// ── 11. Rules-template assertions (cp-ci9.1) ─────────────────────────────────
+// The beads-conventions rule must ship in rules-templates (cmd_rules globs *.md,
+// so presence here = it installs) and carry the discipline it exists to enforce.
+log('\n=== 11. Rules-template assertions ===');
+results.rules = { ok: 0, fail: 0, errors: [] };
+function assertRule(label, cond) {
+  if (cond) { results.rules.ok++; log(`  OK: ${label}`); }
+  else { results.rules.fail++; results.rules.errors.push({ test: label }); log(`  FAIL: ${label}`); }
+}
+{
+  const rp = path.join(PLUGIN_ROOT, 'skills', 'setup', 'rules-templates', 'beads-conventions.md');
+  const r = fs.existsSync(rp) ? fs.readFileSync(rp, 'utf8') : '';
+  assertRule('beads-conventions.md ships in rules-templates (cp-ci9.1)', !!r);
+  assertRule('beads-conventions.md is a path-scoped rule (paths: frontmatter)',
+    /^---[\r\n]+paths:/.test(r));
+  assertRule('beads-conventions states the in/out boundary (bd remember + TodoWrite + vault)',
+    /bd remember/i.test(r) && /TodoWrite/i.test(r) && /vault/i.test(r));
+  assertRule('beads-conventions carries the design-vs-acceptance rule',
+    /design/i.test(r) && /acceptance/i.test(r) && /verifiable/i.test(r));
+  assertRule('beads-conventions says supersede reversed decisions (not silent-delete)',
+    /supersede/i.test(r));
+  assertRule('beads-conventions documents the create-time guard (validation.on-create)',
+    /validation\.on-create/i.test(r));
+}
+log(`  ${results.rules.ok} passed | ${results.rules.fail} failed`);
+
+// ── 12. Health beads-hygiene assertion (cp-ci9.3) ────────────────────────────
+// /health's Beads check must surface traceability drift (not just secrets):
+// missing sections, orphans, stale, and the create-time guard.
+log('\n=== 12. Health beads-hygiene assertion ===');
+results.health = { ok: 0, fail: 0, errors: [] };
+function assertHealth(label, cond) {
+  if (cond) { results.health.ok++; log(`  OK: ${label}`); }
+  else { results.health.fail++; results.health.errors.push({ test: label }); log(`  FAIL: ${label}`); }
+}
+{
+  const hpPath = path.join(PLUGIN_ROOT, 'skills', 'health', 'scripts', 'health.py');
+  const hp = fs.existsSync(hpPath) ? fs.readFileSync(hpPath, 'utf8') : '';
+  assertHealth('health.py cmd_beads emits a traceability line (cp-ci9.3)', /traceability:/.test(hp));
+  assertHealth('health.py hygiene runs lint + orphans + stale + guard',
+    /_bd\("lint"\)/.test(hp) && /_bd\("orphans"\)/.test(hp) && /_bd\("stale"\)/.test(hp) && /validation\.on-create/.test(hp));
+}
+log(`  ${results.health.ok} passed | ${results.health.fail} failed`);
 
 // ── Summary ──────────────────────────────────────────────────────────────────
 const totalOk = Object.values(results).reduce((s, r) => s + r.ok, 0);

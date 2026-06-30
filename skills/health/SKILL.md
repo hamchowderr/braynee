@@ -1,21 +1,21 @@
 ---
 name: health
 description: >
-  Run a Brain Check — audit your second brain across Setup, Connections, Memory, and Inbox.
+  Run a Brain Check — audit your second brain across Setup, Connections, Beads, Memory, and Inbox.
   Use when user says "brain check", "health check", "system status", "what's broken",
   "what needs attention", "check connections", "what's backed up".
-argument-hint: [check | setup | connections | memory | inbox | self-test]
+argument-hint: [check | setup | connections | beads | memory | inbox | self-test]
 allowed-tools: Bash(python3:*), Bash(node:*), Bash(curl:*), Bash(braynee-self-test:*)
 ---
 
 # Health Skill — Brain Check
 
-Audits the Braynee system across four areas and surfaces what's broken or backed up right now.
+Audits the Braynee system across five areas and surfaces what's broken or backed up right now.
 
 ## Commands
 
 ```bash
-# Full Brain Check (all four areas)
+# Full Brain Check (all five areas)
 python3 {baseDir}/scripts/health.py check
 
 # Check tools and plugin scripts are installed
@@ -23,6 +23,10 @@ python3 {baseDir}/scripts/health.py setup
 
 # Verify live integrations are reachable
 python3 {baseDir}/scripts/health.py connections
+
+# Beads repo health — `bd doctor` + secret/gitignore drift, plus traceability
+# hygiene (missing sections, open-but-landed, stale, create-time guard)
+python3 {baseDir}/scripts/health.py beads
 
 # Check Claude's context is current
 python3 {baseDir}/scripts/health.py memory
@@ -63,6 +67,12 @@ The same self-test runs in CI on every push to main across Ubuntu, macOS, and Wi
 - Beads (issue tracking)
 - ProtonMail CLI
 - QMD index
+
+**Beads** — Is the repo's issue tracker healthy, traceable, and free of committed secrets? (runs `bd doctor` in the current repo)
+- No tracked secrets — e.g. a committed `.beads/.beads-credential-key` (AES-256 key)
+- `.gitignore` carries the beads-required patterns (no drift)
+- Surfaces secret/gitignore findings loudly **before** any repo goes public
+- **Traceability hygiene** — issues missing required sections, implemented-but-still-open (`bd orphans`), stale issues, and whether the create-time validation guard (`validation.on-create`) is on. The same checks the `beads-auditor` agent runs.
 
 **Memory** — Is Claude loaded with current context?
 - `~/.claude/CLAUDE.md` reflects current setup?
