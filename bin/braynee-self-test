@@ -364,6 +364,33 @@ for (const h of ['commit-cadence-nudge.js', 'beads-claim-to-branch.js',
     r.out.trim() === '' && (r.status === 0 || r.status === 2));
 }
 
+// prd-seed-gate.js (cp-7jd) — warns when prd-seed runs against a half-scoped PRD.
+// EMIT on a gappy PRD, SILENT on a clean PRD and on a non-prd-seed command. Uses a
+// throwaway BRAYNEE_VAULT fixture so the hook has a PRD to inspect.
+{
+  const pv = fs.mkdtempSync(path.join(os.tmpdir(), 'braynee-prdgate-'));
+  const prdDir = path.join(pv, '2. Areas', 'Product Manager', 'PRDs');
+  fs.mkdirSync(prdDir, { recursive: true });
+  fs.writeFileSync(path.join(prdDir, 'Gappy.md'),
+    '## MVP Definition\n### Auth\n<approach>\n### Core Features (3–5)\n1. ...\n', 'utf8');
+  fs.writeFileSync(path.join(prdDir, 'Clean.md'),
+    '## MVP Definition\n### Auth\nClerk, org support.\n### Core Features (3–5)\n1. Engine\n2. UI\n## Risks & Open Questions\n- **Risk:** load.\n', 'utf8');
+  const runPrdGate = (command) => spawnSync(process.execPath,
+    [path.join(PLUGIN_ROOT, 'hooks', 'prd-seed-gate.js')],
+    { input: JSON.stringify({ session_id: 'self-test', cwd: gateCwd, tool_name: 'Bash', tool_input: { command } }),
+      encoding: 'utf8', timeout: 15_000, env: { ...process.env, BRAYNEE_VAULT: pv } });
+  const gappy = runPrdGate('node prd-seed.mjs Gappy');
+  assertGate('prd-seed-gate EMITS on a gappy PRD (additionalContext + placeholder count)',
+    (gappy.stdout || '').includes('additionalContext') && /MVP Definition placeholder/.test(gappy.stdout || ''));
+  const clean = runPrdGate('node prd-seed.mjs Clean');
+  assertGate('prd-seed-gate stays SILENT on a clean PRD',
+    (clean.stdout || '').trim() === '' && clean.status === 0);
+  const noise = runPrdGate('echo hello world');
+  assertGate('prd-seed-gate stays SILENT on a non-prd-seed command',
+    (noise.stdout || '').trim() === '' && noise.status === 0);
+  try { fs.rmSync(pv, { recursive: true, force: true }); } catch {}
+}
+
 // secret-exposure-guard.js — DENY value-printing secret commands (exit 2 + stderr),
 // ALLOW injection (`infisical run`) and writes (`secrets set`), stay SILENT on a
 // non-match, and DENY real secrets written into a .env file. Locks the contract
