@@ -1,6 +1,6 @@
 ---
 paths:
-  - "**"
+  - "**/code/**"
 ---
 
 # Beads — every piece of work is traceable
