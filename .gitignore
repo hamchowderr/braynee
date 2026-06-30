@@ -9,3 +9,6 @@
 # Python bytecode (skill scripts)
 __pycache__/
 *.pyc
+
+# Throwaway dashboard build/verify scratch (screenshots, preview HTML, helper scripts)
+mockups/
