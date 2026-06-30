@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """
-Brain Check — Setup, Connections, Memory, Inbox.
+Brain Check — Setup, Connections, Beads, Memory, Inbox.
 """
 
 import os
+import re
 import sys
 import json
 sys.stdout.reconfigure(encoding="utf-8")
@@ -52,6 +53,8 @@ def cmd_check(args, vault: Path):
     cmd_setup(args, vault)
     print()
     cmd_connections(args, vault)
+    print()
+    cmd_beads(args, vault)
     print()
     cmd_memory(args, vault)
     print()
@@ -170,6 +173,86 @@ def cmd_connections(args, vault: Path):
         warn("QMD wrapper not found")
 
 
+def cmd_beads(args, vault: Path):
+    print("Beads — Repo tracker healthy + no secrets committed?\n")
+
+    if not check_tool("bd"):
+        warn("Beads (bd) not found — skipping bd doctor")
+        return
+
+    # bd doctor is repo-scoped: only meaningful inside a beads repo (cwd has .beads/).
+    if not Path(".beads").is_dir():
+        ok("Not a beads repo here (no .beads/ in cwd) — nothing to check")
+        return
+
+    try:
+        # Decode as UTF-8: bd doctor's ✓/⚠/✖ markers must survive so the secret
+        # filter below matches (the default Windows codec would mangle them).
+        r = subprocess.run(
+            ["bd", "doctor"], capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=60,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        warn("bd doctor did not run (bd missing or timed out)")
+        return
+
+    lines = ((r.stdout or "") + (r.stderr or "")).splitlines()
+
+    m = re.search(r"(\d+)\s+passed.*?(\d+)\s+warning.*?(\d+)\s+error", " ".join(lines))
+    if m:
+        print(f"  ·  bd doctor: {m.group(1)} passed, {m.group(2)} warnings, {m.group(3)} errors")
+
+    # SECURITY-CRITICAL: a committed credential key / tracked secret / gitignore drift is
+    # exactly what let .beads-credential-key get published. Surface it loudly.
+    SECRET_KEYS = ("credential", "tracked runtime", "sensitive data", "secret", "gitignore", ".env")
+    secret_hits = [
+        l.strip() for l in lines
+        if any(k in l.lower() for k in SECRET_KEYS) and ("✖" in l or "⚠" in l)
+    ]
+    if secret_hits:
+        warn("bd doctor flagged secret / gitignore drift — fix BEFORE any publish:")
+        for l in secret_hits[:8]:
+            print(f"        {l}")
+        print("        → gitignore + `git rm --cached` the file(s). See bd memory "
+              "`tracker-content-public-vs-private`.")
+    elif m and int(m.group(3)) > 0:
+        # Non-secret errors exist (e.g. repo-fingerprint) — note them, less urgent.
+        errs = [l.strip() for l in lines if "✖" in l and "passed" not in l]
+        for l in errs[:4]:
+            warn(l)
+    else:
+        ok("bd doctor: no tracked secrets, gitignore current")
+
+    # ── Traceability hygiene (cp-ci9.3) ──────────────────────────────────────
+    # Surface issue-QUALITY drift, not just secrets — the same checks the
+    # beads-auditor agent runs: missing sections, implemented-but-still-open
+    # (`bd orphans`), stale, and whether the create-time validation guard is on.
+    def _bd(*bd_args):
+        try:
+            return subprocess.run(
+                ["bd", *bd_args], capture_output=True, text=True,
+                encoding="utf-8", errors="replace", timeout=30,
+            ).stdout or ""
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            return ""
+
+    missing = sum(1 for l in _bd("lint").splitlines() if "Missing:" in l)
+    om = re.search(r"(\d+)\s+orphaned", _bd("orphans"))
+    orphans = int(om.group(1)) if om else 0
+    sm = re.search(r"(\d+)\s+stale", _bd("stale"))
+    stale = int(sm.group(1)) if sm else 0
+    guard_lines = [l.strip() for l in _bd("config", "get", "validation.on-create").splitlines() if l.strip()]
+    guard_val = guard_lines[-1] if guard_lines else "unset"
+
+    print(f"  ·  traceability: {missing} missing-section · {orphans} open-but-landed · {stale} stale · guard={guard_val}")
+    if missing:
+        warn(f"{missing} issue(s) missing required sections — run beads-auditor or `bd lint`")
+    if guard_val not in ("warn", "error", "strict"):
+        warn("create-time guard off — `bd config set validation.on-create warn`")
+    if not missing and guard_val in ("warn", "error", "strict"):
+        ok(f"traceability: sections complete, guard={guard_val}")
+
+
 def cmd_memory(args, vault: Path):
     print("Memory — Is Claude loaded with current context?\n")
 
@@ -284,6 +367,7 @@ def main():
     sub.add_parser("check")
     sub.add_parser("setup")
     sub.add_parser("connections")
+    sub.add_parser("beads")
     sub.add_parser("memory")
     sub.add_parser("inbox")
 
@@ -300,6 +384,8 @@ def main():
         cmd_setup(args, vault)
     elif args.cmd == "connections":
         cmd_connections(args, vault)
+    elif args.cmd == "beads":
+        cmd_beads(args, vault)
     elif args.cmd == "memory":
         cmd_memory(args, vault)
     elif args.cmd == "inbox":
