@@ -41,7 +41,7 @@ stops with instructions — it never silently proceeds and fails later.
 4. Runs web research sub-agent to seed company knowledge
 5. Scaffolds PARA vault + company structure + PRD section + Development section
 6. Installs Obsidian community plugins
-7. Initializes Git, Beads, QMD
+7. Initializes Git, Beads, QMD — and provisions braynee's workflow formulas (autonomous-ship, project, engagement, braynee-release) into `~/.beads/formulas/` so `bd mol pour` works with no manual copy
 8. Migrates notes from detected source apps (Apple Notes, Notion, OneNote)
 9. Writes CLAUDE.md seeded with user context
 

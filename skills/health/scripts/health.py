@@ -95,6 +95,32 @@ def cmd_setup(args, vault: Path):
         else:
             warn("qmd — wrapper exists but not responding")
 
+    # Ship-stage CLIs — needed only for the autonomous-ship engine (CI / deploy /
+    # secrets / behavioral verify). OPTIONAL: a vault-only or local-only user doesn't
+    # need these, so a miss prints an install hint rather than a hard ✗ (cp-7do).
+    print()
+    print("  Ship-stage CLIs (autonomous-ship engine — optional):")
+    ship_clis = [
+        (["gh", "--version"],            "gh — GitHub CLI (PRs, gh:run/gh:pr gates)",  "winget install GitHub.cli · brew install gh"),
+        (["dolt", "version"],            "dolt — beads Dolt backend",                  "winget install DoltHub.Dolt · github.com/dolthub/dolt/releases"),
+        (["infisical", "--version"],     "infisical — secret injection",               "npm i -g @infisical/cli · brew install infisical/get-cli/infisical"),
+        (["clerk", "--version"],         "clerk — Clerk auth CLI",                     "see clerk.com/docs (CLI is optional)"),
+        (["supabase", "--version"],      "supabase — Supabase CLI",                    "brew install supabase/tap/supabase · scoop install supabase"),
+        (["vercel", "--version"],        "vercel — Vercel deploy CLI",                 "npm i -g vercel"),
+        (["agent-browser", "--version"], "agent-browser — headless browser verify",    "npm i -g agent-browser"),
+        (["docker", "--version"],        "docker — containers (coolify-docker target)", "docs.docker.com/get-docker"),
+    ]
+    for cmd_args, label, hint in ship_clis:
+        # Presence via shutil.which (respects PATHEXT, so it finds Windows npm .cmd
+        # shims like agent-browser.cmd that subprocess can't exec directly); version
+        # is best-effort (None for a .cmd shim → just report it's installed).
+        if check_tool(cmd_args[0]):
+            version = run_version(cmd_args)
+            ok(f"{label} ({version})" if version else f"{label} (installed)")
+        else:
+            print(f"  ·  {label} — not installed · install: {hint}")
+    print("  (Global CLIs above are invoked directly by agents; project-scoped tools run via the project's own runner — never guess the invocation.)")
+
     hooks_dir = Path.home() / ".claude" / "hooks"
     for hook in ["vault-context-prime.js", "session-auto-track.js", "session-export-qmd.js", "statusline-state.js"]:
         p = hooks_dir / hook

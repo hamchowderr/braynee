@@ -157,6 +157,44 @@ If only one holds, stay build-only: do the local work, then mark the deploy step
 **Never** merge the PR or run a production deploy: prod promotion is human-gated
 and out of band, even in ship mode (guardrail #2).
 
+## Autonomous-ship formula — the gated drain
+
+Ship mode above is the *ad-hoc* path. For a full, **resumable** autonomous build→ship,
+pour the **`autonomous-ship`** formula:
+```bash
+bd mol pour autonomous-ship --var name=<feature> --var repo=owner/name \
+  --var branch=feature/<feature> --var deploy_target=<one of the 7 targets>
+```
+It encodes the drain as gated steps so the run can **stop at the human-merge point and
+resume in a later session** without losing its place:
+
+`scope → ci-harness → build → open-pr → ci-green (gh:run gate) → ship (gh:pr gate) → verify-live`
+
+**Two gates make it autonomous-but-safe:**
+- **gh:run** (declared on `ci-green`) — resolves when blocking CI is green. Exclude the
+  advisory "Claude Code Review" workflow; the gate tracks the real lint+typecheck+test run.
+- **gh:pr** (NOT declared statically — no PR number exists at pour) — created at RUNTIME
+  by `open-pr`, blocks `ship` until a **human merges**. Autopilot never merges.
+
+**The `open-pr` wiring sequence — run it exactly:**
+1. `git push -u origin <branch>`
+2. `bd gate discover --branch <branch>` — fills the gh:run gate's `await_id` by SHA/branch.
+3. `gh pr create --fill --base main --head <branch>` →
+   `NUM=$(gh pr view <branch> --json number --jq .number)`
+4. `bd gate create --type=gh:pr --blocks <SHIP_ISSUE_ID> --await-id "$NUM" -r "wait human merge"`
+   (get `<SHIP_ISSUE_ID>` from `bd mol show` after the pour).
+5. Report the PR URL + preview, run `bd gate add-waiter`, then **STOP. NEVER merge.**
+
+**Resume path (next session, hands-off):** the `beads-gate-check` **Stop hook** auto-runs
+`bd gate discover` + `bd gate check` each turn, so the moment CI goes green **and** the
+human merges the PR, the gh:run and gh:pr gates resolve and `ship` unblocks — no manual
+gate commands. A stalled CI/PR is surfaced by `bd gate check --escalate` (the `ci-green`
+gate also carries `timeout="2h"`) rather than hanging the drain.
+
+**Human-merge stop point:** the drain *intentionally* halts after `open-pr` reports. The
+human merging the PR is the signal that unblocks `ship`; autopilot resumes from the
+resolved gate in a later session — it does not wait in-process and never merges itself.
+
 ## Stop conditions
 
 Halt the loop and report when ANY of:
