@@ -3,25 +3,22 @@ import { esc } from '../html/utils.mjs';
 // Sessions panel — browse + search EVERY Claude Code session on disk, not just
 // the ~50 the native /resume picker shows per folder.
 //
-// Layout mirrors the Beads board: a horizontal project pill bar (click to scope),
-// a search box that spans ALL projects, and a paginated row-per-session table. The
-// full dataset is embedded once and a client-side renderer filters + pages it, so
-// browsing + search are instant and you page through rather than scroll a wall.
-// The dashboard can't launch a terminal, so each row's action is a one-click copy
-// of `claude --resume <id>` (run it from the shown project dir).
+// Scales to thousands of sessions across ~90 projects (cp-1g78): the project
+// selector is a DROPDOWN (a 90-pill row was unnavigable), and the list grows by
+// "Load more" rather than 160+ discrete pages. Recent-first sort + a date-range
+// toggle + free-text search are the find tools; the embedded dataset is filtered,
+// sorted and sliced client-side, so all of it is instant.
 
-const PAGE_SIZE = 15; // rows per page — paginate instead of one long scroll
+const INITIAL = 25;   // rows shown first
+const STEP = 25;      // rows added per "Load more"
 
 export function renderSessionsPanel(d) {
   const s = d.sessionsData || { sessions: [], totalSessions: 0, totalSizeBytes: 0, projectCount: 0, oldestMs: 0, newestMs: 0 };
   const sizeGB = (s.totalSizeBytes / 1024 / 1024 / 1024).toFixed(2);
   const fmt = ms => ms ? new Date(ms).toISOString().slice(0, 10) : '—';
 
-  // Project sidebar: one entry per project, most sessions first.
   const byProject = new Map();
-  for (const sess of s.sessions) {
-    byProject.set(sess.project, (byProject.get(sess.project) || 0) + 1);
-  }
+  for (const sess of s.sessions) byProject.set(sess.project, (byProject.get(sess.project) || 0) + 1);
   const projects = [...byProject.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
 
   return `<div id="panel-sessions" class="panel">
@@ -39,17 +36,17 @@ export function renderSessionsPanel(d) {
 
     <div class="card" style="margin-bottom:14px;border-color:rgba(245,166,35,.2);background:rgba(245,166,35,.03)">
       <div class="card-body" style="font-size:11px;color:var(--ink-2);padding:10px 16px;line-height:1.6">
-        <strong style="color:var(--amber)">Past the picker.</strong> The native <code>/resume</code> list only shows the most recent sessions per folder — these are <em>all</em> of them. Pick a project to browse it, or search across everything. Hit <strong>resume</strong> to copy that session's <code>claude --resume</code> command, then run it from the project directory shown under each preview.
+        <strong style="color:var(--amber)">Past the picker.</strong> The native <code>/resume</code> list only shows the most recent sessions per folder — these are <em>all</em> of them. Pick a project, narrow by date, or search across everything. Hit <strong>resume</strong> to copy that session's <code>claude --resume</code> command, then run it from the project directory shown under each preview.
       </div>
     </div>
 
     ${s.totalSessions === 0
       ? `<div class="card"><div class="card-body"><p class="nil">— no sessions found under ~/.claude/projects/ —</p></div></div>`
       : `<div class="beads-toolbar">
-      <div class="bd-pills">
-        <div class="bd-pill active" data-proj="__all__" onclick="selectSessProj(this)">All Projects <span class="bd-badge bd-badge-open">${s.totalSessions}</span></div>
-        ${projects.map(([name, count]) => `<div class="bd-pill" data-proj="${esc(name)}" onclick="selectSessProj(this)" title="${esc(name)}">${esc(name)} <span class="bd-badge bd-badge-zero">${count}</span></div>`).join('')}
-      </div>
+      <select id="sess-proj-select" class="sess-select" onchange="selectSessProjVal(this.value)">
+        <option value="__all__">All Projects (${s.totalSessions})</option>
+        ${projects.map(([name, count]) => `<option value="${esc(name)}">${esc(name)} (${count})</option>`).join('')}
+      </select>
       <div class="bd-filters">
         <button class="bf bf-active" onclick="sessRange(this,'all')">All</button>
         <button class="bf" onclick="sessRange(this,'30d')">30d</button>
@@ -68,7 +65,7 @@ export function renderSessionsPanel(d) {
       </div>
       <div id="sess-rows"></div>
     </div>
-    <div class="bd-pager" id="sess-pager"></div>`}
+    <div class="sess-more-wrap" id="sess-more"></div>`}
   </div>`;
 }
 
@@ -76,17 +73,21 @@ export function renderSessionsJS(d) {
   const s = d.sessionsData || { sessions: [] };
   return `<script>
 const SESSIONS_DATA = ${JSON.stringify(s.sessions)};
-const SESS_PAGE_SIZE = ${PAGE_SIZE};
+const SESS_INITIAL = ${INITIAL};
+const SESS_STEP = ${STEP};
+const SESS_NOW = ${Date.now()};            // build-time reference for date ranges
 let _sessProj = '__all__';
 let _sessQuery = '';
-let _sessPage = 1;
-let _sessSort = { key: 'date', dir: 'desc' };  // newest first by default
-let _sessRange = 'all';                          // all | 30d | 7d
-const SESS_NOW = ${Date.now()};                  // build-time reference for date ranges
+let _sessShown = SESS_INITIAL;             // how many rows are currently rendered
+let _sessSort = { key: 'date', dir: 'desc' };
+let _sessRange = 'all';
 
-function _sessCmp(a, b){
-  const k=_sessSort.key, d2=_sessSort.dir==='asc'?1:-1;
-  let av, bv;
+function _sessEsc(x){return String(x==null?'':x).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function _sessDate(ms){try{return new Date(ms).toISOString().slice(0,10);}catch(e){return '—';}}
+function _sessSize(b){if(b>=1048576)return (b/1048576).toFixed(1)+'M';if(b>=1024)return Math.round(b/1024)+'K';return b+'B';}
+
+function _sessCmp(a,b){
+  const k=_sessSort.key, d2=_sessSort.dir==='asc'?1:-1; let av,bv;
   if(k==='size'){ av=a.sizeBytes; bv=b.sizeBytes; }
   else if(k==='project'){ av=(a.project||'').toLowerCase(); bv=(b.project||'').toLowerCase(); }
   else { av=a.mtimeMs; bv=b.mtimeMs; }
@@ -98,50 +99,25 @@ function _sessUpdateHeaders(){
     if(el) el.textContent = _sessSort.key===k ? (_sessSort.dir==='asc'?'▲':'▼') : '';
   });
 }
+
+function selectSessProjVal(v){ _sessProj=v||'__all__'; _sessShown=SESS_INITIAL; renderSessions(); }
+function searchSessions(v){ _sessQuery=v||''; _sessShown=SESS_INITIAL; renderSessions(); }
+function sessRange(el,range){
+  document.querySelectorAll('#panel-sessions .bd-filters .bf').forEach(b=>b.classList.remove('bf-active'));
+  el.classList.add('bf-active');
+  _sessRange=range; _sessShown=SESS_INITIAL; renderSessions();
+}
 function sessSort(key){
   if(_sessSort.key===key) _sessSort.dir = _sessSort.dir==='asc'?'desc':'asc';
   else { _sessSort.key=key; _sessSort.dir = key==='project'?'asc':'desc'; }
-  _sessPage=1; renderSessions();
+  _sessShown=SESS_INITIAL; renderSessions();
 }
-function sessRange(el, range){
-  document.querySelectorAll('#panel-sessions .bd-filters .bf').forEach(b=>b.classList.remove('bf-active'));
-  el.classList.add('bf-active');
-  _sessRange=range; _sessPage=1; renderSessions();
-}
-
-function _sessEsc(x){return String(x==null?'':x).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
-function _sessDate(ms){try{return new Date(ms).toISOString().slice(0,10);}catch(e){return '—';}}
-function _sessSize(b){if(b>=1048576)return (b/1048576).toFixed(1)+'M';if(b>=1024)return Math.round(b/1024)+'K';return b+'B';}
-
-function selectSessProj(el){
-  document.querySelectorAll('#panel-sessions .bd-pill').forEach(i=>i.classList.remove('active'));
-  el.classList.add('active');
-  _sessProj=el.dataset.proj;
-  _sessPage=1;
-  renderSessions();
-}
-function searchSessions(v){_sessQuery=v||'';_sessPage=1;renderSessions();}
-
-function _sessPagerHtml(page,pages){
-  const win=[],add=n=>{if(n>=1&&n<=pages&&win.indexOf(n)===-1)win.push(n);};
-  add(1);add(2);add(page-1);add(page);add(page+1);add(pages-1);add(pages);
-  win.sort((a,b)=>a-b);
-  let html='<button onclick="sessGoPage('+(page-1)+')"'+(page<=1?' disabled':'')+'>‹ Prev</button>';
-  let prev=0;
-  for(const n of win){
-    if(n-prev>1)html+='<span class="pg-ellipsis">…</span>';
-    html+='<button class="pg-num'+(n===page?' active':'')+'" onclick="sessGoPage('+n+')">'+n+'</button>';
-    prev=n;
-  }
-  html+='<button onclick="sessGoPage('+(page+1)+')"'+(page>=pages?' disabled':'')+'>Next ›</button>';
-  return html;
-}
-function sessGoPage(n){if(n<1)return;_sessPage=n;renderSessions();const m=document.querySelector('.main');if(m)m.scrollTop=0;}
+function sessLoadMore(){ _sessShown += SESS_STEP; renderSessions(); }
 
 function renderSessions(){
   const rows=document.getElementById('sess-rows');
   const count=document.getElementById('sess-count');
-  const pager=document.getElementById('sess-pager');
+  const more=document.getElementById('sess-more');
   if(!rows)return;
   let list=SESSIONS_DATA;
   if(_sessProj!=='__all__') list=list.filter(s=>s.project===_sessProj);
@@ -164,16 +140,12 @@ function renderSessions(){
   if(!list.length){
     if(count)count.textContent='0 sessions'+scope;
     rows.innerHTML='<div style="padding:20px 16px;font-size:11px;color:var(--ink-3)">— no matching sessions —</div>';
-    if(pager)pager.innerHTML='';
+    if(more)more.innerHTML='';
     return;
   }
-  const pages=Math.max(1,Math.ceil(list.length/SESS_PAGE_SIZE));
-  if(_sessPage>pages)_sessPage=pages;
-  if(_sessPage<1)_sessPage=1;
-  const start=(_sessPage-1)*SESS_PAGE_SIZE;
-  const shown=list.slice(start,start+SESS_PAGE_SIZE);
-  if(count)count.textContent='Showing '+(start+1)+'–'+(start+shown.length)+' of '+list.length+scope;
-  if(pager)pager.innerHTML=pages>1?_sessPagerHtml(_sessPage,pages):'';
+  if(_sessShown>list.length)_sessShown=list.length;
+  const shown=list.slice(0,_sessShown);
+  if(count)count.textContent='Showing '+shown.length+' of '+list.length+scope;
   rows.innerHTML=shown.map(s=>{
     const preview=s.preview?_sessEsc(s.preview):'<span style="color:var(--ink-3);font-style:italic">(no preview)</span>';
     const branch=s.gitBranch?' <span style="color:var(--ink-3)">· '+_sessEsc(s.gitBranch)+'</span>':'';
@@ -190,6 +162,10 @@ function renderSessions(){
       +'</span>'
     +'</div>';
   }).join('');
+  if(more){
+    const rem=list.length-shown.length;
+    more.innerHTML = rem>0 ? '<button class="sess-more" onclick="sessLoadMore()">Load '+Math.min(SESS_STEP,rem)+' more · '+rem+' remaining</button>' : '';
+  }
 }
 
 function copyResume(id,btn){

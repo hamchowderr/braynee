@@ -306,6 +306,11 @@ code, .mono, .bd-id, .mcp-cmd, .hook-cmd { font-family: var(--mo); }
 .sess-h { cursor: pointer; user-select: none; transition: color .1s; }
 .sess-h:hover { color: var(--ink-2); }
 .sess-caret { color: var(--amber); font-size: 9px; }
+.sess-select { flex: 0 0 240px; max-width: 240px; background: var(--bg-4); border: 1px solid var(--line); border-radius: var(--r-sm); color: var(--ink); font-family: var(--sans); font-size: 12px; padding: 6px 11px; outline: none; cursor: pointer; transition: border-color .12s; }
+.sess-select:focus, .sess-select:hover { border-color: var(--line-2); }
+.sess-more-wrap { display: flex; justify-content: center; margin-top: 14px; }
+.sess-more { background: var(--bg-3); border: 1px solid var(--line); color: var(--ink-2); border-radius: var(--r-sm); padding: 8px 20px; font-size: 12px; font-family: var(--sans); cursor: pointer; transition: all .1s; }
+.sess-more:hover { border-color: var(--amber); color: var(--ink); }
 .sess-resume { background: var(--bg-4); border: 1px solid var(--line); border-radius: var(--r-sm); color: var(--ink-2); font-family: var(--sans); font-size: 11px; font-weight: 500; padding: 4px 10px; cursor: pointer; transition: all .1s; white-space: nowrap; }
 .sess-resume:hover { color: var(--amber); border-color: var(--amber); }
 .sess-resume.sess-copied { color: var(--green); border-color: color-mix(in srgb, var(--green) 40%, transparent); }
