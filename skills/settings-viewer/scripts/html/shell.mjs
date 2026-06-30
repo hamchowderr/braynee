@@ -303,6 +303,9 @@ code, .mono, .bd-id, .mcp-cmd, .hook-cmd { font-family: var(--mo); }
 .sess-search::placeholder { color: var(--ink-3); }
 .sess-search:focus { border-color: var(--amber); }
 #sess-rows .bt-row { align-items: flex-start; }
+.sess-h { cursor: pointer; user-select: none; transition: color .1s; }
+.sess-h:hover { color: var(--ink-2); }
+.sess-caret { color: var(--amber); font-size: 9px; }
 .sess-resume { background: var(--bg-4); border: 1px solid var(--line); border-radius: var(--r-sm); color: var(--ink-2); font-family: var(--sans); font-size: 11px; font-weight: 500; padding: 4px 10px; cursor: pointer; transition: all .1s; white-space: nowrap; }
 .sess-resume:hover { color: var(--amber); border-color: var(--amber); }
 .sess-resume.sess-copied { color: var(--green); border-color: color-mix(in srgb, var(--green) 40%, transparent); }

@@ -50,15 +50,20 @@ export function renderSessionsPanel(d) {
         <div class="bd-pill active" data-proj="__all__" onclick="selectSessProj(this)">All Projects <span class="bd-badge bd-badge-open">${s.totalSessions}</span></div>
         ${projects.map(([name, count]) => `<div class="bd-pill" data-proj="${esc(name)}" onclick="selectSessProj(this)" title="${esc(name)}">${esc(name)} <span class="bd-badge bd-badge-zero">${count}</span></div>`).join('')}
       </div>
+      <div class="bd-filters">
+        <button class="bf bf-active" onclick="sessRange(this,'all')">All</button>
+        <button class="bf" onclick="sessRange(this,'30d')">30d</button>
+        <button class="bf" onclick="sessRange(this,'7d')">7d</button>
+      </div>
       <input id="sess-search" class="sess-search" type="text" placeholder="search prompt, project, or id…" oninput="searchSessions(this.value)" autocomplete="off" spellcheck="false">
     </div>
     <div class="bd-count" id="sess-count"></div>
     <div class="card" style="padding:0">
       <div class="bt-head">
-        <span class="bt-cell" style="flex:0 0 86px">Date</span>
-        <span class="bt-cell" style="flex:0 0 110px">Project</span>
+        <span class="bt-cell sess-h" onclick="sessSort('date')" style="flex:0 0 86px">Date <span class="sess-caret" id="sess-ct-date"></span></span>
+        <span class="bt-cell sess-h" onclick="sessSort('project')" style="flex:0 0 110px">Project <span class="sess-caret" id="sess-ct-project"></span></span>
         <span class="bt-cell" style="flex:1">First Message</span>
-        <span class="bt-cell" style="flex:0 0 52px;text-align:right">Size</span>
+        <span class="bt-cell sess-h" onclick="sessSort('size')" style="flex:0 0 52px;text-align:right">Size <span class="sess-caret" id="sess-ct-size"></span></span>
         <span class="bt-cell" style="flex:0 0 92px;text-align:right">Resume</span>
       </div>
       <div id="sess-rows"></div>
@@ -75,6 +80,34 @@ const SESS_PAGE_SIZE = ${PAGE_SIZE};
 let _sessProj = '__all__';
 let _sessQuery = '';
 let _sessPage = 1;
+let _sessSort = { key: 'date', dir: 'desc' };  // newest first by default
+let _sessRange = 'all';                          // all | 30d | 7d
+const SESS_NOW = ${Date.now()};                  // build-time reference for date ranges
+
+function _sessCmp(a, b){
+  const k=_sessSort.key, d2=_sessSort.dir==='asc'?1:-1;
+  let av, bv;
+  if(k==='size'){ av=a.sizeBytes; bv=b.sizeBytes; }
+  else if(k==='project'){ av=(a.project||'').toLowerCase(); bv=(b.project||'').toLowerCase(); }
+  else { av=a.mtimeMs; bv=b.mtimeMs; }
+  return (av<bv?-1:av>bv?1:0)*d2;
+}
+function _sessUpdateHeaders(){
+  ['date','project','size'].forEach(function(k){
+    const el=document.getElementById('sess-ct-'+k);
+    if(el) el.textContent = _sessSort.key===k ? (_sessSort.dir==='asc'?'▲':'▼') : '';
+  });
+}
+function sessSort(key){
+  if(_sessSort.key===key) _sessSort.dir = _sessSort.dir==='asc'?'desc':'asc';
+  else { _sessSort.key=key; _sessSort.dir = key==='project'?'asc':'desc'; }
+  _sessPage=1; renderSessions();
+}
+function sessRange(el, range){
+  document.querySelectorAll('#panel-sessions .bd-filters .bf').forEach(b=>b.classList.remove('bf-active'));
+  el.classList.add('bf-active');
+  _sessRange=range; _sessPage=1; renderSessions();
+}
 
 function _sessEsc(x){return String(x==null?'':x).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function _sessDate(ms){try{return new Date(ms).toISOString().slice(0,10);}catch(e){return '—';}}
@@ -120,6 +153,13 @@ function renderSessions(){
       return terms.every(t=>hay.includes(t));
     });
   }
+  if(_sessRange!=='all'){
+    const days=_sessRange==='7d'?7:30;
+    const cutoff=SESS_NOW-days*86400000;
+    list=list.filter(s=>s.mtimeMs>=cutoff);
+  }
+  list=list.slice().sort(_sessCmp);   // slice so we never mutate SESSIONS_DATA
+  _sessUpdateHeaders();
   const scope=_sessProj==='__all__'?'':' · '+_sessProj;
   if(!list.length){
     if(count)count.textContent='0 sessions'+scope;

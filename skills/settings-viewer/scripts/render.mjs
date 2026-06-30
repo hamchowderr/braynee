@@ -24,7 +24,7 @@ import { esc } from './html/utils.mjs';
 import { renderGeneralPanel, renderPermissionsPanel, renderHooksPanel, renderPluginsPanel, renderMcpPanel, renderAgentsPanel, renderRulesPanel, renderClaudeMdPanel } from './panels/config.mjs';
 import { renderProjectsPanel, renderSkillUsagePanel, renderInstalledSkillsPanel, renderLocalPluginsPanel, renderPrefsPanel, renderProjectsJS, renderSkillUsageJS } from './panels/data.mjs';
 import { renderAnalyticsPanel, renderToolUsagePanel, renderProjectHoursPanel, renderAnalyticsJS, renderToolUsageJS, renderProjectHoursJS } from './panels/insights.mjs';
-import { renderBrayneePanel } from './panels/braynee.mjs';
+import { renderBrayneePanel, renderBrayneeJS } from './panels/braynee.mjs';
 import { renderBeadsPanel, renderBeadsDrawer, renderBeadsJS } from './panels/beads.mjs';
 import { renderSessionsPanel, renderSessionsJS } from './panels/sessions.mjs';
 
@@ -123,6 +123,7 @@ ${renderBeadsDrawer()}
 ${renderBeadsJS(d.beadsStats)}
 ${renderSessionsJS(d)}
 ${renderChartRuntime()}
+${renderBrayneeJS(d)}
 ${renderAnalyticsJS(d)}
 ${renderToolUsageJS(d)}
 ${renderProjectHoursJS(d)}

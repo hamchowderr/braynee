@@ -99,5 +99,16 @@ export async function loadBeadsStats() {
   } catch {}
 
   projectsData.sort((a, b) => b.total - a.total);
-  return { workspaces, activeProjects: projectsData.length, totalOpen, assignedToMe, projectsData, currentUser };
+
+  // Aggregate open issues by priority + type (for the Overview breakdown donuts).
+  const byPriority = {}, byType = {};
+  for (const p of projectsData) {
+    for (const i of (p.openIssues || [])) {
+      const pr = 'P' + (i.priority || '?'); byPriority[pr] = (byPriority[pr] || 0) + 1;
+      const ty = i.type || 'task'; byType[ty] = (byType[ty] || 0) + 1;
+    }
+  }
+  const breakdown = { priority: byPriority, type: byType };
+
+  return { workspaces, activeProjects: projectsData.length, totalOpen, assignedToMe, projectsData, currentUser, breakdown };
 }
