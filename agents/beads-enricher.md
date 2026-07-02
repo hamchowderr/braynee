@@ -4,8 +4,9 @@ description: >
   Upgrade freshly-seeded beads stubs into agent-grade issues and wire build-order
   dependencies — the missing step between `prd-seed` and `braynee:autopilot`. Reads
   the PRD + the project's architecture/codebase, rewrites each one-line seeded issue
-  to the five-section bar (Title/Description/Design/Acceptance/Notes), and links
-  foundation→features→orchestrate→delivery so `bd ready` surfaces only entry points.
+  to the five-section bar (Title/Description/Design/Acceptance/Notes), links
+  foundation→features→orchestrate→delivery so `bd ready` surfaces only entry points, and
+  stamps each issue with execution-metadata dispatch hints (agent/model/effort/mode/group).
   Use when the user says "enrich the backlog", "enrich seeded issues", "upgrade the
   stubs", "wire dependencies", or runs it right after `prd-seed`. Idempotent: only
   touches issues still missing sections; never clobbers human edits.
@@ -89,7 +90,32 @@ Add only real edges (a feature that truly needs the schema). Independent feature
 parallel — do not over-serialize. The target: `bd ready` lists only dependency-free
 entry points, not the whole backlog.
 
-### 4. Verify (this is the acceptance bar)
+### 4. Stamp execution metadata (dispatch hints)
+Once sections + deps are set, stamp each enriched issue with the **execution-metadata
+contract** (see `beads-conventions` → "Execution metadata") so `braynee:autopilot` — or a
+Mastra worker loop — can dispatch it without re-reading the prose. Infer each key from the
+issue's role in the graph; set only what you can justify, and leave the rest unset.
+- `execution_agent_type` — the runner: code/build → `general-purpose`; research/spike →
+  `Explore`; audit/review → `braynee:beads-auditor`; vault work → the matching `braynee:*`.
+- `execution_suggested_model` + `execution_reasoning_effort` — scale to risk: schema / auth
+  / security / orchestration → `opus` + `high`; routine feature → `sonnet` + `medium`;
+  mechanical chore → `haiku` + `low`.
+- `execution_mode` — `autonomous` for mechanical/low-risk, `review` for consequential
+  (schema, auth, deploy), `plan` when the approach is still open.
+- `execution_parallel_group` — issues in the same tier that are mutually independent share
+  a key (e.g. `<milestone>-features`) so the loop can fan them out.
+```bash
+bd update <id> --set-metadata execution_agent_type=general-purpose \
+               --set-metadata execution_suggested_model=sonnet \
+               --set-metadata execution_reasoning_effort=medium \
+               --set-metadata execution_mode=autonomous \
+               --set-metadata execution_parallel_group=<milestone>-features
+bd export --all --include-memories -o .beads/issues.jsonl   # flush — same clobber rule
+```
+Idempotent: never overwrite a metadata key a human already set, and skip issues flagged
+**needs owner input**. Confirm each write landed (`bd show <id> --json`) before the next.
+
+### 5. Verify (this is the acceptance bar)
 ```bash
 bd lint            # must report 0 missing-section warnings
 bd dep cycles      # must be clean (no cycles / unresolvable blocked-by)
@@ -117,6 +143,7 @@ bd ready           # must show only entry points, not every issue
 
 ### Verification
 - bd lint: <before> → 0 missing · bd dep cycles: clean · bd ready: X of Y issues
+- execution metadata: X issues stamped (agent/model/effort/mode/group)
 ```
 
 ## Drafting standard (the bar you hold)

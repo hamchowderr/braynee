@@ -19,7 +19,17 @@ HOME = Path.home()
 # ── Vault ────────────────────────────────────────────────────────────────────
 
 def find_vault() -> str | None:
-    """Find Obsidian vault by locating .obsidian folder. Depth-limited to avoid hangs."""
+    """Find the braynee vault. $BRAYNEE_VAULT/$OBSIDIAN_VAULT (the canonical
+    opt-in for non-Obsidian markdown apps) win; else probe common locations for
+    a `.obsidian/` dir OR the PARA skeleton. Depth-limited scan to avoid hangs."""
+    import os
+    for env_var in ("BRAYNEE_VAULT", "OBSIDIAN_VAULT"):
+        val = os.environ.get(env_var)
+        if val:
+            p = Path(val).expanduser()
+            if p.is_dir():
+                return str(p)
+    _para = ("1. Projects", "2. Areas", "3. Resources", "4. Archives")
     # Check direct/common locations first (fast path)
     fast_candidates = [
         HOME / "Obsidian Vault",
@@ -27,11 +37,13 @@ def find_vault() -> str | None:
         HOME / "ObsidianVault",
         HOME / "Documents" / "Obsidian Vault",
         HOME / "Documents" / "vault",
+        HOME / "Documents" / "Notes",
+        HOME / "Notes",
         HOME / "OneDrive" / "Obsidian Vault",
         HOME / "iCloud Drive" / "Obsidian Vault",
     ]
     for candidate in fast_candidates:
-        if (candidate / ".obsidian").is_dir():
+        if (candidate / ".obsidian").is_dir() or sum((candidate / m).is_dir() for m in _para) >= 2:
             return str(candidate)
 
     # Depth-limited fallback scan (max 3 levels, skip large dirs)

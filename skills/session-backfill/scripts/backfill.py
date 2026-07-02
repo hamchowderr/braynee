@@ -44,13 +44,39 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 MAP_FILE = SCRIPT_DIR / "project_map.json"
 
 
+# The numbered PARA folders braynee scaffolds. Their presence marks a braynee
+# vault even without a `.obsidian/` dir (non-Obsidian markdown apps have none).
+_PARA_MARKERS = ("1. Projects", "2. Areas", "3. Resources", "4. Archives")
+
+
+def _is_braynee_vault(p: Path) -> bool:
+    """A dir is a braynee vault if Obsidian marks it OR it carries the PARA
+    skeleton (>=2 numbered folders). Host-agnostic so Logseq/Foam/Dendron/
+    Shockwave/plain-folder vaults are detected too. Mirrors isBrayneeVault in
+    scripts/lib/vault-root.js."""
+    try:
+        if (p / ".obsidian").is_dir():
+            return True
+    except OSError:
+        pass
+    hits = 0
+    for m in _PARA_MARKERS:
+        try:
+            if (p / m).is_dir():
+                hits += 1
+        except OSError:
+            pass
+    return hits >= 2
+
+
 def find_vault(explicit: str | None = None) -> Path | None:
-    """Resolve the Obsidian vault universally.
+    """Resolve the braynee vault universally.
 
     Priority: --vault arg → $BRAYNEE_VAULT → $OBSIDIAN_VAULT → common
-    locations probed for a `.obsidian` directory. Mirrors the resolution
-    used by braynee's sessions / setup skills so behaviour is consistent
-    for every user regardless of where their vault lives.
+    locations that are a braynee vault (`.obsidian/` OR the PARA skeleton).
+    $BRAYNEE_VAULT is the canonical opt-in for a vault at a non-standard path
+    (e.g. a non-Obsidian markdown app). Mirrors the resolution used by
+    scripts/lib/vault-root.js so behaviour is consistent for every user.
     """
     if explicit:
         p = Path(explicit).expanduser()
@@ -69,11 +95,13 @@ def find_vault(explicit: str | None = None) -> Path | None:
         HOME / "ObsidianVault",
         HOME / "Documents" / "Obsidian Vault",
         HOME / "Documents" / "vault",
+        HOME / "Documents" / "Notes",
+        HOME / "Notes",
         HOME / "OneDrive" / "Obsidian Vault",
         HOME / "iCloud Drive" / "Obsidian Vault",
     ]
     for candidate in candidates:
-        if (candidate / ".obsidian").is_dir():
+        if _is_braynee_vault(candidate):
             return candidate
     # Last resort: the conventional default even without .obsidian, so a
     # brand-new vault still works.

@@ -62,8 +62,11 @@ def find_vault() -> Path | None:
         home / "OneDrive" / "Obsidian Vault",
         home / "iCloud Drive" / "Obsidian Vault",
     ]
+    # A braynee vault: Obsidian marks it OR it carries the PARA skeleton
+    # (>=2 numbered folders) — so non-Obsidian markdown apps are found too.
+    _para = ("1. Projects", "2. Areas", "3. Resources", "4. Archives")
     for c in candidates:
-        if (c / ".obsidian").is_dir():
+        if (c / ".obsidian").is_dir() or sum((c / m).is_dir() for m in _para) >= 2:
             return c
     fallback = home / "Obsidian Vault"
     return fallback if fallback.is_dir() else None
@@ -992,13 +995,33 @@ def obsidian_eval(js: str) -> str:
 import tempfile
 
 
+_OBSIDIAN_CLI = None
+
+
+def obsidian_available() -> bool:
+    """True if the Obsidian desktop CLI is on PATH (cached). Absent → vault_write
+    falls back to a direct fs write so comms works on any markdown app."""
+    global _OBSIDIAN_CLI
+    if _OBSIDIAN_CLI is None:
+        import shutil
+        _OBSIDIAN_CLI = shutil.which("obsidian") is not None
+    return _OBSIDIAN_CLI
+
+
 def vault_write(rel_path: str, content: str) -> None:
     """Create or overwrite a vault file. Ensures parent folders exist.
 
-    Writes content to a temp file first, then obsidian eval reads it via
-    fs.readFileSync — bulletproof for long content / special chars per
-    feedback_obsidian_cli_eval_pattern.md.
+    With Obsidian present, writes via a temp file + obsidian eval (bulletproof
+    for long content / special chars per feedback_obsidian_cli_eval_pattern.md);
+    absent, writes directly to the fs so comms works on any markdown app.
     """
+    if not obsidian_available():
+        vault = find_vault()
+        if vault:
+            p = Path(vault) / rel_path
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(content, encoding="utf-8")
+        return
     parts = rel_path.split("/")
     js_parts = []
     cur = ""

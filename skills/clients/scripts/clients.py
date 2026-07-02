@@ -15,12 +15,26 @@ from datetime import datetime, date
 
 
 def find_vault() -> Path | None:
+    import os
+    for env_var in ("BRAYNEE_VAULT", "OBSIDIAN_VAULT"):
+        val = os.environ.get(env_var)
+        if val:
+            p = Path(val).expanduser()
+            if p.is_dir():
+                return p
+    # A braynee vault: Obsidian marks it (.obsidian/) OR it carries the PARA
+    # skeleton (>=2 numbered folders) — non-Obsidian markdown apps count too.
+    _para = ("1. Projects", "2. Areas", "3. Resources", "4. Archives")
     for candidate in [
         Path.home() / "Obsidian Vault",
         Path.home() / "vault",
         Path.home() / "Documents" / "Obsidian",
+        Path.home() / "Documents" / "Notes",
+        Path.home() / "Notes",
     ]:
         if (candidate / ".obsidian").is_dir():
+            return candidate
+        if sum((candidate / m).is_dir() for m in _para) >= 2:
             return candidate
     return None
 
@@ -152,6 +166,19 @@ def cmd_get(args, vault: Path):
                 print(f"  - {e}")
 
 
+_OBSIDIAN_CLI = None
+
+
+def obsidian_available() -> bool:
+    """True if the Obsidian desktop CLI is on PATH (cached). Absent → the write
+    commands fall back to direct fs writes so client notes work on any markdown app."""
+    global _OBSIDIAN_CLI
+    if _OBSIDIAN_CLI is None:
+        import shutil
+        _OBSIDIAN_CLI = shutil.which("obsidian") is not None
+    return _OBSIDIAN_CLI
+
+
 def cmd_log(args, vault: Path):
     client_dir = find_client_dir(vault, args.client)
     if not client_dir:
@@ -174,7 +201,13 @@ def cmd_log(args, vault: Path):
         f"  await app.vault.modify(f, updated);"
         f"}})()"
     )
-    obsidian_eval(js)
+    if obsidian_available():
+        obsidian_eval(js)
+    else:
+        notes = client_dir / "notes.md"
+        if notes.exists():
+            cur = notes.read_text(encoding="utf-8")
+            notes.write_text(cur.replace("## History", f"## History\n{log_line}"), encoding="utf-8")
     print(f"Logged to {client_dir.name}: {args.text}")
 
 
@@ -217,7 +250,10 @@ def cmd_new(args, vault: Path):
     rel_escaped = rel_path.replace("'", "\\'")
 
     js = f"(async () => {{ await app.vault.create('{rel_escaped}', '{escaped}'); }})()"
-    obsidian_eval(js)
+    if obsidian_available():
+        obsidian_eval(js)
+    else:
+        notes_path.write_text(content, encoding="utf-8")
     print(f"Created client: {client_slug} ({business})")
     print(f"  Path: {client_dir}")
 
