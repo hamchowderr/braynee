@@ -122,8 +122,14 @@ links commit → issue) and add the `Agent-Signature:` trailer with your runtime
 reasoning (`unknown-*` if not reliably known) — see `beads-conventions` → "Agent commits".
 
 ### 5. Track discoveries
-If you find new work (a bug, a missing piece, a related cleanup), create a
-beads issue and link it back to the issue that surfaced it:
+If you find new work (a bug, a missing piece, a related cleanup), **research
+before you create** — first check it isn't already tracked:
+```bash
+bd search "<keywords for the discovered work>"
+```
+If a matching issue already exists, link/note it (or `bd update` it) instead of
+filing a duplicate. Only when it's genuinely new, create it and link it back to
+the issue that surfaced it:
 ```bash
 bd create --title="..." --description="..." --type=task --priority=3 \
   --deps discovered-from:<current-id>
