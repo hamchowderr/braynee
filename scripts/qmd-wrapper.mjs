@@ -16,6 +16,7 @@
 import { execSync, spawnSync } from 'child_process';
 import { existsSync } from 'fs';
 import { join } from 'path';
+import { homedir } from 'os';
 
 function findQmdJs() {
   // Try `npm root -g` to locate the global modules dir
@@ -43,7 +44,16 @@ if (!qmdJs) {
 // mid-batch (exit 1, no error), so they run uncapped.
 const args = process.argv.slice(2);
 const LONG_RUNNING = new Set(['embed', 'update', 'cleanup', 'bench']);
-const spawnOpts = { stdio: 'inherit', windowsHide: true };
+// qmd derives its cache/index dir from $HOME (NOT os.homedir). On Windows,
+// PowerShell and Claude-Code-spawned hooks leave HOME unset, so qmd silently
+// falls back to a /tmp index — split-brained from the ~/.cache index Git Bash
+// gets. Pin HOME so every qmd invocation reads/writes ONE index, matching the
+// ~/.cache/qmd location braynee's reindex control files already assume.
+const spawnOpts = {
+  stdio: 'inherit',
+  windowsHide: true,
+  env: { ...process.env, HOME: process.env.HOME || homedir() },
+};
 if (!LONG_RUNNING.has(args[0])) spawnOpts.timeout = 60_000;
 
 const res = spawnSync(process.execPath, [qmdJs, ...args], spawnOpts);

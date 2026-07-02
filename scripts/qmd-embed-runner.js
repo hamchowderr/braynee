@@ -12,6 +12,7 @@
 const { execSync, spawnSync } = require('child_process');
 const { existsSync, writeFileSync } = require('fs');
 const path = require('path');
+const os = require('os');
 
 const reindex = require(path.join(__dirname, '..', 'hooks', 'lib', 'qmd-reindex.js'));
 
@@ -40,6 +41,11 @@ function main() {
       stdio: 'ignore',
       timeout: 15 * 60 * 1000, // 15 min ceiling for a large backlog
       windowsHide: true, // no console-window flash on Windows
+      // Pin HOME so qmd embeds into the SAME ~/.cache/qmd index the rest of
+      // braynee reads. Without this, a CC-hook-spawned runner (empty HOME on
+      // Windows) embeds into a /tmp fallback index nobody queries.
+      // See qmd-wrapper.mjs + vault memory reference_qmd_home_cache_split.
+      env: { ...process.env, HOME: process.env.HOME || os.homedir() },
     });
 
     // Stamp only on a clean run so a failed/killed embed retries next cycle
