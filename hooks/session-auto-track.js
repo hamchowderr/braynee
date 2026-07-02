@@ -337,7 +337,12 @@ function findActiveSession(projectName) {
 }
 
 // Auto-create a session note, returns { filename, filepath, content, relPath }
-function createSession(projectName, branch) {
+// sessionId is stamped into the frontmatter so the claude -p distiller
+// (skills/session-backfill/scripts/backfill.py) can later find THIS stub by
+// session_id and upgrade its hollow body in place — instead of writing a
+// second, parallel note. Without it the stub and the distilled note diverge
+// (duplication + folder drift). See beads: hollow-stub coordination bug.
+function createSession(projectName, branch, sessionId) {
   // Create project subfolder
   const projectSlug = projectName.replace(/[^a-zA-Z0-9]+/g, '-');
   const projectDir = path.join(SESSIONS_DIR, projectSlug);
@@ -366,6 +371,7 @@ type: session
 project: "[[${projectName}]]"
 status: active
 session_type: ${type}
+session_id: "${sessionId || ''}"
 branch: "${branch || ''}"
 started: ${isoNow}
 ended: null
@@ -736,8 +742,9 @@ process.stdin.on('end', () => {
           }
         } catch { /* non-fatal */ }
       } else {
-        // No active session — auto-create one
-        const created = createSession(projectName, branch);
+        // No active session — auto-create one. Pass sessionId so the stub is
+        // identifiable and the distiller can upgrade it in place (not duplicate).
+        const created = createSession(projectName, branch, sessionId);
 
         // Write loaded project context into ## Context section of the new note
         if (context) {
