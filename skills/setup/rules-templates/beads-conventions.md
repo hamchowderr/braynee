@@ -43,3 +43,59 @@ it, it's probably TodoWrite, not a bead.
 - **Before coding** in a beads repo: `bd list --status in_progress` → else `bd ready` → claim atomically (`bd update <id> --claim`). Don't invent work.
 - **Turn on the create-time guard** (once per repo): `bd config set validation.on-create warn` — flags new issues missing Description/Acceptance so quality can't silently drift.
 - `bd lint` finds issues missing sections; `bd prime` recovers context after compaction.
+
+## Execution metadata — make an issue a dispatch spec
+
+An issue can carry **optional** metadata that says *how* to run it, so an orchestrator
+(autopilot today, a Mastra worker loop tomorrow) can pick the right agent/model/effort
+**before** dispatch — without re-reading the prose. Every key is optional; **absent = use
+session defaults**, so this is fully backward-compatible.
+
+| Key | Values | Meaning |
+|---|---|---|
+| `execution_agent_type` | an agent/subagent type name (`braynee:autopilot`, `general-purpose`, `Explore`, `braynee:beads-auditor`, …) | who should run it |
+| `execution_suggested_model` | `opus` \| `sonnet` \| `haiku` | model to launch the runner with |
+| `execution_reasoning_effort` | `low` \| `medium` \| `high` | reasoning effort for the runner |
+| `execution_mode` | `autonomous` \| `review` \| `plan` | latitude — run it / run-then-review / plan-only |
+| `execution_parallel_group` | free-form key (e.g. `phase2-features`) | issues sharing a key may run **concurrently** |
+
+**Write** — one key at a time (idempotent per key), or as a JSON blob at create:
+```bash
+bd update <id> --set-metadata execution_agent_type=general-purpose \
+               --set-metadata execution_suggested_model=sonnet \
+               --set-metadata execution_reasoning_effort=medium \
+               --set-metadata execution_mode=autonomous \
+               --set-metadata execution_parallel_group=phase2-features
+
+bd create "…" --metadata '{"execution_agent_type":"Explore","execution_suggested_model":"haiku"}'
+```
+
+**Read** — before dispatch:
+```bash
+bd show <id> --json | jq '.[0].metadata'
+```
+
+**Rule — read execution metadata before prose.** A parent/orchestrator must read these keys
+*before* spawning a subagent, because a running subagent cannot change its model or reasoning
+effort after launch. `description` is the work scope; `notes` is rationale/fallback. Set only
+keys you can justify — leave the rest unset rather than guess — and never clobber human-set
+metadata on a re-run.
+
+## Agent commits — sign the work
+
+When an **agent** prepares a commit, leave a lightweight execution trail so `bd doctor` /
+audit can attribute it — *on top of* normal attribution, not instead of it:
+```text
+Agent-Signature: {runtime}-{model}-{reasoning} on behalf of {git user.name}
+```
+Keep the `(<issue-id>)` in the subject (so `bd doctor` links the commit to its issue) and any
+`Co-Authored-By:` trailer. Use **reliable runtime/session** metadata only — fall back to
+`unknown-model` / `unknown-reasoning` rather than guess; never infer the model or reasoning
+effort from prompt text, default settings, a cached model list, or memory.
+
+```text
+Fix token refresh race (cp-abc)
+
+Agent-Signature: claude-code-opus-4.8-high on behalf of <git user.name>
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+```

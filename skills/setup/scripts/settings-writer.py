@@ -31,12 +31,26 @@ RECOMMENDED_DEFAULT_MODE = "plan"
 
 
 def find_vault() -> Path | None:
+    import os
+    for env_var in ("BRAYNEE_VAULT", "OBSIDIAN_VAULT"):
+        val = os.environ.get(env_var)
+        if val:
+            p = Path(val).expanduser()
+            if p.is_dir():
+                return p
+    # A braynee vault: Obsidian marks it (.obsidian/) OR it carries the PARA
+    # skeleton (>=2 numbered folders) — non-Obsidian markdown apps count too.
+    _para = ("1. Projects", "2. Areas", "3. Resources", "4. Archives")
     for candidate in [
         Path.home() / "Obsidian Vault",
         Path.home() / "vault",
         Path.home() / "Documents" / "Obsidian",
+        Path.home() / "Documents" / "Notes",
+        Path.home() / "Notes",
     ]:
         if (candidate / ".obsidian").is_dir():
+            return candidate
+        if sum((candidate / m).is_dir() for m in _para) >= 2:
             return candidate
     return None
 

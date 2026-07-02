@@ -16,12 +16,26 @@ from datetime import date, timedelta, datetime
 
 
 def find_vault() -> Path | None:
+    import os
+    for env_var in ("BRAYNEE_VAULT", "OBSIDIAN_VAULT"):
+        val = os.environ.get(env_var)
+        if val:
+            p = Path(val).expanduser()
+            if p.is_dir():
+                return p
+    # A braynee vault: Obsidian marks it (.obsidian/) OR it carries the PARA
+    # skeleton (>=2 numbered folders) — non-Obsidian markdown apps count too.
+    _para = ("1. Projects", "2. Areas", "3. Resources", "4. Archives")
     for candidate in [
         Path.home() / "Obsidian Vault",
         Path.home() / "vault",
         Path.home() / "Documents" / "Obsidian",
+        Path.home() / "Documents" / "Notes",
+        Path.home() / "Notes",
     ]:
         if (candidate / ".obsidian").is_dir():
+            return candidate
+        if sum((candidate / m).is_dir() for m in _para) >= 2:
             return candidate
     return None
 
@@ -69,7 +83,6 @@ def cmd_setup(args, vault: Path):
         (["git", "--version"],        "git — version control"),
         (["node", "--version"],       "node — Node.js runtime"),
         (["python3", "--version"],    "python3 — Python runtime"),
-        (["obsidian", "--version"],   "obsidian — CLI"),
         (["bd", "version"],           "bd — Beads issue tracker"),
         (["curl", "--version"],       "curl — HTTP client"),
     ]
@@ -79,6 +92,15 @@ def cmd_setup(args, vault: Path):
             ok(f"{label} ({version})")
         else:
             warn(f"{label} — NOT FOUND")
+
+    # Obsidian CLI is OPTIONAL — braynee's write-path skills fall back to direct
+    # fs writes when it's absent, so a non-Obsidian markdown app is fully
+    # supported. Report absence as info, never a failure.
+    obs = run_version(["obsidian", "--version"])
+    if obs:
+        ok(f"obsidian — CLI ({obs})")
+    else:
+        print("  ·  obsidian — CLI: not present (fs-write fallback active)")
 
     # health.py lives at braynee/skills/health/scripts/health.py
     # qmd-wrapper.mjs is at braynee/scripts/qmd-wrapper.mjs (3 levels up)
@@ -170,7 +192,7 @@ def cmd_connections(args, vault: Path):
     if check_tool("obsidian"):
         ok("obsidian CLI available")
     else:
-        warn("obsidian CLI not found")
+        print("  ·  obsidian CLI not present (fs-write fallback active)")
 
     qmd_wrapper = Path.home() / ".claude" / "scripts" / "qmd-wrapper.mjs"
     if qmd_wrapper.exists():

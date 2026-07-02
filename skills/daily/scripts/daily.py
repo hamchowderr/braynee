@@ -15,12 +15,26 @@ from datetime import datetime, date, timedelta
 
 
 def find_vault() -> Path | None:
+    import os
+    for env_var in ("BRAYNEE_VAULT", "OBSIDIAN_VAULT"):
+        val = os.environ.get(env_var)
+        if val:
+            p = Path(val).expanduser()
+            if p.is_dir():
+                return p
+    # A braynee vault: Obsidian marks it (.obsidian/) OR it carries the PARA
+    # skeleton (>=2 numbered folders) — non-Obsidian markdown apps count too.
+    _para = ("1. Projects", "2. Areas", "3. Resources", "4. Archives")
     for candidate in [
         Path.home() / "Obsidian Vault",
         Path.home() / "vault",
         Path.home() / "Documents" / "Obsidian",
+        Path.home() / "Documents" / "Notes",
+        Path.home() / "Notes",
     ]:
         if (candidate / ".obsidian").is_dir():
+            return candidate
+        if sum((candidate / m).is_dir() for m in _para) >= 2:
             return candidate
     return None
 
@@ -34,6 +48,20 @@ def obsidian_eval(js_code: str):
     if result.returncode != 0:
         print(f"obsidian eval failed: {result.stderr}", file=sys.stderr)
         sys.exit(1)
+
+
+_OBSIDIAN_CLI = None
+
+
+def obsidian_available() -> bool:
+    """True if the Obsidian desktop CLI is on PATH (cached). When present the
+    commands drive the running app (instant refresh); when absent they fall back
+    to direct fs writes so daily notes work on any markdown app."""
+    global _OBSIDIAN_CLI
+    if _OBSIDIAN_CLI is None:
+        import shutil
+        _OBSIDIAN_CLI = shutil.which("obsidian") is not None
+    return _OBSIDIAN_CLI
 
 
 def daily_note_path(vault: Path, d: date) -> str:
@@ -85,7 +113,13 @@ def cmd_open(args, vault: Path):
         f"  app.workspace.openLinkText('', '{rel_escaped}', false);"
         f"}})()"
     )
-    obsidian_eval(js)
+    if obsidian_available():
+        obsidian_eval(js)
+    else:
+        p = vault / rel_path
+        if not p.exists():
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(content, encoding="utf-8")
     print(f"Opened: {rel_path}")
 
 
@@ -104,8 +138,13 @@ def cmd_yesterday(args, vault: Path):
         f"  }}"
         f"}})()"
     )
-    obsidian_eval(js)
-    print(f"Opened: {rel_path}")
+    if obsidian_available():
+        obsidian_eval(js)
+        print(f"Opened: {rel_path}")
+    elif (vault / rel_path).exists():
+        print(f"Opened: {rel_path}")
+    else:
+        print(f"No note found for {d.isoformat()}")
 
 
 def cmd_log(args, vault: Path):
@@ -134,7 +173,16 @@ def cmd_log(args, vault: Path):
         f"  await app.vault.modify(f, updated);"
         f"}})()"
     )
-    obsidian_eval(js)
+    if obsidian_available():
+        obsidian_eval(js)
+    else:
+        p = vault / rel_path
+        if not p.exists():
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(daily_note_content(d), encoding="utf-8")
+        cur = p.read_text(encoding="utf-8")
+        updated = cur.replace("## Log", f"## Log\n{log_line}") if "## Log" in cur else cur + f"\n{log_line}"
+        p.write_text(updated, encoding="utf-8")
     print(f"Logged: {log_line}")
 
 
@@ -151,11 +199,15 @@ def cmd_eod(args, vault: Path):
         f"  return await app.vault.read(f);"
         f"}})()"
     )
-    result = subprocess.run(
-        ["obsidian", "eval", f"code={js}"],
-        capture_output=True, text=True
-    )
-    content = result.stdout.strip() if result.returncode == 0 else ""
+    if obsidian_available():
+        result = subprocess.run(
+            ["obsidian", "eval", f"code={js}"],
+            capture_output=True, text=True
+        )
+        content = result.stdout.strip() if result.returncode == 0 else ""
+    else:
+        p = vault / rel_path
+        content = p.read_text(encoding="utf-8") if p.exists() else ""
 
     # Count open tasks
     open_tasks = len(re.findall(r"- \[ \]", content))

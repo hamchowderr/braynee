@@ -173,8 +173,32 @@ Opinionated guides on how the author builds. Recommendations, not requirements �
 - Claude Code CLI
 - Node.js 18+
 - Python 3.10+
-- Obsidian (must be running for vault write operations)
 - Git
+- A markdown vault — **Obsidian is optional** (see below)
+
+---
+
+## Works with any markdown app
+
+Braynee is, at its foundation, **a folder of markdown + frontmatter in a PARA
+layout** — beads, QMD search, sessions, recall, PRDs, and every hook read and
+write plain files. So it works with any local-markdown PKM: Obsidian, Logseq,
+Foam, Dendron, SilverBullet, Zettlr, iA Writer,
+[Shockwave](https://github.com/stephengpope/shockwave), or a plain `.md` folder.
+
+- **Point braynee at your vault** with `BRAYNEE_VAULT=/path/to/vault` — the
+  canonical opt-in for a vault at a non-standard path or a non-Obsidian app.
+  Auto-detection also accepts any folder carrying the PARA skeleton (the
+  numbered `1. Projects` … `4. Archives` folders), not only ones with a
+  `.obsidian/` dir.
+- **Obsidian running is not required.** When the Obsidian desktop CLI is
+  present, write-path skills drive the running app for instant refresh; when
+  it's absent they fall back to direct filesystem writes. `/health` reports
+  `obsidian — CLI: not present (fs-write fallback active)` rather than an error.
+- **Obsidian-only rendering:** a few artifacts still *write* fine anywhere but
+  only *render* natively in Obsidian — Excalidraw (`.excalidraw`), Bases
+  (`.base`), and some callouts/embeds. Wikilinks (`[[…]]`) render in Logseq and
+  Foam too. `install-obsidian-plugins.py` is Obsidian-specific by nature.
 
 ---
 

@@ -20,6 +20,12 @@ instead, set `model:` to `haiku`, `sonnet`, or `opus` in the frontmatter. Haiku
 is fine for shallow doc/queue chores but underpowered for serious code or a
 full ship-pipeline run — prefer `inherit` (or `opus`) for those.
 
+When an orchestrator launches autopilot to drain a **specific** issue, it should read that
+issue's `execution_suggested_model` / `execution_reasoning_effort` **first** and launch
+autopilot on that tier — a running autopilot cannot re-model itself mid-run (see
+`beads-conventions` → "Execution metadata"). Once running, autopilot still honors the rest
+of the contract per-issue (step 3 reads it, step 4 acts on it).
+
 The loop was first validated 2026-05-27 with a general agent in an isolated
 `.beads` repo: it works end-to-end, CLI-only, no MCP required.
 
@@ -63,11 +69,33 @@ also fire a reminder — respect it).
 ### 3. Read full context
 ```bash
 bd show <id>
+bd show <id> --json    # inspect .metadata: the execution_* dispatch hints, if set
 ```
 Read the description, acceptance criteria, design notes, dependencies — every
 field. Don't skim. Many issues have load-bearing detail in `notes`.
 
+Also read the issue's **execution metadata** (`execution_agent_type`,
+`execution_suggested_model`, `execution_reasoning_effort`, `execution_mode`,
+`execution_parallel_group`) — the enricher may have stamped *how* this issue expects to be
+run (see `beads-conventions` → "Execution metadata"). You act on it in step 4.
+
 ### 4. Execute
+
+**Honor the execution metadata first** (from step 3, if the enricher set it):
+- `execution_mode=plan` → do **not** execute. Write the plan (files, approach, how you'd
+  verify) into the issue notes and mark it `blocked --append-notes "awaiting human approval
+  (mode=plan)"`. Human approval re-queues it as `autonomous`/`review`.
+- `execution_mode=review` → execute, but do **not** auto-close on green: leave it
+  `in_progress` (or add a `needs-review` label) with the evidence in notes for a human to close.
+- `execution_mode=autonomous` (or unset) → proceed and close as normal (step 6).
+- `execution_agent_type` / `execution_suggested_model` / `execution_reasoning_effort` — you
+  cannot change your own model/effort mid-run (you launched under `model: inherit`). If a
+  hint names a **different** runner or a heavier model than you're on, don't silently
+  under-run it: flag the mismatch in your per-issue report so the orchestrator can
+  re-dispatch it to the right agent/model.
+- `execution_parallel_group` — advisory only: same-key issues are independent and *may* be
+  fanned out, but you still work one at a time (guardrail #5). Treat it as info.
+
 - **For code / build tasks:** make the change, then run the **local quality
   gate** before treating it as done — this is ship-pipeline phases 1–2
   (`~/.claude/rules/ship-pipeline.md`):
@@ -88,6 +116,10 @@ field. Don't skim. Many issues have load-bearing detail in `notes`.
 Keep ship-pipeline order (`~/.claude/rules/ship-pipeline.md`): local build →
 local test gate → commit on a `feature/*` branch → and **only in ship mode**
 (below) preview deploy → live CI tiers. Never reorder around a red gate.
+
+When you commit, **sign it**: keep the `(<issue-id>)` in the subject (so `bd doctor`
+links commit → issue) and add the `Agent-Signature:` trailer with your runtime/model/
+reasoning (`unknown-*` if not reliably known) — see `beads-conventions` → "Agent commits".
 
 ### 5. Track discoveries
 If you find new work (a bug, a missing piece, a related cleanup), create a

@@ -476,6 +476,29 @@ function runGuard(payload) {
     (r.stdout || '').trim() === '' && (r.status === 0 || r.status === 2));
 }
 
+// beads-version-check.js — SessionStart bd-upgrade announcer (cp-g4ge.4). The
+// emit path needs bd installed + a metadata.json, so we (a) unit-test the pure
+// version decision (CI-safe, no bd) and (b) assert the hook stays silent on a
+// repo with no metadata.json (bare-marker gateCwd) — it never nags mid-setup.
+{
+  const { decideVersionChange } = require(path.join(PLUGIN_ROOT, 'hooks', 'beads-version-check.js'));
+  assertGate('beads-version-check: first run (no seen version) seeds silently',
+    (() => { const d = decideVersionChange('1.0.4', undefined); return d.emit === false && d.seed === true && d.next === '1.0.4'; })());
+  assertGate('beads-version-check: unchanged version stays silent',
+    (() => { const d = decideVersionChange('1.0.4', '1.0.4'); return d.emit === false && d.seed === false; })());
+  assertGate('beads-version-check: a changed version emits (from→to)',
+    (() => { const d = decideVersionChange('1.0.5', '1.0.4'); return d.emit === true && d.from === '1.0.4' && d.to === '1.0.5'; })());
+  assertGate('beads-version-check: unreadable bd version stays silent',
+    (() => { const d = decideVersionChange(null, '1.0.4'); return d.emit === false; })());
+
+  const rv = spawnSync(process.execPath, [path.join(PLUGIN_ROOT, 'hooks', 'beads-version-check.js')], {
+    input: JSON.stringify({ cwd: gateCwd, source: 'self-test' }),
+    encoding: 'utf8', timeout: 15_000,
+  });
+  assertGate('beads-version-check stays SILENT + exit 0 on a repo with no metadata.json',
+    (rv.stdout || '').trim() === '' && (rv.status === 0 || rv.status === 2));
+}
+
 try { fs.rmSync(gateCwd, { recursive: true, force: true }); } catch {}
 log(`  ${results.gating.ok} passed | ${results.gating.fail} failed`);
 

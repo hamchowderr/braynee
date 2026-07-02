@@ -14,12 +14,26 @@ from datetime import datetime
 
 
 def find_vault() -> Path | None:
+    import os
+    for env_var in ("BRAYNEE_VAULT", "OBSIDIAN_VAULT"):
+        val = os.environ.get(env_var)
+        if val:
+            p = Path(val).expanduser()
+            if p.is_dir():
+                return p
+    # A braynee vault: Obsidian marks it (.obsidian/) OR it carries the PARA
+    # skeleton (>=2 numbered folders) — non-Obsidian markdown apps count too.
+    _para = ("1. Projects", "2. Areas", "3. Resources", "4. Archives")
     for candidate in [
         Path.home() / "Obsidian Vault",
         Path.home() / "vault",
         Path.home() / "Documents" / "Obsidian",
+        Path.home() / "Documents" / "Notes",
+        Path.home() / "Notes",
     ]:
         if (candidate / ".obsidian").is_dir():
+            return candidate
+        if sum((candidate / m).is_dir() for m in _para) >= 2:
             return candidate
     return None
 
@@ -33,6 +47,20 @@ def obsidian_eval(js_code: str) -> str:
         print(f"obsidian eval failed: {result.stderr}", file=sys.stderr)
         sys.exit(1)
     return result.stdout.strip()
+
+
+_OBSIDIAN_CLI = None
+
+
+def obsidian_available() -> bool:
+    """True if the Obsidian desktop CLI is on PATH (cached). Present → drive the
+    running app; absent → fall back to a direct fs write so zettels work on any
+    markdown app."""
+    global _OBSIDIAN_CLI
+    if _OBSIDIAN_CLI is None:
+        import shutil
+        _OBSIDIAN_CLI = shutil.which("obsidian") is not None
+    return _OBSIDIAN_CLI
 
 
 def qmd_search(query: str) -> list[dict]:
@@ -83,7 +111,12 @@ def cmd_new(args, vault: Path):
         f"  app.workspace.openLinkText('', '{rel_escaped}', false);"
         f"}})()"
     )
-    obsidian_eval(js)
+    if obsidian_available():
+        obsidian_eval(js)
+    else:
+        p = vault / rel_path
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(content, encoding="utf-8")
     print(f"Created: {rel_path}")
     print(f"Title: {title}")
     print(f"ID: {zettel_id}")
