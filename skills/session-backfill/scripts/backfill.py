@@ -22,6 +22,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import tempfile
 from datetime import datetime
@@ -311,12 +312,22 @@ RULES:
 
 
 # ── Distillation backends ─────────────────────────────────────────────────
-def distill_via_cli(filtered: str) -> str:
+def distill_via_cli(filtered: str, model: str | None = None) -> str:
     """Call `claude -p` — uses the user's CC subscription OAuth, no API credits.
 
     IMPORTANT: ANTHROPIC_API_KEY is stripped from the subprocess env. If the
     var is set, `claude -p` would otherwise use it (API billing) instead of
     the OAuth subscription. We never want to silently bill API credits.
+
+    `model` (optional, e.g. "sonnet"/"haiku") picks the model. Summarizing a
+    transcript does not need the biggest model, so the caller can force a
+    cheaper/faster one — important for large historical backfills. Without it,
+    `claude -p` uses the user's configured default (which may be the priciest).
+
+    Runs in a NEUTRAL temp cwd so the spawned `claude -p` can never trip
+    braynee's own SessionStart/Stop hooks — those only act inside a code repo
+    or the vault, so a temp dir makes them no-op and we never stamp a spurious
+    session note for wherever the sweep happened to be invoked.
 
     Passes:
       - system prompt via --append-system-prompt-file (off the cmdline, so
@@ -336,11 +347,17 @@ def distill_via_cli(filtered: str) -> str:
         sf.close()
         sys_path = sf.name
 
+        # Run TOOL-FREE. This is a pure text transformation, but `claude -p` is
+        # otherwise a full agent that will grab the Write tool and save the
+        # summary to a file of its own naming instead of printing it (observed
+        # 2026-07-02). An empty --tools unloads all tools so the model can only
+        # emit text to stdout, which is what we capture as the note body.
+        cmd = ["claude", "-p", "--tools", "", "--append-system-prompt-file", sys_path]
+        if model:
+            cmd += ["--model", model]
+
         result = subprocess.run(
-            [
-                "claude", "-p",
-                "--append-system-prompt-file", sys_path,
-            ],
+            cmd,
             input=user_msg,
             capture_output=True,
             text=True,
@@ -348,6 +365,7 @@ def distill_via_cli(filtered: str) -> str:
             errors="replace",
             timeout=900,
             env=env,
+            cwd=tempfile.gettempdir(),
         )
     finally:
         try:
@@ -410,18 +428,60 @@ def render_note(
     return fm + body + "\n"
 
 
-# ── Existing-note detection ───────────────────────────────────────────────
-def existing_note_for_session(folder: Path, session_id: str) -> Path | None:
-    if not folder.exists():
+# ── Existing-note detection & stub upgrade ────────────────────────────────
+# The distiller's signature sections. A note that has BOTH (and no stub
+# placeholder) is already a real summary and must never be clobbered.
+DISTILLED_MARKERS = ("## TL;DR", "## Outcome")
+
+# Placeholder strings UNIQUE to the session-auto-track stub template. The
+# distiller writes `_(none — reason)_` (underscored), never these, so they are
+# safe positive signals that a note is a hollow stub to upgrade. (Do NOT use a
+# bare "(none)" here — the distiller's `_(none)_` would match it as a substring.)
+STUB_MARKERS = (
+    "(session just started)",
+    "(Waiting for user to state goal",
+    "(none yet)",
+)
+
+
+def note_is_distilled(content: str) -> bool:
+    """True if the note already carries a real distillation: both signature
+    sections present and no stub placeholders. Anything else (a hollow stub,
+    a corrupted note, a half-written note) is treated as upgradeable."""
+    if not all(m in content for m in DISTILLED_MARKERS):
+        return False
+    return not any(m in content for m in STUB_MARKERS)
+
+
+def find_session_note(sessions_dir: Path, session_id: str) -> Path | None:
+    """Find a session's note by session_id across ALL project folders. The stub
+    writer and the distiller can disagree on which project folder a session
+    lands in, so a single-folder search would miss the stub. Skips the raw
+    Transcripts tree (huge, never a summary note). Matches the frontmatter head
+    only — bodies can be large."""
+    if not session_id or not sessions_dir.exists():
         return None
-    for note in folder.glob("*.md"):
+    for note in sessions_dir.rglob("*.md"):
+        if "Transcripts" in note.parts:
+            continue
         try:
-            head = note.read_text(encoding="utf-8", errors="ignore")[:1000]
+            head = note.read_text(encoding="utf-8", errors="ignore")[:1500]
         except Exception:
             continue
         if session_id in head:
             return note
     return None
+
+
+def upgrade_note(existing_content: str, new_body: str) -> str:
+    """Replace a stub note's body with the distilled body while preserving the
+    existing YAML frontmatter (it carries the accurate started/ended/branch/
+    session_id state). Flip status:active -> done so an upgraded note reads
+    closed."""
+    m = re.match(r"^(---\n.*?\n---\n)", existing_content, re.DOTALL)
+    fm = m.group(1) if m else ""
+    fm = re.sub(r"(?m)^status:\s*active\s*$", "status: done", fm)
+    return fm.rstrip("\n") + "\n\n" + new_body + "\n"
 
 
 # ── Per-session backfill ──────────────────────────────────────────────────
@@ -433,6 +493,7 @@ def backfill_one(
     *,
     dry_run: bool = False,
     model: str = "claude-sonnet-4-6",
+    cli_model: str = "sonnet",
     use_api: bool = False,
 ) -> str:
     cc_dir = jsonl_path.parent.name
@@ -443,13 +504,25 @@ def backfill_one(
     folder = sessions_dir / folder_name
     session_id = jsonl_path.stem
 
-    existing = existing_note_for_session(folder, session_id)
+    # Find this session's note anywhere under Sessions/ (folder-drift tolerant).
+    # If it's already a real distillation, we're done. If it's a hollow stub
+    # (or corrupted / half-written), upgrade it IN PLACE instead of writing a
+    # second, parallel note.
+    existing = find_session_note(sessions_dir, session_id)
+    upgrade_target = None
+    existing_content = ""
     if existing is not None:
         try:
-            rel = existing.relative_to(vault)
-        except ValueError:
-            rel = existing
-        return f"EXISTS: {rel}"
+            existing_content = existing.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            existing_content = ""
+        if note_is_distilled(existing_content):
+            try:
+                rel = existing.relative_to(vault)
+            except ValueError:
+                rel = existing
+            return f"EXISTS: {rel}"
+        upgrade_target = existing  # a stub — distill and overwrite in place
 
     filtered = filter_jsonl(jsonl_path)
     if len(filtered) < MIN_FILTERED_CHARS:
@@ -458,24 +531,40 @@ def backfill_one(
     mtime = datetime.fromtimestamp(jsonl_path.stat().st_mtime)
     date_str = mtime.strftime("%Y-%m-%d")
     session_type = classify_session_type(filtered)
-    note_name = f"{date_str}-{kebab}-{session_type}-{session_id[:8]}.md"
-    target = folder / note_name
 
-    try:
-        rel_target = target.relative_to(vault)
-    except ValueError:
-        rel_target = target
-
-    if dry_run:
-        return (
-            f"WOULD CREATE: {rel_target} "
-            f"(filtered {len(filtered)} chars, type={session_type})"
-        )
+    if upgrade_target is not None:
+        try:
+            rel_up = upgrade_target.relative_to(vault)
+        except ValueError:
+            rel_up = upgrade_target
+        if dry_run:
+            return (
+                f"WOULD UPGRADE: {rel_up} "
+                f"(filtered {len(filtered)} chars, type={session_type})"
+            )
+    else:
+        note_name = f"{date_str}-{kebab}-{session_type}-{session_id[:8]}.md"
+        target = folder / note_name
+        try:
+            rel_target = target.relative_to(vault)
+        except ValueError:
+            rel_target = target
+        if dry_run:
+            return (
+                f"WOULD CREATE: {rel_target} "
+                f"(filtered {len(filtered)} chars, type={session_type})"
+            )
 
     if use_api:
         body = distill_via_api(client, filtered, model=model)
     else:
-        body = distill_via_cli(filtered)
+        body = distill_via_cli(filtered, model=cli_model)
+
+    # Upgrade a stub in place — preserve its frontmatter, swap the hollow body.
+    if upgrade_target is not None:
+        upgrade_target.write_text(upgrade_note(existing_content, body), encoding="utf-8")
+        return f"UPGRADED: {rel_up}"
+
     note = render_note(
         project_wikilink=project_wikilink,
         session_type=session_type,
@@ -542,6 +631,13 @@ def main() -> int:
     ap.add_argument("--vault", help="Vault path (auto-detected via $BRAYNEE_VAULT / common locations if omitted)")
     ap.add_argument("--model", default="claude-sonnet-4-6", help="Claude model id (only used with --use-api)")
     ap.add_argument(
+        "--cli-model",
+        default="sonnet",
+        help="Model for the default `claude -p` path (alias: sonnet/haiku/opus). "
+        "Summaries don't need the biggest model — default 'sonnet' keeps quota "
+        "and time down, which matters on large historical backfills.",
+    )
+    ap.add_argument(
         "--use-api",
         action="store_true",
         help="Use the Anthropic API directly (costs Console credits / needs ANTHROPIC_API_KEY). "
@@ -580,7 +676,7 @@ def main() -> int:
         )
         return 1
 
-    stats = {"created": 0, "exists": 0, "trivial": 0, "would_create": 0, "errors": 0}
+    stats = {"created": 0, "upgraded": 0, "exists": 0, "trivial": 0, "would_create": 0, "would_upgrade": 0, "errors": 0}
 
     for d in dirs:
         if not d.exists():
@@ -603,7 +699,8 @@ def main() -> int:
             try:
                 msg = backfill_one(
                     j, client, sessions_dir, vault,
-                    dry_run=args.dry_run, model=args.model, use_api=args.use_api,
+                    dry_run=args.dry_run, model=args.model,
+                    cli_model=args.cli_model, use_api=args.use_api,
                 )
             except Exception as e:
                 msg = f"ERROR: {j.name}: {e}"
@@ -611,10 +708,14 @@ def main() -> int:
             else:
                 if msg.startswith("CREATED"):
                     stats["created"] += 1
+                elif msg.startswith("UPGRADED"):
+                    stats["upgraded"] += 1
                 elif msg.startswith("EXISTS"):
                     stats["exists"] += 1
                 elif msg.startswith("SKIP"):
                     stats["trivial"] += 1
+                elif msg.startswith("WOULD UPGRADE"):
+                    stats["would_upgrade"] += 1
                 elif msg.startswith("WOULD"):
                     stats["would_create"] += 1
             print(f"  {msg}", flush=True)
