@@ -1,0 +1,9 @@
+{
+  "_comment": "Optional per-project overrides for session-backfill. Copy this file to project_map.json (which is git-ignored / personal) and add your own entries. The key is the project slug derived from the Claude Code project folder (~/.claude/projects/<encoded-path>/) — strip any drive letter and take the path segment after the last parent token (code/src/work/repos/dev/...). The key may be the full slug OR just its last '-' segment.",
+  "_value-forms": "A value is EITHER a plain string (the [[wikilink]] display name; the Sessions/ folder is derived from it) OR an object {wikilink, folder} to set them independently.",
+  "_use-object-when": "Use the object form to route a project's notes into a SPECIFIC folder — e.g. fold an old project name into its renamed successor's existing folder, split one cwd into its real project, or park non-project cwd sessions in a named bucket.",
+  "_note": "Keys starting with '_' are ignored, so every example here is inert.",
+  "_my-app-engine": "My App",
+  "_webapp": "matches any slug ending in '-webapp' (last-segment key)",
+  "_old-project-name": { "wikilink": "New Project", "folder": "New-Project" }
+}
