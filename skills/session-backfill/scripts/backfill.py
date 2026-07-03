@@ -201,6 +201,32 @@ def kebab_to_folder(kebab: str) -> str:
     return kebab_to_wikilink(kebab).replace(" ", "-")
 
 
+def resolve_project_folder(sessions_dir: Path, kebab: str) -> Path:
+    """Return the Sessions/ subfolder new notes should land in — preferring an
+    EXISTING folder over the computed name, so a backfill consolidates into the
+    folder a project's notes already live in rather than spawning a case-variant
+    twin. The real hook wrote folders inconsistently over time (lowercase
+    `myrp-build/` vs Title-Kebab `Myrp-Build/`); matching case-insensitively
+    against both the raw kebab and the Title-Kebab form heals that drift.
+    Falls back to the Title-Kebab name only when no folder exists yet."""
+    computed = kebab_to_folder(kebab)
+    wanted = {kebab.lower(), computed.lower()}
+    if sessions_dir.exists():
+        best = None
+        best_count = -1
+        for d in sessions_dir.iterdir():
+            if not d.is_dir() or d.name.lower() not in wanted:
+                continue
+            # If both a lowercase and Title-Kebab twin exist, prefer the one
+            # holding more notes (the canonical home).
+            count = sum(1 for _ in d.glob("*.md"))
+            if count > best_count:
+                best, best_count = d, count
+        if best is not None:
+            return best
+    return sessions_dir / computed
+
+
 # ── JSONL filtering ───────────────────────────────────────────────────────
 NOISE_PREFIXES = (
     "<local-command",
@@ -453,34 +479,84 @@ def note_is_distilled(content: str) -> bool:
     return not any(m in content for m in STUB_MARKERS)
 
 
-def find_session_note(sessions_dir: Path, session_id: str) -> Path | None:
-    """Find a session's note by session_id across ALL project folders. The stub
-    writer and the distiller can disagree on which project folder a session
-    lands in, so a single-folder search would miss the stub. Skips the raw
-    Transcripts tree (huge, never a summary note). Matches the frontmatter head
-    only — bodies can be large."""
-    if not session_id or not sessions_dir.exists():
-        return None
+def _safe_read(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8", errors="ignore")
+    except Exception:
+        return ""
+
+
+def build_sid_index(sessions_dir: Path) -> dict:
+    """One pass over every Sessions note -> {session_id: Path}. A full backfill
+    resolves thousands of sessions; doing an rglob per session is O(N*M) over a
+    4000+ note tree. Building the index once makes the whole run O(N+M). The stub
+    writer and distiller can disagree on which project folder a session lands in,
+    so the index spans ALL folders (skips the raw Transcripts tree)."""
+    idx: dict[str, Path] = {}
+    if not sessions_dir.exists():
+        return idx
     for note in sessions_dir.rglob("*.md"):
         if "Transcripts" in note.parts:
             continue
-        try:
-            head = note.read_text(encoding="utf-8", errors="ignore")[:1500]
-        except Exception:
+        head = _safe_read(note)[:1500]
+        if not head:
             continue
-        if session_id in head:
-            return note
-    return None
+        m = re.search(r'(?m)^session_id:\s*"?([^\s"\n]+)"?', head)
+        if not m:
+            continue
+        sid = m.group(1)
+        prior = idx.get(sid)
+        # First writer wins, but prefer a real distillation over a stub if a
+        # duplicate ever exists — keeps the index self-healing.
+        if prior is None:
+            idx[sid] = note
+        elif not note_is_distilled(_safe_read(prior)) and note_is_distilled(_safe_read(note)):
+            idx[sid] = note
+    return idx
 
 
-def upgrade_note(existing_content: str, new_body: str) -> str:
+def gc_hollow_stubs(folder: Path, dry_run: bool) -> list[Path]:
+    """Delete content-free PRE-FIX stubs (hollow placeholder body + no session_id)
+    from a single project folder. Once create-fresh has distilled the real
+    session from its JSONL, these orphans carry ZERO information by definition
+    (only '(session just started)'-style placeholders), so removing them loses
+    nothing and de-clutters the timeline. Deliberately conservative — a note is
+    GC-eligible ONLY if ALL hold: (1) no session_id (a post-fix note is
+    identifiable and never touched), (2) a stub placeholder marker is present,
+    (3) it is NOT a real distillation. Anything ambiguous is kept."""
+    victims: list[Path] = []
+    if not folder.exists():
+        return victims
+    for note in sorted(folder.glob("*.md")):
+        c = _safe_read(note)
+        if not c:
+            continue
+        if re.search(r'(?m)^session_id:', c[:1500]):
+            continue  # identifiable / post-fix — never GC
+        if not any(m in c for m in STUB_MARKERS):
+            continue  # has real content — keep
+        if all(m in c for m in DISTILLED_MARKERS):
+            continue  # somehow distilled — keep
+        victims.append(note)
+        if not dry_run:
+            try:
+                note.unlink()
+            except Exception as e:
+                sys.stderr.write(f"  gc unlink failed {note.name}: {e}\n")
+    return victims
+
+
+def upgrade_note(existing_content: str, new_body: str, session_id: str | None = None) -> str:
     """Replace a stub note's body with the distilled body while preserving the
     existing YAML frontmatter (it carries the accurate started/ended/branch/
-    session_id state). Flip status:active -> done so an upgraded note reads
-    closed."""
+    session_id state). Flip status:active -> done. If `session_id` is given and
+    the stub has none (a legacy adoption), stamp it so the note is identifiable
+    and never adopted/duplicated again."""
     m = re.match(r"^(---\n.*?\n---\n)", existing_content, re.DOTALL)
     fm = m.group(1) if m else ""
     fm = re.sub(r"(?m)^status:\s*active\s*$", "status: done", fm)
+    if session_id and not re.search(r"(?m)^session_id:", fm):
+        fm = fm.replace("---\n", f'---\nsession_id: "{session_id}"\n', 1)
     return fm.rstrip("\n") + "\n\n" + new_body + "\n"
 
 
@@ -490,6 +566,7 @@ def backfill_one(
     client,
     sessions_dir: Path,
     vault: Path,
+    sid_index: dict,
     *,
     dry_run: bool = False,
     model: str = "claude-sonnet-4-6",
@@ -499,30 +576,31 @@ def backfill_one(
     cc_dir = jsonl_path.parent.name
     kebab = cc_dir_to_kebab(cc_dir)
     project_wikilink = kebab_to_wikilink(kebab)
-    folder_name = kebab_to_folder(kebab)
 
-    folder = sessions_dir / folder_name
+    # Prefer the folder this project's notes already live in (heals the
+    # lowercase vs Title-Kebab folder drift the live hook left behind).
+    folder = resolve_project_folder(sessions_dir, kebab)
     session_id = jsonl_path.stem
 
-    # Find this session's note anywhere under Sessions/ (folder-drift tolerant).
-    # If it's already a real distillation, we're done. If it's a hollow stub
-    # (or corrupted / half-written), upgrade it IN PLACE instead of writing a
-    # second, parallel note.
-    existing = find_session_note(sessions_dir, session_id)
+    # Resolve this session's note by session_id via the prebuilt index (spans
+    # ALL folders, so folder drift can't hide it). If it's already a real
+    # distillation, we're done. If it's a stub carrying a session_id, upgrade it
+    # in place. A PRE-FIX hollow stub (no session_id) can't be matched here — we
+    # create a fresh note from the JSONL (the source of truth) and the GC pass
+    # sweeps the emptied stub afterward.
+    existing = sid_index.get(session_id)
     upgrade_target = None
     existing_content = ""
+    adopt_sid = None
     if existing is not None:
-        try:
-            existing_content = existing.read_text(encoding="utf-8", errors="ignore")
-        except Exception:
-            existing_content = ""
+        existing_content = _safe_read(existing)
         if note_is_distilled(existing_content):
             try:
                 rel = existing.relative_to(vault)
             except ValueError:
                 rel = existing
             return f"EXISTS: {rel}"
-        upgrade_target = existing  # a stub — distill and overwrite in place
+        upgrade_target = existing  # a stub (with session_id) — overwrite in place
 
     filtered = filter_jsonl(jsonl_path)
     if len(filtered) < MIN_FILTERED_CHARS:
@@ -561,8 +639,12 @@ def backfill_one(
         body = distill_via_cli(filtered, model=cli_model)
 
     # Upgrade a stub in place — preserve its frontmatter, swap the hollow body.
+    # adopt_sid is set only for a legacy stub with no session_id, so the upgrade
+    # stamps one on (identifiable + never re-adopted).
     if upgrade_target is not None:
-        upgrade_target.write_text(upgrade_note(existing_content, body), encoding="utf-8")
+        upgrade_target.write_text(
+            upgrade_note(existing_content, body, session_id=adopt_sid), encoding="utf-8"
+        )
         return f"UPGRADED: {rel_up}"
 
     note = render_note(
@@ -643,6 +725,15 @@ def main() -> int:
         help="Use the Anthropic API directly (costs Console credits / needs ANTHROPIC_API_KEY). "
         "Default is `claude -p`, which uses your Claude Code subscription with no API billing.",
     )
+    ap.add_argument(
+        "--gc-stubs",
+        action="store_true",
+        help="After distilling, delete content-free PRE-FIX hollow stubs (no "
+        "session_id + placeholder body) from each processed project folder. The "
+        "create-fresh pass has already reconstructed the real session from its "
+        "JSONL, so these orphans carry zero information. Pair with --dry-run "
+        "first to preview exactly what would be deleted.",
+    )
     args = ap.parse_args()
 
     if not args.project and not args.all:
@@ -676,7 +767,15 @@ def main() -> int:
         )
         return 1
 
-    stats = {"created": 0, "upgraded": 0, "exists": 0, "trivial": 0, "would_create": 0, "would_upgrade": 0, "errors": 0}
+    stats = {"created": 0, "upgraded": 0, "exists": 0, "trivial": 0, "would_create": 0,
+             "would_upgrade": 0, "gc_deleted": 0, "gc_would_delete": 0, "errors": 0}
+
+    # Build the session_id -> note index ONCE (spans all folders). A full
+    # backfill resolves thousands of sessions; a per-session rglob would be
+    # O(sessions * notes) over a 4000+ note tree.
+    print("Indexing existing session notes…", flush=True)
+    sid_index = build_sid_index(sessions_dir)
+    print(f"  indexed {len(sid_index)} notes with a session_id", flush=True)
 
     for d in dirs:
         if not d.exists():
@@ -698,7 +797,7 @@ def main() -> int:
         for j in jsonls:
             try:
                 msg = backfill_one(
-                    j, client, sessions_dir, vault,
+                    j, client, sessions_dir, vault, sid_index,
                     dry_run=args.dry_run, model=args.model,
                     cli_model=args.cli_model, use_api=args.use_api,
                 )
@@ -719,6 +818,21 @@ def main() -> int:
                 elif msg.startswith("WOULD"):
                     stats["would_create"] += 1
             print(f"  {msg}", flush=True)
+
+        # GC pass — sweep this project's folder for content-free pre-fix stubs
+        # that create-fresh has now superseded. Scoped to the folder the
+        # project's notes actually live in (drift-healed).
+        if args.gc_stubs:
+            kebab = cc_dir_to_kebab(d.name)
+            folder = resolve_project_folder(sessions_dir, kebab)
+            victims = gc_hollow_stubs(folder, dry_run=args.dry_run)
+            verb = "WOULD DELETE" if args.dry_run else "DELETED"
+            print(f"  --- GC: {verb} {len(victims)} hollow stub(s) in {folder.name}/ ---", flush=True)
+            for v in victims[:40]:
+                print(f"      {verb}: {v.name}")
+            if len(victims) > 40:
+                print(f"      … and {len(victims) - 40} more")
+            stats["gc_would_delete" if args.dry_run else "gc_deleted"] += len(victims)
 
     print("\n=== Summary ===")
     for k, v in stats.items():
