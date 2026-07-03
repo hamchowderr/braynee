@@ -185,14 +185,43 @@ def cc_dir_to_kebab(cc_dir_name: str) -> str:
     return slug or (cc_dir_name or "unknown")
 
 
-def kebab_to_wikilink(kebab: str) -> str:
-    """`sophon-webapp` → `Sophon Webapp` (Title Case With Spaces)."""
+def _override_entry(kebab: str):
+    """Raw override value for a kebab (or just its last segment), or None. A
+    value is EITHER a plain string (the wikilink; folder derived from it) OR an
+    object with optional 'wikilink' and 'folder' keys — the object form lets a
+    user pin the [[link]] and the exact Sessions/ folder INDEPENDENTLY, e.g. an
+    old project name (`fivem-studio`) that should fold into its renamed
+    successor's existing folder (`myrp-build`) while linking `[[myRP.build]]`."""
     if kebab in OVERRIDES:
         return OVERRIDES[kebab]
-    # Override may also key on just the last segment.
     last = kebab.split("-")[-1]
     if last in OVERRIDES:
         return OVERRIDES[last]
+    return None
+
+
+def _override_wikilink(kebab: str) -> str | None:
+    v = _override_entry(kebab)
+    if isinstance(v, str):
+        return v
+    if isinstance(v, dict):
+        return v.get("wikilink") or v.get("folder")
+    return None
+
+
+def _override_folder(kebab: str) -> str | None:
+    v = _override_entry(kebab)
+    if isinstance(v, dict):
+        return v.get("folder")
+    return None
+
+
+def kebab_to_wikilink(kebab: str) -> str:
+    """`sophon-webapp` → `Sophon Webapp` (Title Case With Spaces); a project_map
+    override wins (string value, or the 'wikilink' key of an object value)."""
+    wl = _override_wikilink(kebab)
+    if wl:
+        return wl
     return " ".join(w.capitalize() for w in kebab.split("-") if w)
 
 
@@ -208,7 +237,18 @@ def resolve_project_folder(sessions_dir: Path, kebab: str) -> Path:
     twin. The real hook wrote folders inconsistently over time (lowercase
     `myrp-build/` vs Title-Kebab `Myrp-Build/`); matching case-insensitively
     against both the raw kebab and the Title-Kebab form heals that drift.
-    Falls back to the Title-Kebab name only when no folder exists yet."""
+    Falls back to the Title-Kebab name only when no folder exists yet. A
+    project_map override with an explicit 'folder' wins outright — it routes a
+    project into a specific folder (e.g. fold an old name into its successor, or
+    park non-project cwd sessions in a named bucket), preferring the existing
+    folder of that name if present."""
+    forced = _override_folder(kebab)
+    if forced:
+        if sessions_dir.exists():
+            for d in sessions_dir.iterdir():
+                if d.is_dir() and d.name.lower() == forced.lower():
+                    return d
+        return sessions_dir / forced
     computed = kebab_to_folder(kebab)
     wanted = {kebab.lower(), computed.lower()}
     if sessions_dir.exists():

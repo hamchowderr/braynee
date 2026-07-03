@@ -12,3 +12,4 @@ __pycache__/
 
 # Throwaway dashboard build/verify scratch (screenshots, preview HTML, helper scripts)
 mockups/
+skills/session-backfill/scripts/project_map.json

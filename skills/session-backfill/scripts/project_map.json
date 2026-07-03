@@ -1,6 +1,0 @@
-{
-  "_comment": "Optional overrides: derived-project-slug -> 'Title Case Wikilink' (no brackets). The slug is derived from the Claude Code project folder (~/.claude/projects/<encoded-path>/) by stripping any drive letter and taking the path segment after the last parent token (code/src/work/repos/dev/...). Only add an entry when the auto title-casing produces the wrong name. The key may be the full slug OR just its last '-' segment. Keys starting with '_' are ignored (so the examples below are inert). This file ships effectively empty by design — each user adds their own real entries (without the leading underscore).",
-  "_example": "remove the leading underscore to activate an entry",
-  "_my-app-engine": "My App",
-  "_webapp": "matches any slug ending in '-webapp' (last-segment key)"
-}
