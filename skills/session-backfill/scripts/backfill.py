@@ -237,6 +237,28 @@ NOISE_PREFIXES = (
     "[Request interrupted",
 )
 
+_TOOLCALL_RE = re.compile(
+    r"<function_calls>.*?</function_calls>"
+    r"|</?function_calls>"
+    r"|<invoke\b.*?</invoke>"
+    r"|</?invoke\b[^>]*>"
+    r"|<parameter\b.*?</parameter>"
+    r"|</?parameter\b[^>]*>"
+    r"|antml:\w+",
+    re.DOTALL,
+)
+
+
+def _strip_toolcall_syntax(text: str) -> str:
+    """Remove tool-call / function-call markup embedded in a transcript's text.
+    Older session formats rendered tool calls INTO the assistant text; if that
+    reaches the distiller it mimics the syntax and emits junk instead of a
+    summary (observed 2026-07-02). Strip it so the model only ever sees prose."""
+    if not any(s in text for s in ("<function_calls", "<invoke", "<parameter", "antml:")):
+        return text
+    cleaned = _TOOLCALL_RE.sub(" ", text)
+    return re.sub(r"\n{3,}", "\n\n", cleaned).strip()
+
 
 def filter_jsonl(jsonl_path: Path) -> str:
     """Read a CC .jsonl and return user/assistant text only, no tool noise."""
@@ -258,7 +280,7 @@ def filter_jsonl(jsonl_path: Path) -> str:
                 if isinstance(content, str):
                     if any(content.lstrip().startswith(p) for p in NOISE_PREFIXES):
                         continue
-                    text = content.strip()
+                    text = _strip_toolcall_syntax(content.strip())
                     if text:
                         out.append("USER: " + text[:2000])
                 elif isinstance(content, list):
@@ -266,13 +288,15 @@ def filter_jsonl(jsonl_path: Path) -> str:
                         if isinstance(blk, dict) and blk.get("type") == "text":
                             text = (blk.get("text") or "").strip()
                             if text and not any(text.startswith(p) for p in NOISE_PREFIXES):
-                                out.append("USER: " + text[:2000])
+                                text = _strip_toolcall_syntax(text)
+                                if text:
+                                    out.append("USER: " + text[:2000])
 
             elif t == "assistant":
                 if isinstance(content, list):
                     for blk in content:
                         if isinstance(blk, dict) and blk.get("type") == "text":
-                            text = (blk.get("text") or "").strip()
+                            text = _strip_toolcall_syntax((blk.get("text") or "").strip())
                             if text:
                                 out.append("ASST: " + text[:2000])
     except Exception as e:
@@ -334,10 +358,47 @@ RULES:
 1. Be SPECIFIC. Name files, functions, services, libraries, dates, error messages. Avoid vague summaries.
 2. Never invent content. If a section is legitimately empty, mark it `_(none — [why])_`.
 3. Total length: 150-300 words. Density beats verbosity.
-4. The TL;DR must include the project name and the operative noun (what was worked on) — this is the primary search anchor."""
+4. The TL;DR must include the project name and the operative noun (what was worked on) — this is the primary search anchor.
+5. You are summarizing a COMPLETED, PAST transcript. You are NOT in that session and cannot act. Do NOT continue the work, run searches, read files, or offer to help. Do NOT emit tool calls or any `<function_calls>` / `<invoke ...>` / `antml:` syntax. Do NOT ask the user anything. Your ENTIRE output is the static markdown summary beginning with `## TL;DR` — nothing before it, nothing after `## References`."""
 
 
 # ── Distillation backends ─────────────────────────────────────────────────
+class DistillationInvalid(Exception):
+    """The distiller returned something that is not a clean summary — the model
+    role-played the session (emitted tool-call syntax / offered to do work) or
+    dropped the required structure. Raised so the caller SKIPS writing rather
+    than persisting garbage as a note body."""
+
+
+# Signatures of a distiller that acted as an agent instead of summarizing. Any
+# of these in the output means the model leaked its own tool-call/continuation
+# behavior into what should be a static summary — observed ~1% of the time on
+# transcripts that were themselves about doing agentic work.
+AGENTIC_MARKERS = (
+    "<function_calls",
+    "<invoke name=",
+    "antml:",
+    "Session note saved to the vault",
+    "I'll write the session summary",
+    "</parameter>",
+)
+
+
+def _distillation_problem(text: str) -> str | None:
+    """None if the output is a clean summary; otherwise a short reason string.
+    Guards against the two observed failure modes: (a) the model emitting
+    tool-call syntax / continuing the session, and (b) missing the required
+    section structure."""
+    if not text or len(text.strip()) < 80:
+        return "empty/too short"
+    for m in AGENTIC_MARKERS:
+        if m in text:
+            return f"agentic leak {m!r}"
+    if "## TL;DR" not in text or "## Outcome" not in text:
+        return "missing required sections"
+    return None
+
+
 def distill_via_cli(filtered: str, model: str | None = None) -> str:
     """Call `claude -p` — uses the user's CC subscription OAuth, no API credits.
 
@@ -361,7 +422,7 @@ def distill_via_cli(filtered: str, model: str | None = None) -> str:
       - user message via stdin (avoids the Windows ~32KB cmdline cap)
     """
     payload = filtered[:MAX_INPUT_CHARS]
-    user_msg = f"Session transcript:\n\n{payload}"
+    base_msg = f"Session transcript:\n\n{payload}"
     env = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"}
 
     # System prompt to a temp file — keeps it off the cmdline (length limits).
@@ -382,27 +443,44 @@ def distill_via_cli(filtered: str, model: str | None = None) -> str:
         if model:
             cmd += ["--model", model]
 
-        result = subprocess.run(
-            cmd,
-            input=user_msg,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=900,
-            env=env,
-            cwd=tempfile.gettempdir(),
-        )
+        # Even tool-free, the model occasionally role-plays continuing the
+        # session (emits tool-call syntax as text) instead of summarizing.
+        # Validate the output; on failure retry ONCE with a firmer nudge, then
+        # give up (raise) so the caller skips writing rather than persist junk.
+        last_problem = "no output"
+        for attempt in range(2):
+            user_msg = base_msg if attempt == 0 else (
+                "You previously responded with tool calls or by continuing the "
+                "session. That is wrong. Re-read the rules: output ONLY the "
+                "static markdown summary starting at `## TL;DR`. No tool calls, "
+                "no offers to help, no questions.\n\n" + base_msg
+            )
+            result = subprocess.run(
+                cmd,
+                input=user_msg,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=900,
+                env=env,
+                cwd=tempfile.gettempdir(),
+            )
+            if result.returncode != 0 or "Credit balance is too low" in (result.stdout or ""):
+                err = (result.stderr or "").strip() or (result.stdout or "").strip()
+                raise RuntimeError(f"claude -p failed: {err[:500]}")
+            out = (result.stdout or "").strip()
+            problem = _distillation_problem(out)
+            if problem is None:
+                return out
+            last_problem = problem
     finally:
         try:
             os.unlink(sf.name)
         except OSError:
             pass
 
-    if result.returncode != 0 or "Credit balance is too low" in (result.stdout or ""):
-        err = (result.stderr or "").strip() or (result.stdout or "").strip()
-        raise RuntimeError(f"claude -p failed: {err[:500]}")
-    return (result.stdout or "").strip()
+    raise DistillationInvalid(last_problem)
 
 
 def distill_via_api(client, filtered: str, model: str = "claude-sonnet-4-6") -> str:
@@ -427,7 +505,11 @@ def distill_via_api(client, filtered: str, model: str = "claude-sonnet-4-6") -> 
             }
         ],
     )
-    return resp.content[0].text.strip()
+    out = resp.content[0].text.strip()
+    problem = _distillation_problem(out)
+    if problem is not None:
+        raise DistillationInvalid(problem)
+    return out
 
 
 # ── Note rendering ────────────────────────────────────────────────────────
@@ -633,10 +715,17 @@ def backfill_one(
                 f"(filtered {len(filtered)} chars, type={session_type})"
             )
 
-    if use_api:
-        body = distill_via_api(client, filtered, model=model)
-    else:
-        body = distill_via_cli(filtered, model=cli_model)
+    # The distiller occasionally role-plays the session instead of summarizing.
+    # It self-validates + retries; if it still can't produce a clean summary we
+    # SKIP writing rather than persist junk — the stub/absence is preferable to
+    # a corrupt note, and the session can be retried later.
+    try:
+        if use_api:
+            body = distill_via_api(client, filtered, model=model)
+        else:
+            body = distill_via_cli(filtered, model=cli_model)
+    except DistillationInvalid as e:
+        return f"SKIP (distill invalid: {e}): {jsonl_path.name}"
 
     # Upgrade a stub in place — preserve its frontmatter, swap the hollow body.
     # adopt_sid is set only for a legacy stub with no session_id, so the upgrade
@@ -768,7 +857,7 @@ def main() -> int:
         return 1
 
     stats = {"created": 0, "upgraded": 0, "exists": 0, "trivial": 0, "would_create": 0,
-             "would_upgrade": 0, "gc_deleted": 0, "gc_would_delete": 0, "errors": 0}
+             "would_upgrade": 0, "distill_invalid": 0, "gc_deleted": 0, "gc_would_delete": 0, "errors": 0}
 
     # Build the session_id -> note index ONCE (spans all folders). A full
     # backfill resolves thousands of sessions; a per-session rglob would be
@@ -811,6 +900,8 @@ def main() -> int:
                     stats["upgraded"] += 1
                 elif msg.startswith("EXISTS"):
                     stats["exists"] += 1
+                elif msg.startswith("SKIP (distill invalid"):
+                    stats["distill_invalid"] += 1
                 elif msg.startswith("SKIP"):
                     stats["trivial"] += 1
                 elif msg.startswith("WOULD UPGRADE"):

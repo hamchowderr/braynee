@@ -1,7 +1,7 @@
 {
   "name": "braynee",
   "description": "Braynee turns Claude Code into your second brain — setup wizard, PARA vault scaffolding, company knowledge base, project detection, all-time usage insights, and daily workflow skills. Requires Claude Code ≥ 2.1.85 (hooks use the `if` field for tool/argument scoping).",
-  "version": "2.1.14",
+  "version": "2.1.15",
   "author": {
     "name": "Otaku Solutions",
     "email": "admin@otakusolutions.io",
