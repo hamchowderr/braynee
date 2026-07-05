@@ -32,6 +32,15 @@ function controlDir() {
 const LOCK_FILE = path.join(controlDir(), '.braynee-qmd-reindex.lock');
 const STAMP_FILE = path.join(controlDir(), '.braynee-qmd-embed.stamp');
 
+// Beads → TaskNote body sync (see scripts/beads-body-sync.js). Beads issue
+// description/close_reason live in hidden .beads/issues.jsonl dirs that QMD's
+// walker refuses to index, so we copy them into the (already-indexed) vault
+// TaskNote bodies before each keyword reindex. Throttled by a stamp so it
+// doesn't re-scan every repo on every single Stop — freshness of tens of
+// minutes is plenty for decision recall.
+const BODY_SYNC_STAMP = path.join(controlDir(), '.braynee-beads-body-sync.stamp');
+const BODY_SYNC_INTERVAL_MS = 30 * 60 * 1000; // 30 min
+
 // A lock older than this is presumed dead (process crashed mid-embed). A
 // large embed backlog can legitimately run for several minutes, so keep
 // this generous to avoid stealing a lock from a live embed.
@@ -117,12 +126,38 @@ function releaseLock() {
   try { fs.unlinkSync(LOCK_FILE); } catch { /* already gone */ }
 }
 
+// Throttled, best-effort refresh of TaskNote bodies from beads issue data.
+// Idempotent (writes only the notes whose issue description/close_reason
+// changed), so after the initial backfill each run touches just the churn.
+// Never throws — a failure here must not block the vault reindex.
+function syncBeadsBodies() {
+  try {
+    const last = Number(fs.readFileSync(BODY_SYNC_STAMP, 'utf8').trim()) || 0;
+    if (Date.now() - last < BODY_SYNC_INTERVAL_MS) return { ran: false, reason: 'throttled' };
+  } catch { /* no stamp yet → run */ }
+  try {
+    const script = path.join(__dirname, '..', '..', 'scripts', 'beads-body-sync.js');
+    execSync(`"${process.execPath}" "${script}" --write`, {
+      stdio: ['pipe', 'pipe', 'ignore'],
+      timeout: 30000,
+      windowsHide: true,
+    });
+    try { fs.writeFileSync(BODY_SYNC_STAMP, String(Date.now())); } catch { /* ignore */ }
+    return { ran: true };
+  } catch {
+    return { ran: false, reason: 'error' }; // notes catch up on the next run
+  }
+}
+
 // Synchronous, non-blocking-on-error BM25 reindex. Skips entirely if a
 // reindex (e.g. a detached embed) is already in flight — keyword staleness
 // for one session is acceptable; index corruption is not.
 function runKeywordUpdate(qmdWrapper) {
   if (!acquireLock('update')) return { ran: false, reason: 'locked' };
   try {
+    // Freshen beads-derived TaskNote bodies before indexing so the vault
+    // picks up issue reasoning that QMD can't read from hidden .beads/ dirs.
+    syncBeadsBodies();
     execSync(`"${process.execPath}" "${qmdWrapper}" update -c vault`, {
       encoding: 'utf8',
       stdio: ['pipe', 'pipe', 'ignore'],
