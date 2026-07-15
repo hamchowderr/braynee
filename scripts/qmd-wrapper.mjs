@@ -44,6 +44,12 @@ if (!qmdJs) {
 // mid-batch (exit 1, no error), so they run uncapped.
 const args = process.argv.slice(2);
 const LONG_RUNNING = new Set(['embed', 'update', 'cleanup', 'bench']);
+// query/vsearch run an LLM query-expansion pass (~20s) plus CPU reranking, which
+// regularly blows past a 60s cap on CPU-only boxes — the job gets SIGTERM'd
+// mid-run (exit 1, zero results), so a working search looks broken. Give the
+// heavy semantic commands a longer ceiling; keep the fast keyword/get path at
+// 60s so a genuine hang there still fails fast.
+const HEAVY_INTERACTIVE = new Set(['query', 'vsearch']);
 // qmd derives its cache/index dir from $HOME (NOT os.homedir). On Windows,
 // PowerShell and Claude-Code-spawned hooks leave HOME unset, so qmd silently
 // falls back to a /tmp index — split-brained from the ~/.cache index Git Bash
@@ -54,7 +60,9 @@ const spawnOpts = {
   windowsHide: true,
   env: { ...process.env, HOME: process.env.HOME || homedir() },
 };
-if (!LONG_RUNNING.has(args[0])) spawnOpts.timeout = 60_000;
+if (!LONG_RUNNING.has(args[0])) {
+  spawnOpts.timeout = HEAVY_INTERACTIVE.has(args[0]) ? 150_000 : 60_000;
+}
 
 const res = spawnSync(process.execPath, [qmdJs, ...args], spawnOpts);
 
