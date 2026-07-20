@@ -35,6 +35,11 @@ const SKIP_PATTERNS = [
   /[/\\]\.next[/\\]/,
   /[/\\]\.venv[/\\]/,
   /[/\\]__pycache__[/\\]/,
+  // Ephemeral agent working files — Claude Code per-session temp + scratchpad
+  // dirs. These are throwaway (probes, one-off scripts, HTML previews) and
+  // otherwise masquerade as real project activity in the changelog.
+  /[/\\][Tt]emp[/\\]claude[/\\]/,
+  /[/\\]scratchpad[/\\]/,
 ];
 
 let input;
