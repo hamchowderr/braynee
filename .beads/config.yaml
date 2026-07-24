@@ -54,5 +54,6 @@
 # - github.repo
 
 dolt.shared-server: true
-
 validation.on-create: "warn"
+export:
+    auto: true

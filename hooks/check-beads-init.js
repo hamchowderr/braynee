@@ -81,6 +81,51 @@ function tryBdInit(cwd, projectName) {
   }
 }
 
+// Ensure the beads export config is fleet-correct on EVERY project braynee
+// touches (not just fresh inits) — this is the durable fix for the fleet-wide
+// stale-jsonl bug (cp-uif3.1, [[beads-jsonl-untrack-fix]]):
+//   export.auto=true     bd re-exports .beads/issues.jsonl after each write, so
+//                        braynee's server-free read-hooks (lib/read-issues-jsonl.js
+//                        + ~10 consumers) never operate on stale data. bd 1.1.0
+//                        flipped this default to false, which silently froze the
+//                        fleet's jsonl (weeks-to-months stale → wrong vault mirror).
+//   export.git-add=false bd re-exports but never re-STAGES the jsonl into the git
+//                        index — the recurring checkout-block / merge-conflict cause.
+// Idempotent + guarded: reads the current value first and only writes on drift, so
+// a correctly-configured project pays no write cost per session. Best-effort — any
+// failure is logged and never aborts the hook. This hook never mutates the git index;
+// untracking an already-tracked jsonl (git rm --cached + root .gitignore) is a
+// one-time per-repo rollout step, deliberately NOT done here.
+function ensureBeadsExportConfig(cwd) {
+  const desired = [['export.auto', 'true'], ['export.git-add', 'false']];
+  const results = [];
+  for (const [key, want] of desired) {
+    try {
+      let current = '';
+      try {
+        current = execSync(`bd config get ${key}`, {
+          cwd, encoding: 'utf8', timeout: 10_000,
+          stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true,
+        }).trim();
+      } catch {
+        current = ''; // unset/unreadable → treat as drift and set it
+      }
+      if (current === want) {
+        results.push({ key, ok: true, changed: false });
+        continue;
+      }
+      execSync(`bd config set ${key} ${want}`, {
+        cwd, encoding: 'utf8', timeout: 10_000,
+        stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true,
+      });
+      results.push({ key, ok: true, changed: true });
+    } catch (err) {
+      results.push({ key, ok: false, error: (err.stderr?.toString() || err.message || '').split('\n')[0] });
+    }
+  }
+  return results;
+}
+
 // Run after a successful `bd init` to leave the project CLEAN in `bd doctor`:
 //   1. `bd hooks install` — installs bd's git hooks (.git/hooks/) that keep
 //      .beads/issues.jsonl synced. Idempotent: bd uses section markers and a
@@ -220,7 +265,15 @@ process.stdin.on('end', () => {
     // without its own .beads/ still auto-inits instead of being mistaken for
     // already-initialized.
     if (findBeadsRoot(codeRoot)) {
-      log.info(HOOK, `beads already initialized — nothing to do`);
+      // Already initialized — but still self-heal the export config so the
+      // ~48 existing fleet projects (which never hit the init path below) get
+      // export.auto=true / git-add=false. Idempotent: a no-op once correct.
+      const cfg = ensureBeadsExportConfig(codeRoot);
+      for (const c of cfg) {
+        if (c.ok) log.info(HOOK, `export-config ${c.key}: ok${c.changed ? ' (healed drift)' : ''}`);
+        else log.warn(HOOK, `export-config ${c.key} failed: ${c.error}`);
+      }
+      log.info(HOOK, `beads already initialized — export config ensured, nothing else to do`);
       process.exit(0);
     }
 
@@ -240,6 +293,12 @@ process.stdin.on('end', () => {
     const result = tryBdInit(codeRoot, projectName);
     if (result.ok) {
       log.info(HOOK, `bd init succeeded for ${projectName}`);
+      // Set the fleet-correct export config on the freshly-init'd project so its
+      // jsonl stays fresh from the first write (matches the already-init path above).
+      for (const c of ensureBeadsExportConfig(codeRoot)) {
+        if (c.ok) log.info(HOOK, `export-config ${c.key}: ok${c.changed ? ' (set)' : ''}`);
+        else log.warn(HOOK, `export-config ${c.key} failed: ${c.error}`);
+      }
       // Leave the project CLEAN in `bd doctor`: install bd's git hooks,
       // ensure an agent doc exists, and commit the initial bd config.
       const finish = finishBdSetup(codeRoot);
