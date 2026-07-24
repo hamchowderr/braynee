@@ -6,6 +6,12 @@
 # Beads / Dolt files (added by bd init)
 .beads-credential-key
 
+# Beads issues.jsonl is a disposable export (never the DB), kept fresh on disk
+# via export.auto=true for braynee's server-free read-hooks. Untracked here (root,
+# not .beads/.gitignore which bd doctor --fix rewrites) so git never conflicts on
+# it or blocks checkout. Source of truth is the Dolt DB. See cp-uif3.1.
+.beads/issues.jsonl
+
 # Python bytecode (skill scripts)
 __pycache__/
 *.pyc
