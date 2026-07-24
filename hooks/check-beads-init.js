@@ -97,23 +97,39 @@ function tryBdInit(cwd, projectName) {
 // untracking an already-tracked jsonl (git rm --cached + root .gitignore) is a
 // one-time per-repo rollout step, deliberately NOT done here.
 function ensureBeadsExportConfig(cwd) {
-  const desired = [['export.auto', 'true'], ['export.git-add', 'false']];
+  // Read the current export.* values straight from .beads/config.yaml (a fast fs
+  // read) and only shell out to `bd config set` when the FILE shows drift. This
+  // keeps SessionStart lean and server-independent: an already-healed repo (the
+  // common case) and a repo with no config.yaml both cost ZERO bd subprocesses —
+  // only genuine drift on an initialized repo spawns bd. export.* is stored in
+  // config.yaml (per `bd config` help), not the Dolt DB, so this never waits on
+  // the shared Dolt server (which can hang/flake — the reason this is file-first).
+  const cfgPath = path.join(cwd, '.beads', 'config.yaml');
+  let cfgText;
+  try {
+    cfgText = fs.readFileSync(cfgPath, 'utf8');
+  } catch {
+    // No config.yaml → the project was never fully `bd init`'d; `bd config set`
+    // would only error ("run bd init first"). Nothing to heal cheaply — skip.
+    return [{ key: 'export', ok: true, skipped: 'no config.yaml (needs bd init)' }];
+  }
+
+  // bd writes the block form `export:\n    auto: true`; tolerate the flat
+  // `export.auto: true` form too. export.auto must be explicitly true;
+  // export.git-add defaults to false, so it only needs fixing when explicitly true.
+  const blockMatch = cfgText.match(/^export:[ \t]*\n((?:[ \t]+\S.*\n?)*)/m);
+  const block = blockMatch ? blockMatch[1] : '';
+  const autoTrue = /(^|\n)[ \t]*auto:[ \t]*true\b/.test(block) || /(^|\n)[ \t]*export\.auto:[ \t]*true\b/.test(cfgText);
+  const gitAddTrue = /(^|\n)[ \t]*git-add:[ \t]*true\b/.test(block) || /(^|\n)[ \t]*export\.git-add:[ \t]*true\b/.test(cfgText);
+
+  const toSet = [];
+  if (!autoTrue) toSet.push(['export.auto', 'true']);
+  if (gitAddTrue) toSet.push(['export.git-add', 'false']);
+  if (toSet.length === 0) return [{ key: 'export', ok: true, changed: false }];
+
   const results = [];
-  for (const [key, want] of desired) {
+  for (const [key, want] of toSet) {
     try {
-      let current = '';
-      try {
-        current = execSync(`bd config get ${key}`, {
-          cwd, encoding: 'utf8', timeout: 10_000,
-          stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true,
-        }).trim();
-      } catch {
-        current = ''; // unset/unreadable → treat as drift and set it
-      }
-      if (current === want) {
-        results.push({ key, ok: true, changed: false });
-        continue;
-      }
       execSync(`bd config set ${key} ${want}`, {
         cwd, encoding: 'utf8', timeout: 10_000,
         stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true,
