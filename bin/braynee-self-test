@@ -499,6 +499,126 @@ function runGuard(payload) {
     (rv.stdout || '').trim() === '' && (rv.status === 0 || rv.status === 2));
 }
 
+// agent-notification-check.js — Notification hook for `claude agents` background
+// sessions (cp-hdpr.1). The hooks.json matcher already filters, but the hook
+// self-gates in JS too, per this repo's rule that config-level gating is never
+// the only gate. Same contract as the Bash hooks above: emit on the two agent_*
+// kinds, stay SILENT on every other Notification kind.
+{
+  const runNotify = (payload) => {
+    const r = spawnSync(process.execPath, [path.join(PLUGIN_ROOT, 'hooks', 'agent-notification-check.js')], {
+      input: JSON.stringify({ hook_event_name: 'Notification', cwd: gateCwd, session_id: 'self-test', ...payload }),
+      encoding: 'utf8', timeout: 15_000,
+    });
+    return { out: r.stdout || '', status: r.status };
+  };
+
+  const done = runNotify({ notification_type: 'agent_completed', message: 'Agent finished' });
+  assertGate('agent-notification-check emits on agent_completed',
+    done.out.includes('additionalContext') && /background agent session finished/i.test(done.out));
+
+  const waiting = runNotify({ notification_type: 'agent_needs_input', message: 'needs your answer' });
+  assertGate('agent-notification-check emits on agent_needs_input',
+    waiting.out.includes('additionalContext') && /waiting for input/i.test(waiting.out));
+
+  // The docs list 8 valid Notification matcher values; the other 6 must be silent.
+  const others = ['permission_prompt', 'idle_prompt', 'auth_success',
+    'elicitation_dialog', 'elicitation_complete', 'elicitation_response'];
+  const noisy = others.filter(k => runNotify({ notification_type: k, message: k }).out.trim() !== '');
+  assertGate(`agent-notification-check stays SILENT on the other 6 notification kinds${noisy.length ? ' — leaked: ' + noisy.join(', ') : ''}`,
+    noisy.length === 0);
+
+  // A payload naming no kind at all must not be treated as an agent event.
+  const bare = runNotify({ message: 'something happened' });
+  assertGate('agent-notification-check stays SILENT on an unclassifiable payload',
+    bare.out.trim() === '' && (bare.status === 0 || bare.status === 2));
+}
+
+// directory-added-check.js — DirectoryAdded (CC 2.1.219), cp-hdpr.2. Informs
+// about a root registered mid-session by `/add-dir`; must never re-anchor and
+// must stay quiet for anything braynee does not track.
+{
+  const dirRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'braynee-diradd-'));
+  const codeDir = path.join(dirRoot, 'newproj');
+  fs.mkdirSync(path.join(codeDir, '.git'), { recursive: true });
+  fs.mkdirSync(path.join(codeDir, '.beads'), { recursive: true });
+  fs.writeFileSync(path.join(codeDir, 'package.json'), '{}');
+  const plainDir = path.join(dirRoot, 'plaindir');
+  fs.mkdirSync(plainDir, { recursive: true });
+
+  const runDirAdded = (payload) => {
+    const r = spawnSync(process.execPath, [path.join(PLUGIN_ROOT, 'hooks', 'directory-added-check.js')], {
+      input: JSON.stringify({ hook_event_name: 'DirectoryAdded', cwd: PLUGIN_ROOT, ...payload }),
+      encoding: 'utf8', timeout: 15_000,
+    });
+    return { out: r.stdout || '', status: r.status };
+  };
+
+  // Unique session ids so the on-disk dedup state from a previous run cannot
+  // make these assertions pass or fail spuriously.
+  const sid = `self-test-${process.pid}`;
+  const first = runDirAdded({ session_id: `${sid}-a`, directory: codeDir });
+  assertGate('directory-added-check emits when a code project is registered mid-session',
+    first.out.includes('additionalContext') && first.out.includes('newproj'));
+
+  assertGate('directory-added-check dedups the same directory within one session',
+    runDirAdded({ session_id: `${sid}-a`, directory: codeDir }).out.trim() === '');
+
+  // Written as "does not name the plain dir" rather than strict silence, and
+  // deliberately so: cp-9krl means findCodeRoot walks above the fixture and
+  // resolves any temp path to %TEMP% itself when %TEMP% carries a stray .git or
+  // .beads (it does on this machine). The hook is then correctly reporting the
+  // root findCodeRoot handed it. Same accommodation is-code-context.test.js
+  // makes for the same bug. Tighten this to `=== ''` once cp-9krl lands.
+  const plainOut = runDirAdded({ session_id: `${sid}-b`, directory: plainDir }).out;
+  assertGate('directory-added-check never reports a non-code directory as a project (cp-9krl-tolerant)',
+    !plainOut.includes('plaindir'));
+
+  assertGate('directory-added-check stays SILENT when the added dir is the anchored project',
+    runDirAdded({ session_id: `${sid}-c`, directory: PLUGIN_ROOT }).out.trim() === '');
+
+  const bare = runDirAdded({ session_id: `${sid}-d` });
+  assertGate('directory-added-check stays SILENT + exit 0 when no directory field is present',
+    bare.out.trim() === '' && (bare.status === 0 || bare.status === 2));
+
+  // The hook must inform, never silently move the session's anchor (the rule
+  // cwd-changed-check.js established and this hook inherits).
+  const src = fs.readFileSync(path.join(PLUGIN_ROOT, 'hooks', 'directory-added-check.js'), 'utf8');
+  assertGate('directory-added-check never writes a session anchor',
+    !/anchorSession|writeAnchor|setAnchor/.test(src));
+
+  try { fs.rmSync(dirRoot, { recursive: true, force: true }); } catch {}
+}
+
+// lib/session-report-state.js — the dedup memory both location hooks share
+// (extracted in cp-hdpr.2 so the two cannot drift).
+{
+  const S = require(path.join(PLUGIN_ROOT, 'hooks', 'lib', 'session-report-state.js'));
+  const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'braynee-srs-')), 'state.json');
+
+  assertGate('session-report-state reports a value the first time',
+    S.shouldReport(f, 's1', 'C:/x/y') === true);
+  assertGate('session-report-state suppresses the same value for that session',
+    S.shouldReport(f, 's1', 'C:/x/y') === false);
+  assertGate('session-report-state normalizes separators and trailing slashes',
+    S.shouldReport(f, 's1', 'C:\\x\\y\\') === false);
+  assertGate('session-report-state reports a different value for the same session',
+    S.shouldReport(f, 's1', 'C:/other') === true);
+  assertGate('session-report-state keeps sessions independent',
+    S.shouldReport(f, 's2', 'C:/x/y') === true);
+  assertGate('session-report-state always reports when there is no session id',
+    S.shouldReport(f, null, 'C:/x/y') === true && S.shouldReport(f, null, 'C:/x/y') === true);
+  assertGate('session-report-state ignores an empty value',
+    S.shouldReport(f, 's1', '') === false);
+  assertGate('session-report-state degrades to {} on an unreadable state file',
+    Object.keys(S.readState(path.join(os.tmpdir(), 'braynee-nope-does-not-exist.json'))).length === 0);
+  // A corrupt file must not throw — a hook dying over its own state file is the
+  // failure this whole module is written to avoid.
+  fs.writeFileSync(f, 'not json at all');
+  assertGate('session-report-state recovers from a corrupt state file',
+    S.shouldReport(f, 's3', 'C:/z') === true);
+}
+
 try { fs.rmSync(gateCwd, { recursive: true, force: true }); } catch {}
 log(`  ${results.gating.ok} passed | ${results.gating.fail} failed`);
 
