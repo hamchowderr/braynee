@@ -600,8 +600,16 @@ function runGuard(payload) {
     S.shouldReport(f, 's1', 'C:/x/y') === true);
   assertGate('session-report-state suppresses the same value for that session',
     S.shouldReport(f, 's1', 'C:/x/y') === false);
-  assertGate('session-report-state normalizes separators and trailing slashes',
-    S.shouldReport(f, 's1', 'C:\\x\\y\\') === false);
+  // Trailing-slash normalization holds on every platform. Backslash separators
+  // do NOT: on POSIX a backslash is a legal filename character, so
+  // path.resolve('C:\\x\\y\\') is a different path there, not the same one.
+  // Asserting it unconditionally passed on Windows and failed the Linux CI run.
+  assertGate('session-report-state normalizes a trailing slash',
+    S.shouldReport(f, 's1', 'C:/x/y/') === false);
+  if (process.platform === 'win32') {
+    assertGate('session-report-state normalizes backslash separators (win32)',
+      S.shouldReport(f, 's1', 'C:\\x\\y') === false);
+  }
   assertGate('session-report-state reports a different value for the same session',
     S.shouldReport(f, 's1', 'C:/other') === true);
   assertGate('session-report-state keeps sessions independent',
