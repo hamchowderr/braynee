@@ -52,10 +52,56 @@ The firing check is auto-assertable from the log; the model-delivery check is
 human-eyeballed (it's CC-internal). Use a `--dir` under a git worktree to test a
 new version fully isolated from your working checkout.
 
-## Deploying a fix to the running install without a release
-For an immediate fix on the live install, copy the changed source file(s) into the
-running cache dir (`~/.claude/plugins/cache/braynee/braynee/<version>/`) and restart
-CC. A `hooks.json` change requires a restart to take effect.
+## Releasing — three phases. Never one release per fix.
+
+A release is a **batch operation**, not the reflex after a fix. Each release burns
+a version number, a CI run, a cache stage, and — the part that actually costs the
+user — a Claude Code restart. On 2026-07-25 three releases shipped in one session
+(2.1.19 → 2.1.21), one per fix, with two restarts. That is the anti-pattern this
+section exists to prevent.
+
+**Phase 1 — WORK (repeat freely, no version anything).**
+For each issue: fix → gate → commit to `main` with the issue id in the subject.
+- Gate = `node bin/braynee-self-test`. Add layer 2 (`scripts/hook-sandbox.mjs`)
+  whenever `hooks.json` or a hook's CC-boundary behavior changed.
+- **Do NOT** bump `plugin.json`/`marketplace.json`, tag, run the release workflow,
+  or touch the plugin cache. Commits accumulate; that is the point.
+- Multiple issues land as multiple commits. Ten fixes = ten commits = still zero
+  releases.
+
+**Phase 2 — RELEASE (once per batch, only when the user says ship / the batch is
+done / the session is wrapping).**
+1. Confirm `git status` clean and `git rev-list --left-right --count origin/main...HEAD`
+   is `0 0`.
+2. **Verify cross-platform BEFORE tagging** — the release workflow runs the gate on
+   Linux, so a Windows-only pass is not evidence:
+   `wsl.exe -d Ubuntu bash -lc "cd /mnt/c/Users/HamCh/code/braynee && node bin/braynee-self-test"`
+3. Bump `.claude-plugin/plugin.json` **and** `.claude-plugin/marketplace.json`
+   together; commit.
+4. `claude plugin tag .` — validates that the two agree, runs plugin validation,
+   and refuses a dirty tree. Gitignore stray runtime files rather than `--force`.
+5. `git push origin main` then `git push origin refs/tags/braynee--v<ver>`. The
+   **tag push** is what publishes; a bump alone reaches nobody, and the
+   zip/`--plugin-url` path only ever updates on a tag.
+6. Confirm the run succeeded and the release has its `braynee.zip` asset. If it
+   failed, **delete the tag (local + remote), fix, re-tag the same version** —
+   nothing was published, so the number is still free.
+
+**Phase 3 — DEPLOY to this machine (once, right after the release).**
+Stage the cache dir, flip the registry, verify, then ask for **one** restart.
+Full procedure and its traps in the `feedback-plugin-direct-cache-deploy` memory.
+Write the registry from a **script file**, never inline `node -e` (Windows paths
+lose their backslashes to shell escaping), and assert `fs.existsSync` on the
+`installPath` you just wrote — a mangled path makes CC load no plugin at all,
+silently.
+
+**Choosing when to cut a release:** the user asking to ship, a coherent batch
+being finished, or the session wrapping up. Not "a fix passed its gate."
+
+**Hotfix exception — needed live NOW, mid-batch:** copy the changed file(s) into
+the CURRENT cache version dir and restart. No bump, no tag. The cache keeps its
+old version number running newer code, which is harmless locally and is
+superseded cleanly by the next real release.
 
 ## No PRs. No pushes. Test in a directory.
 
@@ -76,6 +122,11 @@ repo like a published library that needs a PR per change.
 A passing sandbox run is "done" for braynee work. Committing/pushing/opening a
 PR are separate, user-authorized actions — never bundled in by default, never
 proposed as the next step.
+
+When the user *does* authorize shipping, that authorization is for a **batch**:
+follow the three phases above. "Ship it" after one fix does not mean cut a
+release per subsequent fix — keep committing (phase 1) and cut one release
+(phase 2) when the batch is done.
 
 If approval rules block a commit/push the user asked for, say so explicitly —
 don't narrate the work as if it shipped.
