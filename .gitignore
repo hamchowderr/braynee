@@ -9,6 +9,12 @@
 # Beads proxied shared-server DB (per-machine runtime, not versioned) — cp-uif3.3
 .beads/proxieddb/
 
+# Beads Dolt backup state (per-machine runtime bookkeeping written by bd, not
+# versioned). Left untracked these also block `claude plugin tag`, which refuses
+# to tag a release with uncommitted changes present.
+.beads/dolt-backup.json
+.beads/dolt-backup-state.json
+
 # Beads issues.jsonl is a disposable export (never the DB), kept fresh on disk
 # via export.auto=true for braynee's server-free read-hooks. Untracked here (root,
 # not .beads/.gitignore which bd doctor --fix rewrites) so git never conflicts on
