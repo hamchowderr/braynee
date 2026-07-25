@@ -6,7 +6,7 @@ description: >
   Obsidian plugins, initializes Git/Beads/QMD, and writes CLAUDE.md.
   Use when user says "setup", "set up my vault", "onboard", "initialize second brain",
   "run setup", or installs this plugin for the first time.
-argument-hint: [--reset | --company-only | --projects-only]
+argument-hint: "[--reset | --company-only | --projects-only]"
 allowed-tools: Bash(*), Write(*), Read(*), WebFetch(*), Agent(*)
 disable-model-invocation: true
 ---

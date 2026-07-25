@@ -5,7 +5,7 @@ description: >
   permanent notes with backlinks. Use when user says "add to zettelkasten", "atomic note",
   "permanent note", "note on X", "link this idea", "what atoms do I have on",
   "write a zettel", "capture this insight".
-argument-hint: [new TITLE | find QUERY | link SOURCE TARGET | inbox | review]
+argument-hint: "[new TITLE | find QUERY | link SOURCE TARGET | inbox | review]"
 allowed-tools: Bash(python3:*), Bash(node:*), Bash(obsidian:*)
 ---
 

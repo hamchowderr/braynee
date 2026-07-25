@@ -5,7 +5,7 @@ description: >
   Use when the user says "sync comms", "weekly comms", "comms for [client]", "backfill comms",
   "client communication history", "what did [client] say this week", or wants summarised weekly
   digests of conversations grouped per client and per channel.
-argument-hint: [sync CLIENT [--week YYYY-Wn] | backfill CLIENT --since YYYY-MM-DD | list | contacts CLIENT]
+argument-hint: "[sync CLIENT [--week YYYY-Wn] | backfill CLIENT --since YYYY-MM-DD | list | contacts CLIENT]"
 allowed-tools: Bash(python3:*), Bash(node:*), Bash(slk:*), Bash(claude:*), Bash(obsidian:*)
 ---
 

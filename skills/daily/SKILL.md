@@ -4,7 +4,7 @@ description: >
   Open, create, or update today's daily note. Review yesterday, plan today, log progress.
   Use when user says "open today", "daily note", "what's today", "log this",
   "what did I do yesterday", "plan my day", "morning review", "EOD".
-argument-hint: [open | yesterday | plan | log TEXT | eod]
+argument-hint: "[open | yesterday | plan | log TEXT | eod]"
 allowed-tools: Bash(python3:*), Bash(obsidian:*)
 ---
 

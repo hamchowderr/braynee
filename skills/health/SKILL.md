@@ -4,7 +4,7 @@ description: >
   Run a Brain Check — audit your second brain across Setup, Connections, Beads, Memory, and Inbox.
   Use when user says "brain check", "health check", "system status", "what's broken",
   "what needs attention", "check connections", "what's backed up".
-argument-hint: [check | setup | connections | beads | memory | inbox | self-test]
+argument-hint: "[check | setup | connections | beads | memory | inbox | self-test]"
 allowed-tools: Bash(python3:*), Bash(node:*), Bash(curl:*), Bash(braynee-self-test:*)
 ---
 

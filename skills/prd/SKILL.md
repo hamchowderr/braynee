@@ -7,7 +7,7 @@ description: >
   Acceptance Criteria section.
   Use when user says "new PRD", "draft PRD", "create PRD", "write a PRD",
   "PRD for <X>", "audit PRDs", "seed beads from PRD", "convert PRD to issues".
-argument-hint: [new <Name> | audit | seed <Name>]
+argument-hint: "[new <Name> | audit | seed <Name>]"
 allowed-tools: Bash(node:*), Bash(bd:*), Bash(obsidian:*), Read, Write, Edit, AskUserQuestion
 ---
 

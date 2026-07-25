@@ -4,7 +4,7 @@ description: >
   Export Claude Code sessions to Obsidian markdown. Sync, list, resume, annotate sessions.
   Use when user says "sync session", "export session", "log session",
   "add session note", "close session", "resume session".
-argument-hint: [sync | list | export --today | resume | note TEXT | close TEXT]
+argument-hint: "[sync | list | export --today | resume | note TEXT | close TEXT]"
 allowed-tools: Bash(python3:*)
 ---
 
