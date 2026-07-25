@@ -83,7 +83,7 @@ try {
   eq('repeated separators do not create empty segments',
      M.projectSlugFrom('a--b__c'), 'A-B-C');
   eq('existing capitals are preserved after the first letter',
-     M.projectSlugFrom('myRP-build'), 'MyRP-Build');
+     M.projectSlugFrom('myAPI-build'), 'MyAPI-Build');
 
   // ── findTasknoteForIssueId ─────────────────────────────────────────────────
   const note = (name, fm) => {
