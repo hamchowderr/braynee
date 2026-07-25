@@ -622,6 +622,40 @@ function assertRule(label, cond) {
     /supersede/i.test(r));
   assertRule('beads-conventions documents the create-time guard (validation.on-create)',
     /validation\.on-create/i.test(r));
+
+  // cp-ccsh.7 / B6: two divergent copies of qmd-wrapper.mjs exist on a dev box —
+  // the standalone ~/.claude/scripts/ one (stale) and the plugin's bundled one
+  // (what every hook actually invokes). A shipped asset pointing at the
+  // standalone copy teaches users to run code two months behind the hooks. The
+  // bundled path is the single source of truth.
+  const dd = path.join(PLUGIN_ROOT, 'skills', 'setup', 'rules-templates', 'dev-defaults.md');
+  const ddText = fs.existsSync(dd) ? fs.readFileSync(dd, 'utf8') : '';
+  assertRule('dev-defaults.md ships in rules-templates', !!ddText);
+  assertRule('dev-defaults.md points QMD at the bundled wrapper (cp-ccsh.7)',
+    /\$\{CLAUDE_PLUGIN_ROOT\}\/scripts\/qmd-wrapper\.mjs/.test(ddText));
+
+  // Repo-wide: nothing shipped may reference the standalone copy.
+  const STALE_QMD = /[~$]\{?HOME\}?[\\/]?\.claude[\\/]scripts[\\/]qmd-wrapper|~[\\/]\.claude[\\/]scripts[\\/]qmd-wrapper/;
+  const stale = [];
+  {
+    const skipDirs = new Set(['node_modules', 'mockups', '.git', '.beads', '.github']);
+    const walkDocs = (dir, rel = '') => {
+      for (const e of (fs.existsSync(dir) ? fs.readdirSync(dir, { withFileTypes: true }) : [])) {
+        if (skipDirs.has(e.name)) continue;
+        const fp = path.join(dir, e.name);
+        const r = rel ? `${rel}/${e.name}` : e.name;
+        if (e.isDirectory()) { walkDocs(fp, r); continue; }
+        if (!/\.(md|js|mjs|json|py|toml)$/i.test(e.name)) continue;
+        let t; try { t = fs.readFileSync(fp, 'utf8'); } catch { continue; }
+        t.split(/\r?\n/).forEach((line, i) => {
+          if (STALE_QMD.test(line)) stale.push(`${r}:${i + 1}`);
+        });
+      }
+    };
+    walkDocs(PLUGIN_ROOT);
+  }
+  assertRule(`no shipped asset references the standalone ~/.claude/scripts/qmd-wrapper.mjs (cp-ccsh.7)${stale.length ? ' — ' + stale.join(', ') : ''}`,
+    stale.length === 0);
 }
 log(`  ${results.rules.ok} passed | ${results.rules.fail} failed`);
 
@@ -640,8 +674,188 @@ function assertHealth(label, cond) {
   assertHealth('health.py cmd_beads emits a traceability line (cp-ci9.3)', /traceability:/.test(hp));
   assertHealth('health.py hygiene runs lint + orphans + stale + guard',
     /_bd\("lint"\)/.test(hp) && /_bd\("orphans"\)/.test(hp) && /_bd\("stale"\)/.test(hp) && /validation\.on-create/.test(hp));
+
+  // cp-ccsh.4 / B3: the MEMORY.md tripwire once recommended "run /health or
+  // trigger a memory resync" — /braynee:health does not resync, and pre-cp-ccsh.2
+  // a resync rebuilt the index oversized, so the remedy was the cause. The advice
+  // must name the real lever (shortening name:/description: frontmatter) and must
+  // not send the user to /health for a resync it does not perform.
+  // Bounded to the warn() branch by the `else:` that follows it. Do not anchor on
+  // `)\n` — health.py is CRLF, so that never matches and every assertion below
+  // would vacuously pass against an empty string.
+  const tripwire = (hp.match(/approaching CC's 25KB startup-load[\s\S]{0,900}?else:/) || [''])[0];
+  assertHealth('health.py MEMORY.md tripwire still fires at 22KB', /kb >= 22/.test(hp));
+  assertHealth('MEMORY.md advice names the frontmatter lever, not just a resync (cp-ccsh.4)',
+    /description:/.test(tripwire) && /name:/.test(tripwire));
+  assertHealth('MEMORY.md advice does not tell the user to run /health to resync (cp-ccsh.4)',
+    !/run \/health/.test(tripwire));
 }
 log(`  ${results.health.ok} passed | ${results.health.fail} failed`);
+
+// ── 13. No owner-specific data in shipped assets (cp-ccsh.6 / B5) ────────────
+// braynee ships to other people: a shipped asset must never name the author's
+// own businesses or repos. Formula steps are the sharpest case — they are
+// instructions a user actually follows ("UI work uses shadcn via the Otaku
+// registry" told every user to use a registry they cannot reach). Doc examples
+// and code comments are milder but the same rule.
+//
+// Legitimately excluded: LICENSE, README (install lines + published namespace),
+// and the publisher/repository metadata in plugin.json / marketplace.json — that
+// is authorship, not user data. Anywhere else, a line is allowed only if it is a
+// braynee repository URL.
+//
+// "Shipped" is defined as TRACKED, minus .gitattributes export-ignore, because
+// that is exactly what the release ships: braynee-release.yml builds the zip with
+// `git archive HEAD`. Deriving the set instead of hand-listing directories keeps
+// the boundary honest in both directions — a personal git-ignored file (e.g.
+// skills/session-backfill/scripts/project_map.json, which legitimately holds the
+// user's own project mappings) never trips the gate, while a NEWLY TRACKED file
+// carrying owner data does. Falls back to a filesystem walk outside a git
+// checkout (e.g. run from an extracted zip).
+log('\n=== 13. No owner-specific data in shipped assets ===');
+results.ownerdata = { ok: 0, fail: 0, errors: [] };
+{
+  const OWNER_RE = /otaku|myrp|foreman|chowderr/i;
+  const REPO_URL_RE = /github\.com\/hamchowderr\/braynee/i;
+  const SKIP_FILES = new Set([
+    'LICENSE', 'README.md',
+    '.claude-plugin/plugin.json',
+    '.claude-plugin/marketplace.json',
+    // The user's personal session-backfill overrides. Git-ignored, so the git
+    // path already excludes it — named here so the no-git fallback, which cannot
+    // read .gitignore, does not false-positive on it in a working checkout. What
+    // actually ships is project_map.example.json, which the scan does cover.
+    'skills/session-backfill/scripts/project_map.json',
+  ]);
+  const TEXT_RE = /\.(js|mjs|cjs|json|md|py|toml|ya?ml|txt|sh|ps1)$/i;
+
+  // Prefixes .gitattributes strips from the release zip.
+  const exportIgnored = [];
+  try {
+    for (const line of fs.readFileSync(path.join(PLUGIN_ROOT, '.gitattributes'), 'utf8').split(/\r?\n/)) {
+      if (!/export-ignore/.test(line)) continue;
+      const pat = line.trim().split(/\s+/)[0];
+      if (pat) exportIgnored.push(pat.replace(/\/$/, ''));
+    }
+  } catch { /* no .gitattributes — nothing stripped */ }
+
+  let shipped = null;
+  try {
+    const r = spawnSync('git', ['ls-files', '-z'], {
+      cwd: PLUGIN_ROOT, encoding: 'utf8', windowsHide: true,
+    });
+    if (r.status === 0 && r.stdout) {
+      const files = r.stdout.split('\0').filter(Boolean);
+      if (files.length) shipped = files;
+    }
+  } catch { /* not a git checkout — fall back below */ }
+
+  if (!shipped) {
+    const SKIP_DIRS = new Set(['node_modules', 'mockups']);
+    const walkAll = (dir, rel = '') => {
+      const acc = [];
+      for (const e of (fs.existsSync(dir) ? fs.readdirSync(dir, { withFileTypes: true }) : [])) {
+        if (SKIP_DIRS.has(e.name) || e.name.startsWith('.')) continue;
+        const fp = path.join(dir, e.name);
+        const r = rel ? `${rel}/${e.name}` : e.name;
+        if (e.isDirectory()) acc.push(...walkAll(fp, r));
+        else acc.push(r);
+      }
+      return acc;
+    };
+    shipped = walkAll(PLUGIN_ROOT);
+  }
+
+  const offenders = [];
+  for (const rel of shipped) {
+    if (SKIP_FILES.has(rel) || !TEXT_RE.test(rel)) continue;
+    if (exportIgnored.some(p => rel === p || rel.startsWith(p + '/'))) continue;
+    let text;
+    try { text = fs.readFileSync(path.join(PLUGIN_ROOT, rel), 'utf8'); } catch { continue; }
+    text.split(/\r?\n/).forEach((line, i) => {
+      if (!OWNER_RE.test(line) || REPO_URL_RE.test(line)) return;
+      offenders.push(`${rel}:${i + 1}: ${line.trim().slice(0, 90)}`);
+    });
+  }
+
+  const label = 'no shipped asset names the author\'s businesses or repos (cp-ccsh.6)';
+  if (offenders.length === 0) { results.ownerdata.ok++; log(`  OK: ${label}`); }
+  else {
+    results.ownerdata.fail++;
+    results.ownerdata.errors.push({ test: label, offenders });
+    log(`  FAIL: ${label}`);
+    for (const o of offenders.slice(0, 20)) log(`        ${o}`);
+    if (offenders.length > 20) log(`        ...and ${offenders.length - 20} more`);
+  }
+
+  // The formula steps are the highest-stakes case, so assert them directly too:
+  // a genericized instruction must survive even if the scan above is relaxed.
+  const engagement = path.join(PLUGIN_ROOT, 'formulas', 'engagement.formula.toml');
+  const et = fs.existsSync(engagement) ? fs.readFileSync(engagement, 'utf8') : '';
+  const engLabel = 'engagement formula steps carry no owner-specific instruction';
+  if (et && !OWNER_RE.test(et)) { results.ownerdata.ok++; log(`  OK: ${engLabel}`); }
+  else { results.ownerdata.fail++; results.ownerdata.errors.push({ test: engLabel }); log(`  FAIL: ${engLabel}`); }
+}
+log(`  ${results.ownerdata.ok} passed | ${results.ownerdata.fail} failed`);
+
+// ── 14. hooks.json policy: timeouts + no `if` gating (cp-ccsh.9 / B8) ────────
+// Every hook sits in the user's critical path. With no declared timeout a hung
+// hook stalls the turn at CC's default; measured over 50 transcripts, the
+// per-prompt event had 7 timeouts and a 143s worst case. Blocking, per-turn
+// events therefore carry tight explicit budgets.
+//
+// Also guards this repo's cardinal rule: the hooks.json `if` field is
+// version-unreliable (on CC 2.1.143 an if-bearing hook NEVER fires, which
+// silently broke the task mirror; older CC ignores `if` and fires on every
+// command). Hooks must self-gate in JS instead. Nothing asserted this before.
+log('\n=== 14. hooks.json policy (timeouts + no `if`) ===');
+results.hookpolicy = { ok: 0, fail: 0, errors: [] };
+function assertPolicy(label, cond) {
+  if (cond) { results.hookpolicy.ok++; log(`  OK: ${label}`); }
+  else { results.hookpolicy.fail++; results.hookpolicy.errors.push({ test: label }); log(`  FAIL: ${label}`); }
+}
+{
+  const hjPath = path.join(PLUGIN_ROOT, 'hooks', 'hooks.json');
+  let hj = null;
+  try { hj = JSON.parse(fs.readFileSync(hjPath, 'utf8')); } catch { /* section 2 reports the parse */ }
+  const events = (hj && hj.hooks) || {};
+  const entries = [];
+  for (const [event, groups] of Object.entries(events)) {
+    for (const g of groups || []) {
+      for (const h of g.hooks || []) {
+        entries.push({
+          event, group: g, hook: h,
+          script: String((h.args && h.args[0]) || h.command || '').split('/').pop(),
+        });
+      }
+    }
+  }
+  assertPolicy('hooks.json has hook entries to check', entries.length > 0);
+
+  // Acceptance criterion: the three per-turn events must all declare a timeout.
+  const PER_TURN = new Set(['UserPromptSubmit', 'PreToolUse', 'PostToolUse']);
+  const perTurn = entries.filter(e => PER_TURN.has(e.event));
+  const perTurnMissing = perTurn.filter(e => typeof e.hook.timeout !== 'number');
+  assertPolicy(`every UserPromptSubmit/PreToolUse/PostToolUse hook declares a timeout (${perTurn.length} entries)${perTurnMissing.length ? ' — missing: ' + perTurnMissing.map(e => `${e.event}/${e.script}`).join(', ') : ''}`,
+    perTurn.length > 0 && perTurnMissing.length === 0);
+
+  // Stronger: nothing anywhere runs unbounded.
+  const anyMissing = entries.filter(e => typeof e.hook.timeout !== 'number');
+  assertPolicy(`every hook entry declares a timeout (${entries.length} entries)${anyMissing.length ? ' — missing: ' + anyMissing.map(e => `${e.event}/${e.script}`).join(', ') : ''}`,
+    anyMissing.length === 0);
+
+  // A blocking per-turn hook must stay tightly bounded — a generous timeout here
+  // defeats the point. Async entries are exempt: they never hold up the turn.
+  const loose = perTurn.filter(e => e.hook.async !== true && typeof e.hook.timeout === 'number' && e.hook.timeout > 15);
+  assertPolicy(`no blocking per-turn hook declares a timeout over 15s${loose.length ? ' — ' + loose.map(e => `${e.event}/${e.script}=${e.hook.timeout}`).join(', ') : ''}`,
+    loose.length === 0);
+
+  // Cardinal rule (cp-068): no `if` gating, anywhere.
+  const ifGated = entries.filter(e => e.hook.if !== undefined || e.group.if !== undefined);
+  assertPolicy(`no hook is gated with the version-unreliable \`if\` field (cp-068)${ifGated.length ? ' — ' + ifGated.map(e => `${e.event}/${e.script}`).join(', ') : ''}`,
+    ifGated.length === 0);
+}
+log(`  ${results.hookpolicy.ok} passed | ${results.hookpolicy.fail} failed`);
 
 // ── Summary ──────────────────────────────────────────────────────────────────
 const totalOk = Object.values(results).reduce((s, r) => s + r.ok, 0);

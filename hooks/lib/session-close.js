@@ -18,6 +18,9 @@ const path = require('path');
 const os = require('os');
 const fs = require('fs');
 const { findCodeRoot, sessionDir } = require(path.join(__dirname, 'is-code-context.js'));
+const log = require(path.join(__dirname, 'hook-logger.js'));
+
+const LOG_NAME = 'session-close';
 
 const { getVaultRoot } = require(path.join(__dirname, '..', '..', 'scripts', 'lib', 'vault-root.js'));
 const VAULT_DIR = getVaultRoot();
@@ -157,7 +160,11 @@ function closeActiveSession(data, { stopTimer = false } = {}) {
     closeSessionFile(session.filepath, session.content);
     result.closed = true;
     result.file = path.basename(session.filepath);
-  } catch {}
+  } catch (e) {
+    // Swallowed so session end never fails — but an unclosed session note is
+    // exactly the kind of silent drift B9 exists to surface (cp-ccsh.11).
+    log.debug(LOG_NAME, `failed to close the session note: ${e && e.message}`);
+  }
   return result;
 }
 

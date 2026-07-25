@@ -339,13 +339,26 @@ def cmd_memory(args, vault: Path):
         # MEMORY.md tripwire: CC auto-loads only the first 200 lines / 25KB of
         # MEMORY.md at session start. Warn before the index crosses the cap so it
         # never silently truncates (cp-1nl). 22KB leaves headroom below ~24.4KB.
+        #
+        # The advice used to say "run /health or trigger a memory resync", which
+        # was doubly wrong (cp-ccsh.4 / B3): /braynee:health does not resync, and
+        # before cp-ccsh.2 a resync bounded only the description, so it REBUILT
+        # the folder at 26,404 bytes — the recommended remedy was the cause. With
+        # the whole-line budget in place a resync now measurably shrinks the index
+        # (26,404 -> 19,614 bytes on the 126-note folder), so name the action that
+        # actually triggers one plus the lever that shrinks it further.
         memory_index = memory_dir / "MEMORY.md"
         if memory_index.exists():
             kb = memory_index.stat().st_size / 1024
             if kb >= 22:
                 warn(
                     f"MEMORY.md is {kb:.1f}KB — approaching CC's 25KB startup-load "
-                    f"cap; run /health or trigger a memory resync to regenerate it"
+                    f"cap. Save any edit to MEMORY.md: that fires the resync hook, "
+                    f"which rebuilds the index under a 150-char whole-line budget. "
+                    f"If it stays large, shorten the longest name: and description: "
+                    f"frontmatter in '2. Areas/Claude Memory/' — a long name: is "
+                    f"what pushes a line over — and retire stale entries to "
+                    f"ARCHIVED.md"
                 )
             else:
                 ok(f"MEMORY.md index {kb:.1f}KB (under 25KB load cap)")

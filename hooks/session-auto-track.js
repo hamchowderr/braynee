@@ -94,7 +94,7 @@ function findProjectName(folderName) {
   return null;
 }
 
-// Convert "foreman" → "Foreman", "ncat-mcp" → "NCAT MCP"
+// Convert "webapp" → "Webapp", "ncat-mcp" → "NCAT MCP"
 function folderNameToTitle(folder) {
   // ALL CAPS acronyms (3-4 chars) get uppercased; otherwise titlecase each part
   return folder

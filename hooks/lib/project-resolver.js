@@ -7,32 +7,66 @@
 //   - session-export-qmd.js  (transcript `project:` frontmatter)
 //   - tasknotes-mirror.js     (repoint mtn's [[projects/<slug>]] to the real note)
 //
-// Matching order: explicit alias (codenames / repo-slugs that don't match the
-// note name) -> alphanumeric-normalized exact -> safe longest-prefix.
+// Matching order: explicit alias from runtime config (codenames / repo-slugs
+// that don't match the note name) -> alphanumeric-normalized exact -> safe
+// longest-prefix. Everything except the alias table is user-independent.
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 
 const norm = (s) => String(s).toLowerCase().replace(/[^a-z0-9]/g, '');
 
-// codename / repo-slug -> real vault note (relpath without .md)
-const ALIAS = {
-  fivemstudio: '1. Projects/myRP.build/myRP.build',
-  fivemstudioweb: '1. Projects/myRP.build/myRP.build',
-  myrpbuild: '1. Projects/myRP.build/myRP.build',
-  chowderr: '1. Projects/chowderr.dev',
-  brainy: '1. Projects/Braynee/Braynee',
-  brainyweb: '1. Projects/Braynee/Braynee',
-  agentplatform: '1. Projects/Claude Agent Studio',
-  doltmastralab: '1. Projects/Mastra/Mastra Lab',
-  ghlbuilder: '1. Projects/Mastra/Mastra GHL',
-  templatemastrabase: '1. Projects/Mastra/Mastra Base',
-  templatemastrarag: '1. Projects/Mastra/Mastra RAG',
-  templatemastranca: '1. Projects/Mastra/Mastra NCAT',
-  templatemastrancat: '1. Projects/Mastra/Mastra NCAT',
-  templatemastravoice: '1. Projects/Mastra/Mastra Voice',
-  voicefoundation: '1. Projects/Mastra/Voice Builder',
-};
+// Aliases are USER DATA, not code (cp-ccsh.5 / B4). They used to ship as a
+// hard-coded table of one particular vault owner's repo slugs and note paths,
+// which is dead weight for everyone else and actively harmful when a slug like
+// `brainy` is a plausible repo name in someone else's vault: it would resolve to
+// a note that does not exist there and write a broken [[wikilink]] into session
+// and transcript frontmatter. The rest of this module is already universal.
+//
+// Loaded at resolve time from the first of these that exists; absent → no
+// aliases, and resolution falls back to the vault index alone:
+//   1. $BRAYNEE_PROJECT_ALIASES              (explicit file path; used by tests)
+//   2. <vault>/.braynee/project-aliases.json (travels with the vault it maps)
+//   3. ~/.claude/braynee/project-aliases.json (machine-wide)
+//
+// $BRAYNEE_PROJECT_ALIASES is authoritative when set: it does NOT fall through
+// to the other two if the file is missing. Otherwise a test asking for "no
+// aliases" would silently pick up the machine-wide file.
+//
+// Shape — a flat slug → vault relpath (no .md) object. Keys are normalized on
+// load, so `my-repo`, `My Repo` and `myrepo` are all the same key:
+//   { "some-repo-slug": "1. Projects/Some Project",
+//     "other-slug":     "1. Projects/Group/Other Project" }
+const ALIAS_FILENAME = 'project-aliases.json';
+
+function aliasFilePaths(vaultDir) {
+  if (process.env.BRAYNEE_PROJECT_ALIASES) return [process.env.BRAYNEE_PROJECT_ALIASES];
+  const candidates = [];
+  if (vaultDir) candidates.push(path.join(vaultDir, '.braynee', ALIAS_FILENAME));
+  candidates.push(path.join(os.homedir(), '.claude', 'braynee', ALIAS_FILENAME));
+  return candidates;
+}
+
+// Never throws and never partially applies: a malformed file yields {} so a bad
+// edit degrades to index-only resolution instead of breaking every hook.
+function loadAliases(vaultDir) {
+  for (const p of aliasFilePaths(vaultDir)) {
+    let raw;
+    try {
+      if (!fs.existsSync(p)) continue;
+      raw = JSON.parse(fs.readFileSync(p, 'utf8'));
+    } catch { continue; }
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue;
+    const out = {};
+    for (const [k, v] of Object.entries(raw)) {
+      const nk = norm(k);
+      if (nk && typeof v === 'string' && v.trim()) out[nk] = v.trim();
+    }
+    return out;
+  }
+  return {};
+}
 
 function buildIndex(vaultDir) {
   const pages = new Map(); // norm(basename) -> relpath w/o .md
@@ -59,7 +93,10 @@ function resolveProjectLink(name, vaultDir) {
   try {
     const n = norm(name);
     if (!n) return null;
-    if (ALIAS[n]) return fs.existsSync(path.join(vaultDir, ALIAS[n] + '.md')) ? ALIAS[n] : null;
+    const alias = loadAliases(vaultDir);
+    // An alias still has to point at a note that exists — a stale mapping
+    // resolves to null rather than emitting a broken wikilink.
+    if (alias[n]) return fs.existsSync(path.join(vaultDir, alias[n] + '.md')) ? alias[n] : null;
     const pages = buildIndex(vaultDir);
     if (pages.has(n)) return pages.get(n);
     let best = null;
@@ -74,4 +111,4 @@ function resolveProjectLink(name, vaultDir) {
   }
 }
 
-module.exports = { resolveProjectLink, norm };
+module.exports = { resolveProjectLink, norm, loadAliases, aliasFilePaths, ALIAS_FILENAME };

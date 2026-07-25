@@ -18,6 +18,9 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const log = require(path.join(__dirname, 'lib', 'hook-logger.js'));
+
+const HOOK = 'context-budget-warn';
 
 const DEFAULT_THRESHOLD_PCT = 60;
 
@@ -77,20 +80,31 @@ function persistedWindowSize(sessionId) {
 // side (input + cache read + cache creation); output_tokens are the reply, not
 // part of the carried context.
 function readUsage(transcriptPath) {
-  const lines = fs.readFileSync(transcriptPath, 'utf8').split('\n');
+  const text = fs.readFileSync(transcriptPath, 'utf8');
+  const lines = text.split('\n');
   let usage = null;
   let model = '';
-  let has1m = false;
-  for (const line of lines) {
+
+  // The 1M-context beta marker can appear anywhere, so test the raw text once.
+  // A regex over a string is cheap; JSON.parse per line is not.
+  const has1m = /context-1m/i.test(text);
+
+  // Scan BACKWARD and stop as soon as both fields are found. This hook runs on
+  // EVERY prompt, and only the LATEST usage block matters, so parsing every line
+  // forward did O(session length) JSON.parse work per prompt — measured at
+  // 694ms on a 65MB transcript and growing (cp-ccsh.9 / B8). A backward scan is
+  // equivalent: the first usage found from the end IS the last one in the file.
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i];
     if (!line.trim()) continue;
-    if (!has1m && /context-1m/i.test(line)) has1m = true; // 1M-context beta marker
-    try {
-      const e = JSON.parse(line);
-      const m = e.message;
-      if (!m) continue;
-      if (m.model) model = m.model;
-      if (m.usage) usage = m.usage;
-    } catch { /* skip */ }
+    // Cheap reject before parsing — most lines carry neither field.
+    if (!line.includes('"usage"') && !line.includes('"model"')) continue;
+    let m;
+    try { m = JSON.parse(line).message; } catch { continue; }
+    if (!m) continue;
+    if (!usage && m.usage) usage = m.usage;
+    if (!model && m.model) model = m.model;
+    if (usage && model) break;
   }
   if (!usage) return null;
   const loaded =
@@ -146,6 +160,11 @@ process.stdin.on('end', () => {
       `Native auto-compact won't fire until ~78%. Run \`/compact\` now to summarize ` +
       `and free space before context gets tight. (braynee context-budget hook)`
     );
-  } catch { /* never block the prompt */ }
+  } catch (e) {
+    // Never block the prompt — but do not vanish either (cp-ccsh.11). If this
+    // hook breaks, the user simply stops being warned about context and there is
+    // otherwise no way to tell.
+    log.debug(HOOK, `failed, no budget warning emitted: ${e && e.message}`);
+  }
   process.exit(0);
 });

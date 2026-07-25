@@ -72,7 +72,16 @@ function persistContextWindow(sessionId, size, usedPct, exceeds200k) {
     // stable property of the model/plan, so the most-recent value is a safe
     // default until this session's own file appears.
     fs.writeFileSync(path.join(dir, 'context-window-latest.json'), payload);
-  } catch { /* non-fatal — statusline must never throw */ }
+  } catch (e) {
+    // Non-fatal — the statusline must never throw. But context-budget-warn reads
+    // this file for the window size, so a failing write silently disables context
+    // warnings in a way nothing else reports (cp-ccsh.11). Required lazily and
+    // guarded: the statusline renders constantly and must not gain a hard dep.
+    try {
+      require(path.join(__dirname, 'lib', 'hook-logger.js'))
+        .debug('statusline', `could not persist context-window state: ${e && e.message}`);
+    } catch { /* statusline must never throw */ }
+  }
 }
 
 // ─── Live State (written by statusline-state.js async hook) ──────────────────

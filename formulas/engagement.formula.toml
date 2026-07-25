@@ -93,7 +93,8 @@ sub-work is done.
 
 Universal rules:
 - Only build what's in scope. No invented features.
-- UI work uses shadcn via the Otaku registry — no hand-rolled primitives.
+- UI work uses the project's existing component registry / design system —
+  no hand-rolled primitives.
 - Agent work follows the Mastra template patterns (mastra-base).
 - Never commit secrets — `infisical run` to inject; placeholders in .env.
 """
@@ -172,7 +173,7 @@ Wrap the engagement so {{client}} can operate without you:
 1. Handoff doc (README or wiki page): how to use, how to update content,
    where logs live, who to contact for what.
 2. Access transfer where it makes sense (repo, n8n, domain), or document
-   what stays under Otaku Solutions and why.
+   what stays under your own accounts and why.
 3. Send the handoff doc + final invoice. Capture a testimonial if they're
    happy.
 4. Update the {{client}} project note: status → shipped, add production

@@ -39,7 +39,7 @@ python3 {baseDir}/scripts/backfill.py --project sophon-webapp
 python3 {baseDir}/scripts/backfill.py --project sophon-webapp --dry-run
 
 # Limit to N most-recent sessions per project
-python3 {baseDir}/scripts/backfill.py --project foreman --limit 5
+python3 {baseDir}/scripts/backfill.py --project sophon-webapp --limit 5
 
 # All projects (the big backfill)
 python3 {baseDir}/scripts/backfill.py --all
@@ -48,7 +48,7 @@ python3 {baseDir}/scripts/backfill.py --all
 python3 {baseDir}/scripts/backfill.py --all --vault "/path/to/Obsidian Vault"
 
 # Opt in to the raw API (Console billing — only if you explicitly want it)
-ANTHROPIC_API_KEY=... python3 {baseDir}/scripts/backfill.py --project foreman --use-api
+ANTHROPIC_API_KEY=... python3 {baseDir}/scripts/backfill.py --project sophon-webapp --use-api
 ```
 
 ## Vault resolution

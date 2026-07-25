@@ -41,11 +41,13 @@ eq('generic "scripts" is ignored', isIgnoredFolder('scripts', EMPTY_ENV, NO_CONF
 eq('match is case-insensitive (CODE)', isIgnoredFolder('CODE', EMPTY_ENV, NO_CONFIG_HOME), true);
 eq('surrounding whitespace trimmed', isIgnoredFolder('  web  ', EMPTY_ENV, NO_CONFIG_HOME), true);
 
-eq('real project "foreman" is NOT ignored', isIgnoredFolder('foreman', EMPTY_ENV, NO_CONFIG_HOME), false);
-eq('real project "myrp-build-web" is NOT ignored', isIgnoredFolder('myrp-build-web', EMPTY_ENV, NO_CONFIG_HOME), false);
+eq('real project "sophon-webapp" is NOT ignored', isIgnoredFolder('sophon-webapp', EMPTY_ENV, NO_CONFIG_HOME), false);
+// A real project whose name merely ENDS in a generic word must still survive —
+// the ignore list matches the whole basename, never a substring.
+eq('real project "acme-platform-web" is NOT ignored', isIgnoredFolder('acme-platform-web', EMPTY_ENV, NO_CONFIG_HOME), false);
 
 // Monorepo package/subdir names are now DEFAULT-ignored (cp-zpa) — they recurred
-// as junk project stubs (e.g. a session from `foreman/packages/agents` stamped
+// as junk project stubs (e.g. a session from `some-app/packages/agents` stamped
 // out an "Agents" project; a `server/` dir stamped out "Server").
 eq('"agents" is now a default-ignored monorepo name', isIgnoredFolder('agents', EMPTY_ENV, NO_CONFIG_HOME), true);
 eq('"app" is now a default-ignored monorepo name', isIgnoredFolder('app', EMPTY_ENV, NO_CONFIG_HOME), true);
