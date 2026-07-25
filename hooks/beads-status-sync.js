@@ -37,20 +37,11 @@ function run(cmd, opts = {}) {
   } catch { return null; }
 }
 
+// cp-7kfh: one shared, RECURSIVE lookup. This was a local copy that read only
+// `1. Projects/*.md` and so missed every note nested in a project subfolder.
+const { findProjectName: lookupProjectName } = require(path.join(__dirname, 'lib', 'vault-projects.js'));
 function findProjectName(folderName) {
-  const projectsDir = path.join(VAULT_DIR, '1. Projects');
-  if (!fs.existsSync(projectsDir)) return null;
-  for (const file of fs.readdirSync(projectsDir).filter(f => f.endsWith('.md'))) {
-    try {
-      const content = fs.readFileSync(path.join(projectsDir, file), 'utf8');
-      const folderMatch = content.match(/^folder:\s*"?([^"\n]+)"?$/m);
-      if (folderMatch && folderMatch[1].trim().toLowerCase() === folderName.toLowerCase()) {
-        const nameMatch = content.match(/^name:\s*"?([^"\n]+)"?$/m);
-        return nameMatch ? nameMatch[1].trim() : file.replace('.md', '');
-      }
-    } catch { continue; }
-  }
-  return null;
+  return lookupProjectName(folderName, VAULT_DIR);
 }
 
 function findActiveSession(projectName) {
