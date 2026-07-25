@@ -43,8 +43,8 @@ if (!qmdJs) {
 //
 // qmd reports each hit as a qmd:// virtual path whose segments are slugified:
 // spaces, dots, ' - ' and ' & ' ALL collapse to a single '-'. Case is preserved.
-//   real: 1. Projects/myRP.build/myRP.build - Competitor Landscape & Tutorials.md
-//   slug: 1-Projects/myRP-build/myRP-build-Competitor-Landscape-Tutorials.md
+//   real: 1. Projects/acme.app/acme.app - Competitor Landscape & Tutorials.md
+//   slug: 1-Projects/acme-app/acme-app-Competitor-Landscape-Tutorials.md
 // The mapping is many-to-one, so a slug can never be reversed by string surgery,
 // and qmd stores only the slug (it is content-addressable) so it cannot hand the
 // real path back. Feeding a slug to Read/Edit 404s.

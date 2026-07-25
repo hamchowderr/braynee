@@ -17,6 +17,9 @@ const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const log = require(path.join(__dirname, 'lib', 'hook-logger.js'));
+
+const HOOK = 'stop-task-verify';
 
 const HOME = os.homedir();
 const ACTIVE_ISSUE_FILE = path.join(HOME, '.claude', 'beads-active-issue.json');
@@ -130,7 +133,10 @@ process.stdin.on('end', () => {
 
     process.stdout.write(JSON.stringify({ systemMessage: msg }));
     process.exit(0);
-  } catch {
+  } catch (e) {
+    // Exit 0 regardless — a Stop hook must never wedge the turn. Record it so a
+    // silently-dead task verifier is diagnosable (cp-ccsh.11).
+    log.debug(HOOK, `failed, no task-verify message emitted: ${e && e.message}`);
     process.exit(0);
   }
 });

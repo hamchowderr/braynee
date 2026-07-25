@@ -66,7 +66,13 @@ function findTasknoteForIssueId(issueId) {
     notes = fs.readdirSync(TASKNOTES_DIR).filter((n) => n.endsWith('.md')).map((name) => {
       const filepath = path.join(TASKNOTES_DIR, name);
       let fm = '';
-      try { fm = (fs.readFileSync(filepath, 'utf8').match(/^---\n([\s\S]*?)\n---/) || [, ''])[1]; } catch {}
+      // BOM- and CRLF-tolerant, matching completeMtnTaskByIssueId's regex below.
+      // This used to be /^---\n([\s\S]*?)\n---/ (LF only, no BOM), so on Windows
+      // a CRLF task note was invisible to the mirror: it could never be found,
+      // which meant ensureMtnTask created a DUPLICATE note for an issue that
+      // already had one, and completeMtnTaskByIssueId silently no-op'd so closed
+      // work stayed "open". Found by tasknotes-mirror.test.js (cp-ccsh.10).
+      try { fm = (fs.readFileSync(filepath, 'utf8').match(/^﻿?---\r?\n([\s\S]*?)\r?\n---/) || [, ''])[1]; } catch {}
       return { filepath, fm };
     });
   } catch { return null; }

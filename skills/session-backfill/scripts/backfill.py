@@ -190,8 +190,9 @@ def _override_entry(kebab: str):
     value is EITHER a plain string (the wikilink; folder derived from it) OR an
     object with optional 'wikilink' and 'folder' keys — the object form lets a
     user pin the [[link]] and the exact Sessions/ folder INDEPENDENTLY, e.g. an
-    old project name (`fivem-studio`) that should fold into its renamed
-    successor's existing folder (`myrp-build`) while linking `[[myRP.build]]`."""
+    old project name (`old-codename`) that should fold into its renamed
+    successor's existing folder (`sophon-webapp`) while linking
+    `[[Sophon Webapp]]`."""
     if kebab in OVERRIDES:
         return OVERRIDES[kebab]
     last = kebab.split("-")[-1]
@@ -235,7 +236,7 @@ def resolve_project_folder(sessions_dir: Path, kebab: str) -> Path:
     EXISTING folder over the computed name, so a backfill consolidates into the
     folder a project's notes already live in rather than spawning a case-variant
     twin. The real hook wrote folders inconsistently over time (lowercase
-    `myrp-build/` vs Title-Kebab `Myrp-Build/`); matching case-insensitively
+    `sophon-webapp/` vs Title-Kebab `Sophon-Webapp/`); matching case-insensitively
     against both the raw kebab and the Title-Kebab form heals that drift.
     Falls back to the Title-Kebab name only when no folder exists yet. A
     project_map override with an explicit 'folder' wins outright — it routes a

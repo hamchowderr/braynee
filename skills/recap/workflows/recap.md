@@ -54,10 +54,10 @@ Group sessions by date. Identify themes across them. Show the user:
 Yesterday — 3 sessions
 
   14:23  second-brain  (12 msgs)  "scaffold.py --check implementation"
-  16:45  foreman       (8 msgs)   "Supabase auth migration"
+  16:45  webapp        (8 msgs)   "Supabase auth migration"
   19:12  second-brain  (5 msgs)   "Docker test fixes"
 
-Themes: Setup script audit mode, Docker test harness. Foreman auth branch in progress.
+Themes: Setup script audit mode, Docker test harness. Webapp auth branch in progress.
 ```
 
 ---

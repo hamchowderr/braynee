@@ -33,7 +33,7 @@ const os = require('os');
 // Generic folder basenames — rarely a sellable/trackable product on their own.
 // Includes common monorepo package/subdir names (app, api, agents, packages,
 // server, ...) which recurred as junk stubs in practice (e.g. a session from
-// `foreman/packages/agents` stamped out an "Agents" project; a `server/` dir
+// `some-app/packages/agents` stamped out an "Agents" project; a `server/` dir
 // stamped out "Server"). This is SAFE because session-auto-track checks for a
 // manual project note FIRST — any real product intentionally foldered with one
 // of these names still tracks via the manual-note override; the ignore-list

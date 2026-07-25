@@ -289,7 +289,16 @@ function writeAnchors(map) {
     }
     fs.mkdirSync(path.dirname(ANCHOR_FILE), { recursive: true });
     fs.writeFileSync(ANCHOR_FILE, JSON.stringify(map));
-  } catch {}
+  } catch (e) {
+    // If the anchor can't be persisted, every later hook in the session falls
+    // back to the transient per-event cwd — the exact drift this module exists to
+    // prevent, and previously invisible (cp-ccsh.11). Required lazily so this
+    // module stays require-safe from anywhere.
+    try {
+      require(path.join(__dirname, 'hook-logger.js'))
+        .debug('is-code-context', `could not persist the session anchor: ${e && e.message}`);
+    } catch { /* logging must never break a gate */ }
+  }
 }
 
 /**

@@ -7,6 +7,7 @@
             "type": "command",
             "command": "node",
             "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/ensure-obsidian.js"],
+            "timeout": 20,
             "statusMessage": "Ensuring Obsidian is running..."
           }
         ]
@@ -17,6 +18,7 @@
             "type": "command",
             "command": "node",
             "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/ensure-dashboard.js"],
+            "timeout": 60,
             "async": true
           }
         ]
@@ -26,7 +28,9 @@
           {
             "type": "command",
             "command": "node",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/statusline-resync.js"]
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/statusline-resync.js"],
+            "async": true,
+            "timeout": 60
           }
         ]
       },
@@ -36,7 +40,8 @@
           {
             "type": "command",
             "command": "node",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/reinject-after-compact.js"]
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/reinject-after-compact.js"],
+            "timeout": 20
           }
         ]
       },
@@ -45,7 +50,8 @@
           {
             "type": "command",
             "command": "node",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/session-auto-track.js"]
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/session-auto-track.js"],
+            "timeout": 20
           }
         ]
       },
@@ -54,7 +60,9 @@
           {
             "type": "command",
             "command": "node",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/braynee-heartbeat.js"]
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/braynee-heartbeat.js"],
+            "async": true,
+            "timeout": 60
           }
         ]
       },
@@ -63,7 +71,8 @@
           {
             "type": "command",
             "command": "node",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/check-beads-init.js"]
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/check-beads-init.js"],
+            "timeout": 20
           }
         ]
       },
@@ -73,6 +82,7 @@
             "type": "command",
             "command": "node",
             "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/beads-server-heal.js"],
+            "timeout": 20,
             "statusMessage": "Checking beads server health..."
           }
         ]
@@ -82,7 +92,8 @@
           {
             "type": "command",
             "command": "node",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/beads-version-check.js"]
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/beads-version-check.js"],
+            "timeout": 20
           }
         ]
       },
@@ -92,6 +103,7 @@
             "type": "command",
             "command": "node",
             "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/beads-work-surface.js"],
+            "timeout": 20,
             "statusMessage": "Surfacing beads work queue..."
           }
         ]
@@ -101,7 +113,8 @@
           {
             "type": "command",
             "command": "node",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/check-git-init.js"]
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/check-git-init.js"],
+            "timeout": 20
           }
         ]
       },
@@ -110,7 +123,8 @@
           {
             "type": "command",
             "command": "node",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/check-testing-setup.js"]
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/check-testing-setup.js"],
+            "timeout": 20
           }
         ]
       }
@@ -122,22 +136,26 @@
           {
             "type": "command",
             "command": "node",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/check-no-main-push.js"]
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/check-no-main-push.js"],
+            "timeout": 10
           },
           {
             "type": "command",
             "command": "node",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/branch-name-check.js"]
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/branch-name-check.js"],
+            "timeout": 10
           },
           {
             "type": "command",
             "command": "node",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/beads-close-gate.js"]
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/beads-close-gate.js"],
+            "timeout": 10
           },
           {
             "type": "command",
             "command": "node",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/prd-seed-gate.js"]
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/prd-seed-gate.js"],
+            "timeout": 10
           }
         ]
       },
@@ -147,7 +165,8 @@
           {
             "type": "command",
             "command": "node",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/secret-exposure-guard.js"]
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/secret-exposure-guard.js"],
+            "timeout": 10
           }
         ]
       },
@@ -157,7 +176,8 @@
           {
             "type": "command",
             "command": "node",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/vault-search-guard.js"]
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/vault-search-guard.js"],
+            "timeout": 10
           }
         ]
       }
@@ -168,7 +188,8 @@
           {
             "type": "command",
             "command": "node",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/session-end.js"]
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/session-end.js"],
+            "timeout": 20
           }
         ]
       }
@@ -179,7 +200,8 @@
           {
             "type": "command",
             "command": "node",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/memory-reminder.js"]
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/memory-reminder.js"],
+            "timeout": 10
           }
         ]
       },
@@ -188,7 +210,8 @@
           {
             "type": "command",
             "command": "node",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/beads-nudge.js"]
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/beads-nudge.js"],
+            "timeout": 10
           }
         ]
       },
@@ -197,7 +220,8 @@
           {
             "type": "command",
             "command": "node",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/context-budget-warn.js"]
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/context-budget-warn.js"],
+            "timeout": 10
           }
         ]
       }
@@ -208,7 +232,8 @@
           {
             "type": "command",
             "command": "node",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/session-auto-close.js"]
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/session-auto-close.js"],
+            "timeout": 15
           }
         ]
       },
@@ -218,6 +243,7 @@
             "type": "command",
             "command": "node",
             "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/session-export-qmd.js"],
+            "timeout": 60,
             "async": true
           }
         ]
@@ -227,7 +253,8 @@
           {
             "type": "command",
             "command": "node",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/session-stop-check.js"]
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/session-stop-check.js"],
+            "timeout": 15
           }
         ]
       },
@@ -236,7 +263,8 @@
           {
             "type": "command",
             "command": "node",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/beads-stop-check.js"]
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/beads-stop-check.js"],
+            "timeout": 15
           }
         ]
       },
@@ -245,7 +273,8 @@
           {
             "type": "command",
             "command": "node",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/beads-gate-check.js"]
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/beads-gate-check.js"],
+            "timeout": 15
           }
         ]
       },
@@ -254,7 +283,8 @@
           {
             "type": "command",
             "command": "node",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/stop-task-verify.js"]
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/stop-task-verify.js"],
+            "timeout": 15
           }
         ]
       }
@@ -265,7 +295,8 @@
           {
             "type": "command",
             "command": "node",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/stop-failure.js"]
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/stop-failure.js"],
+            "timeout": 20
           }
         ]
       }
@@ -276,7 +307,8 @@
           {
             "type": "command",
             "command": "node",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/pre-compact-snapshot.js"]
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/pre-compact-snapshot.js"],
+            "timeout": 30
           }
         ]
       }
@@ -287,7 +319,8 @@
           {
             "type": "command",
             "command": "node",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/post-compact.js"]
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/post-compact.js"],
+            "timeout": 30
           }
         ]
       }
@@ -299,7 +332,8 @@
           {
             "type": "command",
             "command": "node",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/memory-index-sync.js"]
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/memory-index-sync.js"],
+            "timeout": 15
           }
         ]
       },
@@ -310,6 +344,7 @@
             "type": "command",
             "command": "node",
             "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/vault-changelog.js"],
+            "timeout": 60,
             "async": true
           }
         ]
@@ -321,6 +356,7 @@
             "type": "command",
             "command": "node",
             "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/plan-capture.js"],
+            "timeout": 60,
             "async": true
           }
         ]
@@ -331,12 +367,14 @@
           {
             "type": "command",
             "command": "node",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/session-note-nudge.js"]
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/session-note-nudge.js"],
+            "timeout": 15
           },
           {
             "type": "command",
             "command": "node",
             "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/statusline-state.js"],
+            "timeout": 60,
             "async": true
           }
         ]
@@ -348,6 +386,7 @@
             "type": "command",
             "command": "node",
             "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/commit-cadence-nudge.js"],
+            "timeout": 60,
             "async": true
           }
         ]
@@ -359,6 +398,7 @@
             "type": "command",
             "command": "node",
             "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/beads-claim-to-branch.js"],
+            "timeout": 60,
             "async": true
           }
         ]
@@ -370,6 +410,7 @@
             "type": "command",
             "command": "node",
             "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/beads-status-sync.js"],
+            "timeout": 60,
             "async": true
           }
         ]
@@ -380,7 +421,8 @@
           {
             "type": "command",
             "command": "node",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/beads-todo-reminder.js"]
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/beads-todo-reminder.js"],
+            "timeout": 15
           }
         ]
       },
@@ -391,6 +433,7 @@
             "type": "command",
             "command": "node",
             "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/beads-dashboard-refresh.js"],
+            "timeout": 60,
             "async": true
           }
         ]
@@ -402,6 +445,7 @@
             "type": "command",
             "command": "node",
             "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/mtn-to-beads-sync.js"],
+            "timeout": 60,
             "async": true
           }
         ]
@@ -414,6 +458,7 @@
             "type": "command",
             "command": "node",
             "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/beads-batch-reconcile.js"],
+            "timeout": 60,
             "async": true
           }
         ]
@@ -426,7 +471,8 @@
           {
             "type": "command",
             "command": "node",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/config-change-resurface.js"]
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/config-change-resurface.js"],
+            "timeout": 15
           }
         ]
       }
@@ -437,7 +483,8 @@
           {
             "type": "command",
             "command": "node",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/cwd-changed-check.js"]
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/cwd-changed-check.js"],
+            "timeout": 15
           }
         ]
       }
@@ -449,7 +496,8 @@
           {
             "type": "command",
             "command": "node",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/memory-file-changed.js"]
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/memory-file-changed.js"],
+            "timeout": 15
           }
         ]
       }
@@ -460,7 +508,8 @@
           {
             "type": "command",
             "command": "node",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/task-created-check.js"]
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/task-created-check.js"],
+            "timeout": 15
           }
         ]
       }
@@ -471,7 +520,8 @@
           {
             "type": "command",
             "command": "node",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/task-completed-check.js"]
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/task-completed-check.js"],
+            "timeout": 15
           }
         ]
       }

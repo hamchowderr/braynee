@@ -18,6 +18,9 @@ const { execSync, spawn } = require('child_process');
 const path = require('path');
 const os = require('os');
 const fs = require('fs');
+const log = require(path.join(__dirname, 'hook-logger.js'));
+
+const LOG_NAME = 'qmd-reindex';
 
 // qmd keeps its index at ~/.cache/qmd/index.sqlite; co-locate control files
 // there, falling back to the OS temp dir if that directory is absent.
@@ -144,7 +147,10 @@ function syncBeadsBodies() {
     });
     try { fs.writeFileSync(BODY_SYNC_STAMP, String(Date.now())); } catch { /* ignore */ }
     return { ran: true };
-  } catch {
+  } catch (e) {
+    // `reason: 'error'` told the caller nothing about WHAT failed. A permanently
+    // failing body sync silently stops beads reasoning reaching QMD (cp-ccsh.11).
+    log.debug(LOG_NAME, `beads body sync failed: ${e && e.message}`);
     return { ran: false, reason: 'error' }; // notes catch up on the next run
   }
 }
@@ -165,7 +171,10 @@ function runKeywordUpdate(qmdWrapper) {
       windowsHide: true,
     });
     return { ran: true };
-  } catch {
+  } catch (e) {
+    // A permanently failing keyword update means vault search goes quietly stale
+    // — the caller only ever saw reason:'error' (cp-ccsh.11).
+    log.debug(LOG_NAME, `keyword reindex failed: ${e && e.message}`);
     return { ran: false, reason: 'error' }; // index catches up next run
   } finally {
     releaseLock();

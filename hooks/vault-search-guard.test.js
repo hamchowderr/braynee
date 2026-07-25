@@ -1,0 +1,165 @@
+#!/usr/bin/env node
+// vault-search-guard.test.js — cp-ccsh.8 / B7.
+//
+// The guard must block filesystem searches OF THE VAULT and leave code-repo
+// searches alone. It was doing the second part wrong: `norm(cmd)` ran
+// path.resolve() over the whole command STRING, which prepends the hook
+// PROCESS's cwd, so a hook running from inside the vault blocked every
+// grep/find anywhere and blamed "a vault path".
+//
+// That bug is invisible to a pure-function test — it lives in the difference
+// between the hook process's cwd and the event cwd. So these tests SPAWN the
+// real hook with a controlled cwd and a fake vault via $BRAYNEE_VAULT, and
+// assert on exit code (2 = block, 0 = allow) plus the message text.
+//
+// Pure Node, no deps, cross-platform. Exit 0 = pass, 1 = fail.
+
+'use strict';
+
+const { spawnSync } = require('child_process');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+
+const HOOK = path.join(__dirname, 'vault-search-guard.js');
+
+let pass = 0, fail = 0;
+const fails = [];
+function ok(name, cond) {
+  if (cond) pass++; else { fail++; fails.push(name); }
+}
+
+const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), 'vsg-'));
+try {
+  // A fake vault (PARA markers make vault-root recognize it) + a sibling code repo.
+  const VAULT = path.join(sandbox, 'Obsidian Vault');
+  const REPO = path.join(sandbox, 'code', 'myrepo');
+  fs.mkdirSync(path.join(VAULT, '1. Projects'), { recursive: true });
+  fs.mkdirSync(path.join(VAULT, '2. Areas'), { recursive: true });
+  fs.mkdirSync(path.join(REPO, 'src'), { recursive: true });
+  fs.writeFileSync(path.join(REPO, 'notes.md'), '## a\n');
+
+  // hookCwd is the hook PROCESS's cwd — deliberately varied independently of the
+  // event cwd, because conflating the two was the bug.
+  function run(payload, hookCwd) {
+    const r = spawnSync(process.execPath, [HOOK], {
+      input: JSON.stringify(payload),
+      encoding: 'utf8',
+      windowsHide: true,
+      cwd: hookCwd || REPO,
+      env: { ...process.env, BRAYNEE_VAULT: VAULT, BRAYNEE_ALLOW_VAULT_GREP: '' },
+    });
+    return { code: r.status, err: r.stderr || '' };
+  }
+  const bash = (command, cwd) => ({ tool_name: 'Bash', tool_input: { command }, cwd });
+
+  // Relative path from the repo that escapes INTO the vault.
+  const relIntoVault = path.relative(REPO, path.join(VAULT, '2. Areas')).split(path.sep).join('/');
+
+  // ── code-repo searches are allowed, whatever the hook's own cwd is ──────────
+  const codeRepoCmds = [
+    'find . -maxdepth 2 -name "*rules*"',
+    'grep -n "^## " ./notes.md',
+    'grep -rn "foo" src/',
+    'rg "bar"',
+    'find ./src -type f -name "*.js"',
+    'grep -rn --include="*.md" "todo" .',
+  ];
+  for (const c of codeRepoCmds) {
+    ok(`allowed in a code repo (hook cwd = repo): ${c}`, run(bash(c, REPO), REPO).code === 0);
+    // The regression that shipped: same command, hook process cwd inside the vault.
+    ok(`allowed in a code repo even when the HOOK runs from the vault: ${c}`,
+       run(bash(c, REPO), VAULT).code === 0);
+  }
+
+  // ── genuine vault targeting is still blocked ────────────────────────────────
+  {
+    const abs = run(bash(`grep -rn "x" "${VAULT}/2. Areas"`, REPO), REPO);
+    ok('blocked: absolute vault path argument', abs.code === 2);
+    ok('blocked-absolute message names a vault path', /naming a vault path/.test(abs.err));
+
+    const rel = run(bash(`grep -rn "secret" "${relIntoVault}"`, REPO), REPO);
+    ok('blocked: RELATIVE path argument resolving into the vault', rel.code === 2);
+    ok('blocked-relative message says the argument resolves inside the vault',
+       /resolves inside the vault/.test(rel.err));
+
+    // `find .` DOES carry a path argument, so it takes the precise branch: `.`
+    // resolves to the vault cwd.
+    const dot = run(bash('find . -name "*.md"', VAULT), REPO);
+    ok('blocked: `find .` while cwd is the vault', dot.code === 2);
+    ok('blocked-dot message names the resolving argument',
+       /resolves inside the vault/.test(dot.err));
+
+    // `rg "concept"` has NO path argument — this is the genuinely uncertain case.
+    const bare = run(bash('rg "concept"', VAULT), REPO);
+    ok('blocked: no path argument at all while cwd is the vault', bare.code === 2);
+    ok('blocked-bare message says no path argument was given',
+       /no path argument/.test(bare.err));
+  }
+
+  // ── message text matches actual behavior in both cases (acceptance) ─────────
+  {
+    const certain = run(bash(`grep -rn "x" "${VAULT}/2. Areas"`, REPO), REPO).err;
+    const uncertain = run(bash('rg "concept"', VAULT), REPO).err;
+    ok('no message claims code-repo searches are unaffected',
+       !/Code-repo searches are unaffected/.test(certain) &&
+       !/Code-repo searches are unaffected/.test(uncertain));
+    ok('a certain block states that a path outside the vault is not blocked',
+       /not blocked/.test(certain));
+    ok('an uncertain block admits it cannot tell the searches apart',
+       /cannot be told apart/.test(uncertain));
+    ok('both messages still offer the QMD commands',
+       /qmd-wrapper\.mjs" search/.test(certain) && /qmd-wrapper\.mjs" search/.test(uncertain));
+  }
+
+  // ── stdout filters are never a vault search ────────────────────────────────
+  ok('allowed: `… | grep` stdout filter while cwd is the vault',
+     run(bash('node script.js | grep -v warning', VAULT), REPO).code === 0);
+  ok('allowed: non-search command mentioning the word find',
+     run(bash('npm run findme', VAULT), REPO).code === 0);
+
+  // ── a path OUTSIDE the vault stays allowed even from a vault cwd ───────────
+  ok('allowed: explicit code-repo path argument while cwd is the vault',
+     run(bash(`grep -rn "x" "${REPO}/src"`, VAULT), REPO).code === 0);
+
+  // ── the override still works ───────────────────────────────────────────────
+  {
+    const r = spawnSync(process.execPath, [HOOK], {
+      input: JSON.stringify(bash('find . -name "*.md"', VAULT)),
+      encoding: 'utf8', windowsHide: true, cwd: REPO,
+      env: { ...process.env, BRAYNEE_VAULT: VAULT, BRAYNEE_ALLOW_VAULT_GREP: '1' },
+    });
+    ok('BRAYNEE_ALLOW_VAULT_GREP=1 allows a vault search', r.status === 0);
+  }
+
+  // ── Glob/Grep TOOL branch ─────────────────────────────────────────────────
+  const tool = (name, input, cwd) => ({ tool_name: name, tool_input: input, cwd });
+  ok('allowed: Grep tool with no path, cwd = code repo',
+     run(tool('Grep', { pattern: 'x' }, REPO), REPO).code === 0);
+  ok('blocked: Grep tool with no path, cwd = vault',
+     run(tool('Grep', { pattern: 'x' }, VAULT), REPO).code === 2);
+  ok('blocked: Grep tool with a relative path resolving into the vault',
+     run(tool('Grep', { pattern: 'x', path: relIntoVault }, REPO), REPO).code === 2);
+  ok('allowed: Glob tool pointed at a code path while cwd = vault',
+     run(tool('Glob', { pattern: '**/*.js', path: path.join(REPO, 'src') }, VAULT), REPO).code === 0);
+
+  // ── never throws: malformed input fails open ───────────────────────────────
+  {
+    const r = spawnSync(process.execPath, [HOOK], {
+      input: 'not json at all', encoding: 'utf8', windowsHide: true, cwd: REPO,
+      env: { ...process.env, BRAYNEE_VAULT: VAULT },
+    });
+    ok('malformed stdin fails open (exit 0)', r.status === 0);
+  }
+} finally {
+  fs.rmSync(sandbox, { recursive: true, force: true });
+}
+
+if (fail === 0) {
+  console.log(`vault-search-guard.test.js: ${pass} passed, 0 failed`);
+  process.exit(0);
+} else {
+  console.error(`vault-search-guard.test.js: ${pass} passed, ${fail} FAILED`);
+  for (const f of fails) console.error(`  FAIL: ${f}`);
+  process.exit(1);
+}
