@@ -1059,6 +1059,102 @@ results.fmscalars = { ok: 0, fail: 0, errors: [] };
 }
 log(`  ${results.fmscalars.ok} passed | ${results.fmscalars.fail} failed`);
 
+// ── 16. One shared vault-project lookup, no flat readdir copies ──────────────
+// cp-7kfh: the folder->project-note lookup was copy-pasted into 8 hooks plus a
+// 9th flat listing, every one reading only `1. Projects/*.md`. `1. Projects/`
+// has 17 subdirectories holding 51 notes with a `folder:` field — braynee's own
+// among them — so all 51 were unfindable, sessions never closed, and
+// session-auto-track auto-created duplicate notes.
+//
+// It had been fixed ONCE before (db558b1, "subfolder resolution") and applied to
+// exactly one call site — not even the whole file, since session-auto-track kept
+// a flat read of the same directory. So this assertion counts CALL SITES, not
+// files: a file containing a correct walker tells you nothing about the flat
+// read further down it.
+log('\n=== 16. Shared vault-project lookup ===');
+results.projlookup = { ok: 0, fail: 0, errors: [] };
+{
+  const assertLookup = (label, cond, detail) => {
+    if (cond) { results.projlookup.ok++; log(`  OK: ${label}`); }
+    else {
+      results.projlookup.fail++;
+      results.projlookup.errors.push({ test: label, detail });
+      log(`  FAIL: ${label}`);
+      for (const d of (detail || []).slice(0, 20)) log(`        ${d}`);
+    }
+  };
+
+  assertLookup('lib/vault-projects.js ships',
+    fs.existsSync(path.join(PLUGIN_ROOT, 'hooks', 'lib', 'vault-projects.js')));
+
+  // Walk every hook/script and flag a readdirSync over a *vault project* dir
+  // that is not the shared walker.
+  const jsFiles = [];
+  const walkJs = (d) => {
+    let entries = [];
+    try { entries = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      if (e.name === 'node_modules' || e.name.startsWith('.')) continue;
+      const p = path.join(d, e.name);
+      if (e.isDirectory()) walkJs(p);
+      else if (/\.(js|mjs)$/.test(e.name)) jsFiles.push(p);
+    }
+  };
+  walkJs(path.join(PLUGIN_ROOT, 'hooks'));
+  walkJs(path.join(PLUGIN_ROOT, 'scripts'));
+
+  const offenders = [];
+  for (const f of jsFiles) {
+    let src = '';
+    try { src = fs.readFileSync(f, 'utf8'); } catch { continue; }
+    if (!/1\.\s*Projects/.test(src)) continue;      // not a vault-projects consumer
+    if (f.endsWith('vault-projects.js')) continue;  // the shared walker itself
+    const lines = src.split(/\r?\n/);
+    lines.forEach((line, i) => {
+      const m = line.match(/readdirSync\(\s*([A-Za-z_$][\w$]*)\s*\)/);
+      if (!m) return;
+      if (!/^projects?dir$/i.test(m[1])) return;
+      // Vault project notes are .md. A read filtered to another extension is a
+      // different directory entirely — hooks/session-export-qmd.js reads
+      // CLAUDE_PROJECTS_DIR (~/.claude/projects) for .jsonl transcripts, where a
+      // flat read is correct. Keyed on the filter rather than an allowlist so a
+      // genuinely new offender in that same file would still be caught.
+      const window = lines.slice(i, i + 3).join(' ');
+      if (!/\.md['"`]/.test(window)) return;
+      offenders.push(`${path.relative(PLUGIN_ROOT, f).replace(/\\/g, '/')}:${i + 1}: ${line.trim().slice(0, 70)}`);
+    });
+  }
+  assertLookup('no flat readdirSync over a vault project dir remains (count call sites, not files)',
+    offenders.length === 0, offenders);
+
+  // Every consumer must actually route through the shared module.
+  const consumers = ['hooks/beads-status-sync.js', 'hooks/lib/session-close.js',
+    'hooks/post-compact.js', 'hooks/pre-compact-snapshot.js', 'hooks/session-auto-close.js',
+    'hooks/session-note-nudge.js', 'hooks/session-stop-check.js', 'hooks/statusline-state.js',
+    'hooks/session-auto-track.js'];
+  const notWired = consumers.filter(rel => {
+    let src = '';
+    try { src = fs.readFileSync(path.join(PLUGIN_ROOT, rel), 'utf8'); } catch { return true; }
+    return !src.includes('vault-projects.js');
+  });
+  assertLookup(`all ${consumers.length} lookup consumers require the shared module`,
+    notWired.length === 0, notWired);
+
+  // Behavior, not just wiring: a nested note must resolve.
+  const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'braynee-projfix-'));
+  try {
+    const np = path.join(fixture, '1. Projects', 'Nested');
+    fs.mkdirSync(np, { recursive: true });
+    fs.writeFileSync(path.join(np, 'Nested.md'), '---\nname: "Nested Project"\nfolder: "nested-repo"\n---\n');
+    const { findProjectName } = require(path.join(PLUGIN_ROOT, 'hooks', 'lib', 'vault-projects.js'));
+    assertLookup('a note nested in a project subfolder resolves',
+      findProjectName('nested-repo', fixture) === 'Nested Project');
+  } finally {
+    try { fs.rmSync(fixture, { recursive: true, force: true }); } catch { /* ignore */ }
+  }
+}
+log(`  ${results.projlookup.ok} passed | ${results.projlookup.fail} failed`);
+
 // ── Summary ──────────────────────────────────────────────────────────────────
 const totalOk = Object.values(results).reduce((s, r) => s + r.ok, 0);
 const totalFail = Object.values(results).reduce((s, r) => s + r.fail, 0);

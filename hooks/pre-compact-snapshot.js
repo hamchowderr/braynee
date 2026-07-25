@@ -25,25 +25,11 @@ const SESSIONS_DIR = path.join(VAULT_DIR, '2. Areas', 'Sessions');
 const SNAPSHOT_FILE = path.join(os.homedir(), '.claude', 'compact-snapshot.json');
 const CONTEXT_CACHE = path.join(os.homedir(), '.claude', 'vault-context-cache.json');
 
+// cp-7kfh: one shared, RECURSIVE lookup. This was a local copy that read only
+// `1. Projects/*.md` and so missed every note nested in a project subfolder.
+const { findProjectName: lookupProjectName } = require(path.join(__dirname, 'lib', 'vault-projects.js'));
 function findProjectName(folderName) {
-  const projectsDir = path.join(VAULT_DIR, '1. Projects');
-  if (!fs.existsSync(projectsDir)) return null;
-
-  const files = fs.readdirSync(projectsDir).filter(f => f.endsWith('.md'));
-  for (const file of files) {
-    try {
-      const content = fs.readFileSync(path.join(projectsDir, file), 'utf8');
-      const folderMatch = content.match(/^folder:\s*"?([^"\n]+)"?$/m);
-      if (folderMatch && folderMatch[1].trim().toLowerCase() === folderName.toLowerCase()) {
-        const nameMatch = content.match(/^name:\s*"?([^"\n]+)"?$/m);
-        if (nameMatch) return nameMatch[1].trim();
-        return file.replace('.md', '');
-      }
-    } catch (e) {
-      continue;
-    }
-  }
-  return null;
+  return lookupProjectName(folderName, VAULT_DIR);
 }
 
 // Find active session note for a project, returns { filename, filepath, content } or null.

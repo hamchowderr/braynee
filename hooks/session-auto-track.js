@@ -17,6 +17,7 @@ const { findSessionViaQmd } = require('./lib/qmd-search');
 const log = require(path.join(__dirname, 'lib', 'hook-logger.js'));
 const { findCodeRoot, sessionDir } = require(path.join(__dirname, 'lib', 'is-code-context.js'));
 const { isIgnoredFolder } = require(path.join(__dirname, 'lib', 'ignore-folders.js'));
+const { listProjectNotes } = require(path.join(__dirname, 'lib', 'vault-projects.js')); // cp-7kfh
 const { findTranscriptDir } = require(path.join(__dirname, 'lib', 'transcript-dir.js'));
 
 const HOOK = 'session-auto-track';
@@ -593,25 +594,17 @@ process.stdin.on('end', () => {
       // In vault mode, scan for projects that have active sessions
       // so the user can resume or start tracking
       if (isVault) {
-        // List all project notes to show what's trackable
-        const projectsDir = path.join(VAULT_DIR, '1. Projects');
-        if (fs.existsSync(projectsDir)) {
-          const projectFiles = fs.readdirSync(projectsDir).filter(f => f.endsWith('.md'));
-          const activeProjects = [];
-          for (const file of projectFiles) {
-            try {
-              const content = fs.readFileSync(path.join(projectsDir, file), 'utf8');
-              const statusMatch = content.match(/^status:\s*(\S+)/m);
-              const nameMatch = content.match(/^name:\s*"?([^"\n]+)"?$/m);
-              if (statusMatch && statusMatch[1] === 'active' && nameMatch) {
-                activeProjects.push(nameMatch[1].trim());
-              }
-            } catch { continue; }
-          }
-          if (activeProjects.length > 0) {
-            output.push('');
-            output.push('Active projects with tracking: ' + activeProjects.join(', '));
-          }
+        // List all project notes to show what's trackable.
+        // cp-7kfh: this was a FLAT readdirSync of `1. Projects` — in the very
+        // file whose other lookup (walkMdFiles, line ~81) was already made
+        // recursive by db558b1. One file, both patterns, which is why the fix
+        // is now a shared module rather than a tenth hand-rolled walk.
+        const activeProjects = listProjectNotes(VAULT_DIR)
+          .filter(p => p.status === 'active')
+          .map(p => p.name);
+        if (activeProjects.length > 0) {
+          output.push('');
+          output.push('Active projects with tracking: ' + activeProjects.join(', '));
         }
         output.push('');
         output.push('VAULT MODE: Session tracking requires specifying which project you are working on.');
