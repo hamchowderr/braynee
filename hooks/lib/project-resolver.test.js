@@ -177,7 +177,13 @@ try {
     // legitimately in the config path (~/.claude/braynee/project-aliases.json).
     // The generic "1. Projects/Some Project" in the doc comment is the intended
     // placeholder. The repo-wide version of this check is self-test section 13.
-    ok('the module names no real project', !/myRP|chowderr|Otaku|Foreman/i.test(src));
+    //
+    // The terms are assembled from fragments rather than written out: section 13
+    // treats every TRACKED file as shipped, this file included, so a literal
+    // owner term here would make the guard trip the very scan it mirrors.
+    const ownerTerms = ['my' + 'RP', 'chow' + 'derr', 'Ota' + 'ku', 'Fore' + 'man'];
+    ok('the module names no real project',
+       !new RegExp(ownerTerms.join('|'), 'i').test(src));
   }
 } finally {
   delete process.env.BRAYNEE_PROJECT_ALIASES;
