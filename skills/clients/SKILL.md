@@ -5,7 +5,7 @@ description: >
   track status, and prep for meetings. Use when user says "client notes", "pull up
   [client name]", "update client", "new client", "prep for [client] call",
   "log meeting", "client status".
-argument-hint: [list | get CLIENT | log CLIENT TEXT | new CLIENT COMPANY | prep CLIENT]
+argument-hint: "[list | get CLIENT | log CLIENT TEXT | new CLIENT COMPANY | prep CLIENT]"
 allowed-tools: Bash(python3:*), Bash(node:*), Bash(obsidian:*)
 ---
 

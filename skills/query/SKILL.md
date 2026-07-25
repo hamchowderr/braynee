@@ -4,7 +4,7 @@ description: >
   Search your vault using QMD (semantic + BM25). Find notes, decisions, resources,
   and connections. Use when user says "find", "search for", "what do I know about",
   "look up", "pull notes on", "where did I write about", "any notes on".
-argument-hint: [QUERY | --semantic QUERY | --deep QUERY | --context TERM]
+argument-hint: "[QUERY | --semantic QUERY | --deep QUERY | --context TERM]"
 allowed-tools: Bash(node:*)
 ---
 

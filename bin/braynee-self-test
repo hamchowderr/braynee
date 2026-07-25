@@ -857,6 +857,57 @@ function assertPolicy(label, cond) {
 }
 log(`  ${results.hookpolicy.ok} passed | ${results.hookpolicy.fail} failed`);
 
+// ── 15. Skill/agent frontmatter: no unquoted `[` scalars ─────────────────────
+// A frontmatter value that starts with an unquoted `[` is YAML flow-sequence
+// syntax, so `argument-hint: [a | b]` loads as a one-element ARRAY, not the
+// string the field expects. Worse, a nested bracket (`[sync X [--week W]]`)
+// fails to parse outright — and per CC 2.1.186 a malformed SKILL.md loads its
+// body with EMPTY metadata rather than erroring, so the skill silently ships
+// with no name, description, or allowed-tools. skills/comms shipped that way
+// and only surfaced when `claude plugin tag` refused to tag the release.
+// Regex, not a YAML parse, to keep this pure-Node with no dependencies.
+log('\n=== 15. Skill/agent frontmatter scalars ===');
+results.fmscalars = { ok: 0, fail: 0, errors: [] };
+{
+  const mdFiles = [];
+  const walk = (d) => {
+    let entries = [];
+    try { entries = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      const p = path.join(d, e.name);
+      if (e.isDirectory()) walk(p);
+      else if (e.name.endsWith('.md')) mdFiles.push(p);
+    }
+  };
+  walk(path.join(PLUGIN_ROOT, 'skills'));
+  walk(path.join(PLUGIN_ROOT, 'agents'));
+
+  const offenders = [];
+  for (const f of mdFiles) {
+    let src = '';
+    try { src = fs.readFileSync(f, 'utf8'); } catch { continue; }
+    const m = src.match(/^(﻿?---\r?\n)([\s\S]*?)(\r?\n---)/);
+    if (!m) continue;
+    m[2].split(/\r?\n/).forEach((line, i) => {
+      // key: [....  — an unquoted flow sequence where a string is meant.
+      if (/^[A-Za-z][\w-]*:[ \t]*\[/.test(line)) {
+        offenders.push(`${path.relative(PLUGIN_ROOT, f).replace(/\\/g, '/')}:${i + 2}: ${line.trim().slice(0, 80)}`);
+      }
+    });
+  }
+  const label = 'no skill/agent frontmatter value is an unquoted `[` flow sequence';
+  if (offenders.length === 0) {
+    results.fmscalars.ok++;
+    log(`  OK: ${label} (${mdFiles.length} files scanned)`);
+  } else {
+    results.fmscalars.fail++;
+    results.fmscalars.errors.push({ test: label, offenders });
+    log(`  FAIL: ${label}`);
+    for (const o of offenders.slice(0, 20)) log(`        ${o}`);
+  }
+}
+log(`  ${results.fmscalars.ok} passed | ${results.fmscalars.fail} failed`);
+
 // ── Summary ──────────────────────────────────────────────────────────────────
 const totalOk = Object.values(results).reduce((s, r) => s + r.ok, 0);
 const totalFail = Object.values(results).reduce((s, r) => s + r.fail, 0);

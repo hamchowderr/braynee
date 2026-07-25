@@ -7,7 +7,7 @@ description: >
   Every recap ends with "One Thing" — the single highest-leverage next action.
   Use when user says "recap", "what did we work on", "what was I doing",
   "load context", "yesterday", "last week", "remember when", "prime context".
-argument-hint: [yesterday | today | last week | TOPIC | graph DATE_EXPR]
+argument-hint: "[yesterday | today | last week | TOPIC | graph DATE_EXPR]"
 allowed-tools: Bash(python3:*, node:*)
 ---
 

@@ -5,7 +5,7 @@ description: >
   Use when user says "open braynee", "show my settings", "view my Claude Code config",
   "open settings dashboard", "show my analytics", "how much have I used Claude Code",
   or any request to inspect their Claude Code configuration or usage data visually.
-argument-hint: [open | refresh]
+argument-hint: "[open | refresh]"
 allowed-tools: Bash(node:*), Bash(start:*), Bash(powershell:*)
 disable-model-invocation: true
 ---
