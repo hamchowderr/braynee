@@ -4,7 +4,9 @@
 
 Braynee is a Claude Code plugin that scaffolds a PARA vault, wires up your company knowledge base, detects your environment, installs the right Obsidian plugins, and keeps everything in sync session to session.
 
-> **Requires Claude Code ≥ 2.1.85.** Braynee's hooks use the `if` field to scope by tool and arguments. On older Claude Code the `if` field is ignored and the hooks run on every matched call — they still self-gate internally and stay correct, just less efficiently. Update Claude Code for the intended behavior.
+> **Requires Claude Code ≥ 2.1.128.** Braynee's hooks deliberately do **not** use the `if` field — it proved version-unreliable (on CC 2.1.143 an `if`-gated hook never fires at all), so every hook registers on its event and self-gates in JavaScript instead. Every hook also declares an explicit timeout, so a slow one degrades instead of stalling your turn.
+>
+> **≥ 2.1.214 recommended:** a hook exiting 2 blocks reliably even when its stdout JSON fails schema validation (Braynee's deny hooks depend on that), and since 2.1.210 a hook timeout is no longer misreported to the model as a user rejection.
 
 ## Install
 

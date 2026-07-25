@@ -974,6 +974,29 @@ function assertPolicy(label, cond) {
   const ifGated = entries.filter(e => e.hook.if !== undefined || e.group.if !== undefined);
   assertPolicy(`no hook is gated with the version-unreliable \`if\` field (cp-068)${ifGated.length ? ' — ' + ifGated.map(e => `${e.event}/${e.script}`).join(', ') : ''}`,
     ifGated.length === 0);
+
+  // ...and no user-facing text may CLAIM braynee uses it. The code rule held
+  // the whole time, but plugin.json, marketplace.json, README.md and the
+  // release-notes template all told users the opposite — the marketplace
+  // description and every release note since shipped the false claim. Asserting
+  // the docs against the code so the two cannot diverge again (cp-hdpr).
+  const claimFiles = ['README.md', '.claude-plugin/plugin.json',
+    '.claude-plugin/marketplace.json', '.github/workflows/braynee-release.yml'];
+  const claiming = [];
+  for (const rel of claimFiles) {
+    let text = '';
+    try { text = fs.readFileSync(path.join(PLUGIN_ROOT, rel), 'utf8'); } catch { continue; }
+    text.split(/\r?\n/).forEach((line, i) => {
+      // "hooks use the `if` field" / "uses the if field for scoping" — a claim of
+      // use, not a mention. The negations ("do not use", "no `if`") must pass.
+      if (/\b(hooks?|plugin|braynee)\b[^.\n]{0,60}\buses?\b[^.\n]{0,20}`?if`?\s+field/i.test(line)
+          && !/\b(not|never|no|zero|without)\b/i.test(line)) {
+        claiming.push(`${rel}:${i + 1}`);
+      }
+    });
+  }
+  assertPolicy(`no shipped doc claims braynee uses the \`if\` field${claiming.length ? ' — ' + claiming.join(', ') : ''}`,
+    claiming.length === 0);
 }
 log(`  ${results.hookpolicy.ok} passed | ${results.hookpolicy.fail} failed`);
 
