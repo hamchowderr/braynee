@@ -525,6 +525,31 @@
           }
         ]
       }
+    ],
+    "Notification": [
+      {
+        "matcher": "agent_needs_input|agent_completed",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/agent-notification-check.js"],
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "DirectoryAdded": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/directory-added-check.js"],
+            "timeout": 15
+          }
+        ]
+      }
     ]
   }
 }

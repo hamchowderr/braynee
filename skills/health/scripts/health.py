@@ -347,6 +347,21 @@ def cmd_memory(args, vault: Path):
         # the whole-line budget in place a resync now measurably shrinks the index
         # (26,404 -> 19,614 bytes on the 126-note folder), so name the action that
         # actually triggers one plus the lever that shrinks it further.
+        #
+        # OVERLAP WITH CLAUDE CODE, resolved deliberately (cp-hdpr.3) — do not
+        # delete this check as "redundant" without reading this first. CC now
+        # covers the same condition twice:
+        #   - 2.1.186 reminds the AGENT to compact the index when nearing the cap.
+        #   - 2.1.210 makes a memory write that leaves the index over its read
+        #     limit an explicit ERROR instead of silent truncation.
+        # Both fire at WRITE time and speak to the agent. This check fires at
+        # AUDIT time (`/braynee:health`), speaks to the HUMAN, and is the only one
+        # of the three that names the specific lever — which frontmatter field to
+        # shorten, and where to retire stale entries. Complementary, not
+        # duplicative, so it stays. Note also that post-cp-ccsh.2 braynee's own
+        # resync cannot produce an over-cap file, so CC's 2.1.210 error should
+        # never be reachable from braynee's write path; if it ever fires, that is
+        # a real regression in memory-index.js, not a user problem.
         memory_index = memory_dir / "MEMORY.md"
         if memory_index.exists():
             kb = memory_index.stat().st_size / 1024

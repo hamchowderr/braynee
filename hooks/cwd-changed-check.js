@@ -18,38 +18,16 @@
 // one reported for this session (a state file), so a long sequence of `cd`s
 // within one project doesn't spam.
 
-const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const log = require(path.join(__dirname, 'lib', 'hook-logger.js'));
 const { findCodeRoot, sessionDir } = require(path.join(__dirname, 'lib', 'is-code-context.js'));
+// cp-hdpr.2: the dedup state lived here first; it now lives in lib/ so
+// directory-added-check.js shares one implementation instead of a second copy
+// that drifts. Same file name, same semantics — only the code moved.
+const { stateFile, shouldReport } = require(path.join(__dirname, 'lib', 'session-report-state.js'));
 
 const HOOK = 'cwd-changed-check';
-const STATE_FILE = (() => {
-  try { return path.join(os.homedir(), '.claude', 'braynee-cwd-reported.json'); }
-  catch { return null; }
-})();
-const STATE_MAX = 200;
-
-function readState() {
-  if (!STATE_FILE) return {};
-  try {
-    const j = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
-    return j && typeof j === 'object' ? j : {};
-  } catch { return {}; }
-}
-
-function writeState(map) {
-  if (!STATE_FILE) return;
-  try {
-    const keys = Object.keys(map);
-    if (keys.length > STATE_MAX) {
-      for (const k of keys.slice(0, keys.length - STATE_MAX)) delete map[k];
-    }
-    fs.mkdirSync(path.dirname(STATE_FILE), { recursive: true });
-    fs.writeFileSync(STATE_FILE, JSON.stringify(map));
-  } catch {}
-}
+const STATE_FILE = stateFile('braynee-cwd-reported.json');
 
 let input = '';
 process.stdin.setEncoding('utf8');
@@ -76,14 +54,7 @@ process.stdin.on('end', () => {
     if (path.resolve(newRoot) === path.resolve(anchoredRoot)) { process.exit(0); }
 
     // Dedup per session: don't re-report the same crossed-into project.
-    if (sid && STATE_FILE) {
-      const state = readState();
-      if (state[sid] && path.resolve(state[sid]) === path.resolve(newRoot)) {
-        process.exit(0);
-      }
-      state[sid] = newRoot;
-      writeState(state);
-    }
+    if (!shouldReport(STATE_FILE, sid, newRoot)) process.exit(0);
 
     const anchoredName = path.basename(anchoredRoot);
     const newName = path.basename(newRoot);
