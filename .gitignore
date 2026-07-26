@@ -21,6 +21,15 @@
 # it or blocks checkout. Source of truth is the Dolt DB. See cp-uif3.1.
 .beads/issues.jsonl
 
+# Claude Code's per-machine permission state. Machine-local and often names the
+# operator's own projects/secrets stores, so it must never be committed. It was
+# already ignored on the author's machine — but only via a GLOBAL excludesFile
+# pointing at a Windows path, so the protection did not travel: on Linux (and CI,
+# and any other machine) git saw it as an ordinary untracked file that `git add
+# -A` would happily commit. Caught by the section-13 owner-data scan running on
+# WSL, which is exactly the cross-platform check that catches this class.
+.claude/settings.local.json
+
 # Python bytecode (skill scripts)
 __pycache__/
 *.pyc
