@@ -17,6 +17,7 @@ const path = require('path');
 const { findBeadsRoot } = require(path.join(__dirname, 'lib', 'is-code-context.js'));
 const TN = require(path.join(__dirname, 'lib', 'tasknotes-mirror.js'));
 const log = require(path.join(__dirname, 'lib', 'hook-logger.js'));
+const { bdSucceeded } = require(path.join(__dirname, 'lib', 'bd-command-result.js'));
 const HOOK = 'beads-status-sync';
 
 const HOME = os.homedir();
@@ -138,6 +139,15 @@ process.stdin.on('end', () => {
     if (!beadsRoot) process.exit(0);
     const cwd = beadsRoot;
 
+    // cp-snh2: this hook writes the vault TaskNotes mirror, the session note, and
+    // beads-active-issue.json. Doing that for a bd command that FAILED records an
+    // event with no counterpart in beads — mirror drift manufactured by the very
+    // hook meant to prevent it. Suppresses only on visible failure.
+    if (!bdSucceeded(data)) {
+      log.debug(HOOK, `bd command did not succeed — no mirror written: ${cmd.slice(0, 80)}`);
+      process.exit(0);
+    }
+
     // ─── bd create: mirror new issue to mtn at planning time ─────────
     if (/^bd\s+create\s/.test(cmd)) {
       // The new issue ID is in the bd create response. Real beads output is
@@ -146,8 +156,8 @@ process.stdin.on('end', () => {
       // is configured to use. Fall back to the legacy `bd-...` form for
       // older installs.
       const stdout = data.tool_response?.stdout || data.tool_response?.output || '';
-      const idMatch = stdout.match(/Created\s+issue:?\s*([A-Za-z][\w-]+)/i)
-                   || stdout.match(/\b(bd-[\w-]+)\b/);
+      const idMatch = stdout.match(/Created\s+issue:?\s*([A-Za-z][\w.-]+)/i)
+                   || stdout.match(/\b(bd-[\w.-]+)\b/);
 
       // Title can be supplied as either a positional argument
       // (`bd create "Title"`) or as a --title flag
@@ -188,9 +198,9 @@ process.stdin.on('end', () => {
     }
 
     // Detect all bd status-change patterns
-    const claimMatch  = cmd.match(/^bd\s+update\s+([\w-]+).*--claim/);
-    const statusMatch = !claimMatch && cmd.match(/^bd\s+update\s+([\w-]+).*--status\s+(in_progress|open|blocked|closed)/);
-    const closeMatch  = !claimMatch && !statusMatch && cmd.match(/^bd\s+close\s+([\w-]+)/);
+    const claimMatch  = cmd.match(/^bd\s+update\s+([\w.-]+).*--claim/);
+    const statusMatch = !claimMatch && cmd.match(/^bd\s+update\s+([\w.-]+).*--status\s+(in_progress|open|blocked|closed)/);
+    const closeMatch  = !claimMatch && !statusMatch && cmd.match(/^bd\s+close\s+([\w.-]+)/);
 
     if (!claimMatch && !statusMatch && !closeMatch) process.exit(0);
 

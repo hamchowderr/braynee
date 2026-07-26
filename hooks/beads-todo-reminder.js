@@ -18,6 +18,7 @@ const path = require('path');
 // the exact issue later (best-effort — a map failure must never break the mirror).
 const map = require(path.join(__dirname, 'lib', 'bd-task-map.js'));
 const log = require(path.join(__dirname, 'lib', 'hook-logger.js'));
+const { bdSucceeded } = require(path.join(__dirname, 'lib', 'bd-command-result.js'));
 const HOOK = 'beads-todo-reminder';
 
 // cp-psc / HD-4.1 + HD-R2.2: PostToolUse stdout is NOT added to Claude's
@@ -49,14 +50,22 @@ process.stdin.on('end', () => {
     // Only fire for beads-initialized projects.
     if (!fs.existsSync(path.join(cwd, '.beads'))) process.exit(0);
 
+    // cp-snh2: never announce a state change that did not happen. This hook used
+    // to key purely off the command text, so a FAILED `bd close` still told the
+    // model "beads issue <id> is now closed". Suppresses only on visible failure.
+    if (!bdSucceeded(data)) {
+      log.debug(HOOK, `bd command did not succeed — no reminder emitted: ${cmd.slice(0, 80)}`);
+      process.exit(0);
+    }
+
     // ─── bd create ────────────────────────────────────────────────
     if (/^bd\s+create\s/.test(cmd)) {
       const stdout = data.tool_response?.stdout || data.tool_response?.output || '';
-      const idMatch = stdout.match(/Created\s+issue:?\s*([A-Za-z][\w-]+)/i)
-                   || stdout.match(/\b(bd-[\w-]+)\b/);
+      const idMatch = stdout.match(/Created\s+issue:?\s*([A-Za-z][\w.-]+)/i)
+                   || stdout.match(/\b(bd-[\w.-]+)\b/);
       // Title can be in the stdout after the dash OR pulled from the command.
       let title = '';
-      const stdoutTitleMatch = stdout.match(/Created\s+issue:?\s*[\w-]+\s*[—:\-]\s*(.+?)(?:\n|$)/i);
+      const stdoutTitleMatch = stdout.match(/Created\s+issue:?\s*[\w.-]+\s*[—:\-]\s*(.+?)(?:\n|$)/i);
       if (stdoutTitleMatch) title = stdoutTitleMatch[1].trim();
       if (!title) {
         const flagDouble = cmd.match(/--title\s*=\s*"([^"]+)"/);
@@ -94,8 +103,8 @@ process.stdin.on('end', () => {
     }
 
     // ─── bd claim / status in_progress ───────────────────────────
-    const claimMatch = cmd.match(/^bd\s+update\s+([\w-]+).*--claim/)
-                    || cmd.match(/^bd\s+update\s+([\w-]+).*--status\s+in_progress/);
+    const claimMatch = cmd.match(/^bd\s+update\s+([\w.-]+).*--claim/)
+                    || cmd.match(/^bd\s+update\s+([\w.-]+).*--status\s+in_progress/);
     if (claimMatch) {
       emit(
         `beads issue ${claimMatch[1]} is now in_progress. ` +
@@ -105,8 +114,8 @@ process.stdin.on('end', () => {
     }
 
     // ─── bd close / status closed ────────────────────────────────
-    const closeMatch = cmd.match(/^bd\s+close\s+([\w-]+)/)
-                    || cmd.match(/^bd\s+update\s+([\w-]+).*--status\s+closed/);
+    const closeMatch = cmd.match(/^bd\s+close\s+([\w.-]+)/)
+                    || cmd.match(/^bd\s+update\s+([\w.-]+).*--status\s+closed/);
     if (closeMatch) {
       emit(
         `beads issue ${closeMatch[1]} is now closed. ` +
