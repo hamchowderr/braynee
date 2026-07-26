@@ -24,6 +24,18 @@
 // queries the shared Dolt server, so concurrent multi-session batches don't pile
 // up orphan dolt servers (cp-6j5 / dolt-guard).
 
+// cp-na6c: this hook only ever swept the CURRENT repo, and only when it saw
+// `bd create` in the batch. A repo populated by a scripted run and never opened
+// interactively was therefore never reconciled at all — which is how four repos
+// reached exactly 0% mirrored. It now also runs a THROTTLED fleet pass so every
+// beads repo gets swept regardless of where the session happens to be.
+//
+// That was only safe to add after the lookup was made fast: findTasknoteForIssueId
+// cost 1,105 ms per call (it re-read all 2,067 task notes), so this hook needed
+// ~484 s for one repo against its 60 s timeout and was killed mid-sweep on every
+// batch. It is now ~0.09 ms per call, so the whole fleet fits in ~11 s.
+const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const log = require(path.join(__dirname, 'lib', 'hook-logger.js'));
 const { findBeadsRoot, findCodeRoot, sessionDir } = require(path.join(__dirname, 'lib', 'is-code-context.js'));
@@ -38,6 +50,76 @@ function projectSlugFor(beadsRoot) {
   const folderName = path.basename(beadsRoot);
   // Reuse the shared slug derivation (Title-Cased-With-Dashes).
   return TN.projectSlugFrom(folderName);
+}
+
+// One reconcile pass over a single repo. Returns how many notes it created.
+function reconcileRepo(beadsRoot) {
+  const issues = readIssues(beadsRoot);
+  if (!issues.length) return 0;
+  const codeRoot = findCodeRoot(beadsRoot) || beadsRoot;
+  const projectSlug = projectSlugFor(codeRoot);
+  let created = 0;
+  for (const it of issues) {
+    if (!it || !it.id || !it.title) continue;
+    // Skip closed issues — only mirror live work. Closed issues are completed in
+    // TaskNotes by the close-side sync, never created here. (Counting them as
+    // "should be mirrored" is what made coverage look like 46% when live work was
+    // at 98%.)
+    if (it.status === 'closed') continue;
+    if (TN.findTasknoteForIssueId(it.id)) continue;
+    TN.ensureMtnTask(it.id, it.title, TN.normalizePriority(it.priority), projectSlug);
+    if (TN.findTasknoteForIssueId(it.id)) created++;
+  }
+  return created;
+}
+
+// Throttle stamp for the fleet pass. Co-located with the other braynee runtime
+// state under ~/.claude.
+const FLEET_STAMP = path.join(os.homedir(), '.claude', 'braynee-mirror-fleet-sweep');
+const FLEET_INTERVAL_MS = 6 * 60 * 60 * 1000;   // 6h — drift accrues slowly
+
+function fleetSweepDue() {
+  try {
+    const last = Number(String(fs.readFileSync(FLEET_STAMP, 'utf8')).trim()) || 0;
+    return Date.now() - last >= FLEET_INTERVAL_MS;
+  } catch {
+    return true;   // no stamp yet → first sweep
+  }
+}
+
+// Retired project families: mirroring their issues would create vault notes for
+// work nobody will do.
+const DEAD_REPO = /^sophon(-|$)|^comfyui-sophon$/;
+
+function sweepFleet(skipRoot) {
+  const root = process.env.BRAYNEE_PROJECTS_DIR || process.env.BEADS_CODE_DIR
+    || path.join(os.homedir(), 'code');
+  let entries;
+  try {
+    entries = fs.readdirSync(root, { withFileTypes: true });
+  } catch {
+    return { created: 0, repos: 0 };
+  }
+  let created = 0;
+  let repos = 0;
+  for (const e of entries) {
+    if (!e.isDirectory() || e.name.startsWith('.') || DEAD_REPO.test(e.name)) continue;
+    const dir = path.join(root, e.name);
+    if (skipRoot && path.resolve(dir) === path.resolve(skipRoot)) continue;  // already done
+    if (!fs.existsSync(path.join(dir, '.beads'))) continue;
+    try {
+      const n = reconcileRepo(dir);
+      if (n) { created += n; repos++; }
+    } catch (err) {
+      log.debug(HOOK, `fleet sweep failed for ${e.name}: ${err && err.message}`);
+    }
+  }
+  try { fs.writeFileSync(FLEET_STAMP, String(Date.now())); }
+  catch (err) {
+    // Without the stamp the sweep runs on EVERY batch instead of every 6h.
+    log.debug(HOOK, `could not write fleet-sweep stamp: ${err && err.message}`);
+  }
+  return { created, repos };
 }
 
 let input = '';
@@ -73,38 +155,35 @@ process.stdin.on('end', () => {
     // cp-o4g --all trap) and server-free, so concurrent sessions don't hammer
     // the shared Dolt server (cp-6j5 / dolt-guard). bd auto-exports to jsonl on
     // create, so freshly-created issues are present by this PostToolBatch sweep.
-    const issues = readIssues(beadsRoot);
-    if (!issues.length) { process.exit(0); }
-
     const codeRoot = findCodeRoot(beadsRoot) || beadsRoot;
     const projectSlug = projectSlugFor(codeRoot);
 
-    let created = 0;
-    for (const it of issues) {
-      if (!it || !it.id || !it.title) continue;
-      // Skip closed issues — only mirror live work (matches the create-time
-      // mirror behavior; closed issues are completed in TaskNotes via the
-      // close-side sync).
-      if (it.status === 'closed') continue;
-      // ensureMtnTask is idempotent (dedupes by issue ID); it only creates a
-      // TaskNote when none exists for that ID.
-      const before = TN.findTasknoteForIssueId(it.id);
-      if (before) continue;
-      TN.ensureMtnTask(it.id, it.title, TN.normalizePriority(it.priority), projectSlug);
-      if (TN.findTasknoteForIssueId(it.id)) created++;
-    }
+    // 1. This repo, every batch — the fast path that keeps the active project
+    //    consistent immediately.
+    const created = reconcileRepo(beadsRoot);
 
-    if (created > 0) {
-      log.info(HOOK, `reconciled ${created} unmirrored beads issue(s) → TaskNotes for ${projectSlug}`);
+    // 2. Every OTHER repo, at most every 6h. This is the part that was missing:
+    //    a repo never opened in a session was never reconciled at all.
+    let fleet = { created: 0, repos: 0 };
+    if (fleetSweepDue()) fleet = sweepFleet(beadsRoot);
+
+    const total = created + fleet.created;
+    if (total > 0) {
+      log.info(HOOK, `reconciled ${created} for ${projectSlug}` +
+        (fleet.created ? ` + ${fleet.created} across ${fleet.repos} other repo(s)` : ''));
       process.stdout.write(JSON.stringify({
         hookSpecificOutput: {
           hookEventName: 'PostToolBatch',
           additionalContext:
-            `Beads→TaskNotes reconcile: ${created} beads issue(s) for "${projectSlug}" had no TaskNote (created in a batched/piped command that bypassed the per-call mirror) and were mirrored now. The three-way task mirror is consistent.`,
+            `Beads→TaskNotes reconcile: ${total} beads issue(s) had no TaskNote ` +
+            `(created in a batched/piped command that bypassed the per-call mirror) and were mirrored now` +
+            (fleet.created ? `, including ${fleet.created} in ${fleet.repos} repo(s) outside "${projectSlug}"` : ` for "${projectSlug}"`) +
+            `. The three-way task mirror is consistent.`,
         },
       }));
     } else {
-      log.info(HOOK, `no unmirrored issues for ${projectSlug}`);
+      log.info(HOOK, `no unmirrored issues for ${projectSlug}` +
+        (fleet.repos ? ` (fleet swept, all clean)` : ''));
     }
   } catch (e) {
     try { log.error(HOOK, `crash: ${e.message}`); } catch { /* logging must never break the hook */ }
