@@ -35,6 +35,18 @@
         ]
       },
       {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/vault-orphan-check.mjs"],
+            "timeout": 30,
+            "async": true,
+            "statusMessage": "Checking for deleted-but-linked notes..."
+          }
+        ]
+      },
+      {
         "matcher": "compact",
         "hooks": [
           {
