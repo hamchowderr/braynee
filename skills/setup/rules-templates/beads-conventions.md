@@ -39,6 +39,19 @@ it, it's probably TodoWrite, not a bead.
 - **Found work mid-task?** `bd create … --deps discovered-from:<current>` — preserve the causal link.
 - **Close with a reason:** `bd close <id> --reason "…"` — how/why it ended, with evidence.
 
+## No user-specific data in shareable artifacts
+Kits, templates, and plugins ship their beads *with them* — `.beads/issues.jsonl` is
+tracked, and commits carry `Closes:`/`Refs:` links into that history. So a beads issue
+(title, description, design, acceptance, notes, **close-reason**) and any commit that
+links one must contain **zero user-specific / private references**: real product names,
+client names, private repos, or internal business context.
+- When a private thing is only a design reference — "go look at *<my product>* for the
+  styling" — name it by **role**, never by name: "a reference chat app," "the house
+  style," "downstream products."
+- Treat every kit/template/plugin repo as **public-by-default**, even before it's pushed.
+- This has bitten more than once — it's a hard rule, not a preference. If names slip in,
+  scrub them from issues *and* the exported `issues.jsonl` *and* commit messages.
+
 ## Discipline
 - **Before coding** in a beads repo: `bd list --status in_progress` → else `bd ready` → claim atomically (`bd update <id> --claim`). Don't invent work.
 - **Research before you create.** Before filing a new issue — or building it — `bd search "<keywords>"` for existing or duplicate work (and, in a repo with PRs, `gh pr list --search "<keywords>"`). If it already exists, **link** (`--deps discovered-from:`/`related:`) or `bd supersede` instead of filing a duplicate; **abort** work that's already claimed or already has an open PR. (This is the beads "check before you build" discipline.)
