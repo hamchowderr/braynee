@@ -203,12 +203,98 @@ if (shouldAnnotate) {
 
 const res = spawnSync(process.execPath, [qmdJs, ...args], spawnOpts);
 
+// ── Zero-result diagnosis (cp-ee67) ─────────────────────────────────────────
+// `qmd search` is AND-based: EVERY term must match or the whole query returns
+// nothing. Combined with a query-time tokenizer that treats a dotted term as one
+// literal token, a term like `llms.txt` matches nothing even though it appears
+// verbatim in an indexed note — and silently zeroes an otherwise-good query.
+// Verified: 'llms' -> 5 hits, 'llms.txt' -> 0; 'hooks json' -> 5, 'hooks.json' -> 0.
+// Inconsistent too, so it can't be reasoned around: 'package.json' and '.env' DO
+// match. See cp-ee67 for the full reproduction.
+//
+// A bare "No results found." makes an agent conclude the knowledge is absent and
+// re-derive it, ask the user, or contradict a recorded decision. This turns that
+// silent wrong answer into a self-correcting one. Deliberately NOT solved by
+// telling agents to avoid dotted terms: the QMD hook re-injects its instructions
+// every turn and can't carry a growing list of tokenizer caveats.
+// Count qmd's OWN hit marker, not the `Path:` line — that one is added by
+// annotate() above, so a raw qmd call (as the retry probes below make) never has
+// it. Keying on `Path:` made every probe read as zero hits and the whole
+// diagnosis fell through silently.
+function hitCount(s) {
+  return typeof s === 'string' ? (s.match(/qmd:\/\//g) || []).length : 0;
+}
+const hasHits = (s) => hitCount(s) > 0;
+function runQmd(argv) {
+  const r = spawnSync(process.execPath, [qmdJs, ...argv], {
+    ...spawnOpts, stdio: ['inherit', 'pipe', 'inherit'], encoding: 'utf8', timeout: 60_000,
+  });
+  return typeof r.stdout === 'string' ? r.stdout : '';
+}
+// Interior dot only: `.env` is a leading-dot token that matches fine, and a
+// trailing dot is sentence punctuation.
+const isDotted = (t) => /[^.\s]\.[^.\s]/.test(t);
+const MAX_PROBES = 6;   // each probe is a separate qmd spawn; keep the tail bounded
+
+function diagnoseZeroResults(originalOut) {
+  const terms = args.slice(1).join(' ').split(/\s+/).filter(Boolean);
+  if (terms.length === 0) return originalOut;
+
+  // 1. Cheapest useful move: if any term has an interior dot, retry the whole
+  //    query with those split on dots. Demonstrably equivalent, one extra call.
+  const dotted = terms.filter(isDotted);
+  if (dotted.length) {
+    const relaxed = terms.map((t) => (isDotted(t) ? t.replace(/\./g, ' ') : t)).join(' ');
+    const out = runQmd(['search', relaxed]);
+    if (hasHits(out)) {
+      const note = `[qmd-wrapper] Your query matched nothing because qmd search is AND-based and these dotted terms match no index token: ${dotted.join(', ')}\n`
+        + `[qmd-wrapper] Retried as: "${relaxed}" — results below are from that retry (cp-ee67).\n\n`;
+      // Annotate so the retry's hits carry real filesystem paths too.
+      let annotated = out;
+      try { annotated = annotate(out); } catch { /* keep raw */ }
+      return note + annotated;
+    }
+  }
+
+  // 2. Still nothing: name the term(s) that zeroed it, so the caller can retry
+  //    deliberately instead of concluding the knowledge does not exist.
+  if (terms.length > 1) {
+    const dead = [];
+    for (const t of terms.slice(0, MAX_PROBES)) {
+      if (hitCount(runQmd(['search', t])) === 0) dead.push(t);
+    }
+    if (dead.length) {
+      const truncated = terms.length > MAX_PROBES ? ` (checked the first ${MAX_PROBES} of ${terms.length} terms)` : '';
+      return originalOut
+        + `\n[qmd-wrapper] qmd search requires EVERY term to match. These matched nothing and zeroed the query${truncated}: ${dead.join(', ')}\n`
+        + `[qmd-wrapper] Retry without them, or use bare stems (e.g. llms.txt -> llms). Absence of results here is NOT evidence the knowledge is missing (cp-ee67).\n`;
+    }
+    return originalOut
+      + `\n[qmd-wrapper] Every term matches something individually, but no document contains them ALL (qmd search is AND-based). Try fewer or rarer terms, or 'vsearch' for semantic matching (cp-ee67).\n`;
+  }
+  return originalOut;
+}
+
+if (process.env.QMD_WRAPPER_DEBUG) {
+  process.stderr.write(`[qmd-wrapper] cmd=${args[0]} annotate=${shouldAnnotate} stdoutType=${typeof res.stdout} len=${res.stdout ? res.stdout.length : 'n/a'} status=${res.status}\n`);
+}
 if (shouldAnnotate && typeof res.stdout === 'string') {
   let out = res.stdout;
   try {
     out = annotate(out);
   } catch {
     // Annotation is a convenience -- never let it swallow real results.
+  }
+  // Only `search` is cheap enough to probe, and only when it found nothing.
+  if (args[0] === 'search' && !hasHits(out)) {
+    try {
+      out = diagnoseZeroResults(out);
+    } catch (e) {
+      // Diagnosis is best-effort — never let it replace or hide real output.
+      if (process.env.QMD_WRAPPER_DEBUG) {
+        process.stderr.write(`[qmd-wrapper] diagnosis failed: ${(e && e.stack) || e}\n`);
+      }
+    }
   }
   process.stdout.write(out);
 }
