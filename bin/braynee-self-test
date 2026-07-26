@@ -1123,6 +1123,19 @@ results.projlookup = { ok: 0, fail: 0, errors: [] };
       if (!/\.md['"`]/.test(window)) return;
       offenders.push(`${path.relative(PLUGIN_ROOT, f).replace(/\\/g, '/')}:${i + 1}: ${line.trim().slice(0, 70)}`);
     });
+
+    // Second shape (cp-3hc5). The matcher above only sees a bare
+    // `readdirSync(projectsDir)`. It cannot see a GENERIC walker told not to
+    // recurse — `findMarkdownFiles(FOLDERS.projects, false)` — because the read
+    // itself lives inside the helper, where it is perfectly correct. That shape
+    // is what kept scripts/vault-query.mjs broken through all of cp-7kfh, so
+    // match any call whose first argument names the projects folder and whose
+    // second argument is an explicit falsy recursion flag.
+    lines.forEach((line, i) => {
+      const m = line.match(/\(\s*([A-Za-z_$][\w$.]*projects[\w$.]*)\s*,\s*(?:false|0)\s*\)/i);
+      if (!m) return;
+      offenders.push(`${path.relative(PLUGIN_ROOT, f).replace(/\\/g, '/')}:${i + 1}: non-recursive projects read: ${line.trim().slice(0, 60)}`);
+    });
   }
   assertLookup('no flat readdirSync over a vault project dir remains (count call sites, not files)',
     offenders.length === 0, offenders);
@@ -1140,6 +1153,24 @@ results.projlookup = { ok: 0, fail: 0, errors: [] };
   assertLookup(`all ${consumers.length} lookup consumers require the shared module`,
     notWired.length === 0, notWired);
 
+  // Requiring the module proves nothing (cp-3hc5). session-auto-track.js
+  // required vault-projects.js for listProjectNotes while keeping its own
+  // findProjectName — so the includes() check above passed for a full release
+  // while a tenth copy sat in the tree. A consumer may still DEFINE
+  // findProjectName as a thin wrapper, but it has to delegate.
+  // A thin wrapper is fine, so resolve the alias the file actually imported
+  // (`findProjectName: lookupProjectName`) rather than hardcoding one name —
+  // hardcoding flagged all eight legitimate wrappers on the first run.
+  const ownsACopy = consumers.filter(rel => {
+    let src = '';
+    try { src = fs.readFileSync(path.join(PLUGIN_ROOT, rel), 'utf8'); } catch { return false; }
+    if (!/^\s*function\s+findProjectName\s*\(/m.test(src)) return false;
+    const alias = src.match(/findProjectName\s*:\s*([A-Za-z_$][\w$]*)/);
+    return !alias || !new RegExp(`\\b${alias[1]}\\s*\\(`).test(src);
+  });
+  assertLookup('no consumer defines its own findProjectName without delegating',
+    ownsACopy.length === 0, ownsACopy);
+
   // Behavior, not just wiring: a nested note must resolve.
   const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'braynee-projfix-'));
   try {
@@ -1151,6 +1182,29 @@ results.projlookup = { ok: 0, fail: 0, errors: [] };
       findProjectName('nested-repo', fixture) === 'Nested Project');
   } finally {
     try { fs.rmSync(fixture, { recursive: true, force: true }); } catch { /* ignore */ }
+  }
+
+  // End-to-end through the entry point that actually regressed (cp-3hc5).
+  // The in-process check above exercises hooks/lib/vault-projects.js, which
+  // says nothing about scripts/vault-query.mjs — it has its own walker, and it
+  // was still flat for the whole of cp-7kfh, printing "No project note found"
+  // on every SessionStart. Assert the user-visible output, not the wiring:
+  // this stays true whether the code walks, flags, or imports.
+  const vqFixture = fs.mkdtempSync(path.join(os.tmpdir(), 'braynee-vqfix-'));
+  try {
+    const deep = path.join(vqFixture, '1. Projects', 'Group', 'Deep Project');
+    fs.mkdirSync(deep, { recursive: true });
+    fs.writeFileSync(path.join(deep, 'Deep Project.md'),
+      '---\nname: "Deep Project"\nstatus: active\n---\n\n## Goal\nfixture\n');
+    const r = spawnSync(process.execPath,
+      [path.join(PLUGIN_ROOT, 'scripts', 'vault-query.mjs'), 'context', 'Deep Project'],
+      { encoding: 'utf8', timeout: 15_000, env: { ...process.env, BRAYNEE_VAULT: vqFixture } });
+    const out = `${r.stdout || ''}${r.stderr || ''}`;
+    assertLookup('vault-query context resolves a note two levels deep',
+      /──\s*PROJECT/.test(out) && !/No project note found/.test(out),
+      [out.replace(/\s+/g, ' ').slice(0, 200)]);
+  } finally {
+    try { fs.rmSync(vqFixture, { recursive: true, force: true }); } catch { /* ignore */ }
   }
 }
 log(`  ${results.projlookup.ok} passed | ${results.projlookup.fail} failed`);

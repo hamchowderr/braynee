@@ -31,6 +31,9 @@ const VAULT = getVaultRoot();
 const FOLDERS = {
   projects:   join(VAULT, '1. Projects'),
   sessions:   join(VAULT, '2. Areas', 'Sessions'),
+  // Views is a genuinely FLAT folder (8 notes, 0 subdirectories), so its
+  // findMarkdownFiles call sites pass recursive=false deliberately — that is not
+  // the cp-3hc5 bug. `projects` is the one that must always recurse.
   dashboards: join(VAULT, '2. Areas', 'Views'),
   bases:      join(VAULT, '2. Areas', 'Bases'),
   tasks:      join(VAULT, '2. Areas', 'TaskNotes', 'Tasks'),
@@ -534,7 +537,11 @@ function loadContext(args) {
   console.log(`${'═'.repeat(60)}\n`);
 
   // 1. Find project note
-  const projectFiles = findMarkdownFiles(FOLDERS.projects, false)
+  // MUST be recursive (cp-3hc5). The PARA convention puts a multi-note project
+  // in its own folder with the main note inside — `1. Projects/Braynee/Braynee.md`.
+  // A flat read sees 43 of 276 notes in the real vault and printed
+  // "No project note found" on every SessionStart for notes that exist.
+  const projectFiles = findMarkdownFiles(FOLDERS.projects, true)
     .map(f => readNote(f))
     .filter(n =>
       n.filename.toLowerCase() === project.toLowerCase() ||
@@ -888,7 +895,8 @@ switch (cmd) {
         createProject(args);
         break;
       case 'list': {
-        let notes = findMarkdownFiles(FOLDERS.projects, false).map(f => readNote(f));
+        // Recursive: nested project notes are projects too (cp-3hc5).
+        let notes = findMarkdownFiles(FOLDERS.projects, true).map(f => readNote(f));
         if (args['--status']) notes = notes.filter(n => matchesFilter(n, { status: args['--status'] }));
         notes = sortNotes(notes, args['--sort'] || 'filename:asc');
 
