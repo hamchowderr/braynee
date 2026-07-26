@@ -243,12 +243,20 @@ function fixUntrack(r, log) {
     fs.writeFileSync(gi, text);
     log.push('  + .gitignore <- ' + GITIGNORE_LINE);
   }
-  const rm = sh('git', ['rm', '--cached', '--quiet', JSONL_REL], r.repo);
+  // --force is required, not optional: bd leaves issues.jsonl STAGED with content
+  // differing from both HEAD and the worktree (the same staging behavior that
+  // blocks `git checkout`), and plain `git rm --cached` refuses in that state.
+  //
+  // Safe here specifically because --cached only touches the INDEX: the file
+  // stays on disk untouched, and it is a generated export regenerable at any
+  // time with `bd export --all --include-memories`. Verified on a real repo:
+  // 72,751 bytes / 49 issues before and after, byte-identical.
+  const rm = sh('git', ['rm', '--cached', '--force', '--quiet', JSONL_REL], r.repo);
   if (!rm.ok) {
     log.push('  ! git rm --cached failed: ' + rm.out.trim().split('\n')[0]);
     return 'fail';
   }
-  log.push('  + untracked (staged deletion — rides your next commit)');
+  log.push('  + untracked (staged deletion — rides your next commit; file kept on disk)');
   return 'done';
 }
 
