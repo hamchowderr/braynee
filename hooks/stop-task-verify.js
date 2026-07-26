@@ -24,9 +24,32 @@ const HOOK = 'stop-task-verify';
 const HOME = os.homedir();
 const ACTIVE_ISSUE_FILE = path.join(HOME, '.claude', 'beads-active-issue.json');
 
+// cp-szoa: this hook is registered with a 15s timeout in hooks.json, but it makes
+// up to THREE sequential CLI calls — `mtn timer status`, `bd show`, `bd list` —
+// and each was allowed its own 8s. Worst case 24s. When two of them ran slow,
+// Claude Code killed the hook part-way and its verification emitted NOTHING, with
+// no trace beyond the process dying. Found when the self-test timed it out twice
+// in a row (30s) during a 20-run soak; the old reporting called that a "CRASH".
+//
+// Fix: one wall-clock budget for the whole hook, spent down across calls. A slow
+// CLI now costs the LATER checks rather than the entire hook — partial warnings
+// are strictly better than being killed with none. The budget starts at module
+// load because that is when Claude Code starts its own clock.
+const BUDGET_MS = 12_000;   // under the 15s allowance, leaving room for node boot + stdin
+const DEADLINE = Date.now() + BUDGET_MS;
+let skippedForBudget = 0;
+
 function run(cmd, opts = {}) {
+  const remaining = DEADLINE - Date.now();
+  if (remaining < 750) { skippedForBudget++; return null; }  // too little left to be useful
   try {
-    return execSync(cmd, { encoding: 'utf8', timeout: 8000, stdio: ['pipe', 'pipe', 'ignore'], windowsHide: true, ...opts }).trim();
+    return execSync(cmd, {
+      encoding: 'utf8',
+      timeout: Math.min(8000, remaining),
+      stdio: ['pipe', 'pipe', 'ignore'],
+      windowsHide: true,
+      ...opts,
+    }).trim();
   } catch { return null; }
 }
 
@@ -116,6 +139,12 @@ process.stdin.on('end', () => {
     }
     if (timerRunning && !activeIssue && inProgressIssues.length === 0) {
       warnings.push(`ORPHANED TIMER: mtn timer is running but no active beads issue — stop the timer with \`mtn timer stop\``);
+    }
+
+    // A skipped check is not a clean bill of health — say so rather than let the
+    // hook look like it verified everything (cp-szoa).
+    if (skippedForBudget > 0) {
+      log.debug(HOOK, `${skippedForBudget} check(s) skipped: ${BUDGET_MS}ms budget exhausted by slow CLI calls`);
     }
 
     if (warnings.length === 0) {
