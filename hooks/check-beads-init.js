@@ -35,7 +35,7 @@ function isBeadsPluginInstalled() {
       const beadsDir = path.join(PLUGINS_CACHE, marketplace.name, 'beads');
       if (fs.existsSync(beadsDir)) return true;
     }
-  } catch {}
+  } catch { /* probe over the plugin cache — unreadable means "not installed" */ }
   return false;
 }
 

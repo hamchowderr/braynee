@@ -21,6 +21,8 @@ const { findCodeRoot, sessionDir } = require(path.join(__dirname, 'lib', 'is-cod
 const VAULT_QUERY = path.join(__dirname, '..', 'scripts', 'vault-query.mjs');
 const { getVaultRoot } = require(path.join(__dirname, '..', 'scripts', 'lib', 'vault-root.js'));
 const VAULT_DIR = getVaultRoot();
+const log = require(path.join(__dirname, 'lib', 'hook-logger.js'));
+const HOOK = 'pre-compact-snapshot';
 const SESSIONS_DIR = path.join(VAULT_DIR, '2. Areas', 'Sessions');
 const SNAPSHOT_FILE = path.join(os.homedir(), '.claude', 'compact-snapshot.json');
 const CONTEXT_CACHE = path.join(os.homedir(), '.claude', 'vault-context-cache.json');
@@ -51,7 +53,11 @@ function findActiveSession(projectName) {
           results.push(path.join(dir, entry.name));
         }
       }
-    } catch {}
+    } catch (e) {
+      // Partial results are returned, so a failed walk silently shrinks what
+      // gets snapshotted — and the loss only shows up AFTER the compaction.
+      log.debug(HOOK, `session-note walk failed under ${dir}: ${e && e.message}`);
+    }
     return results;
   }
 
@@ -201,7 +207,12 @@ process.stdin.on('end', () => {
           snapshot.vaultContext = cache.context.split('\n').slice(0, 60).join('\n');
           snapshot.vaultContextProject = cache.project;
         }
-      } catch { /* skip */ }
+      } catch (e) {
+        // Guarded by an existsSync above, so reaching here means the cache is
+        // present but unreadable/corrupt — the snapshot then loses its vault
+        // context with no other symptom.
+        log.debug(HOOK, `vault-context cache unreadable: ${e && e.message}`);
+      }
     }
 
     fs.writeFileSync(SNAPSHOT_FILE, JSON.stringify(snapshot, null, 2));

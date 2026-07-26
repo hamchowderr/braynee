@@ -55,7 +55,7 @@ process.stdin.on('end', () => {
       }));
     }
   } catch (e) {
-    try { log.error(HOOK, `crash: ${e.message}`); } catch {}
+    try { log.error(HOOK, `crash: ${e.message}`); } catch { /* logging must never break the hook */ }
   }
   process.exit(0);
 });

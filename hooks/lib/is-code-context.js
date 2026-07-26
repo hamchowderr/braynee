@@ -45,7 +45,7 @@ const os = require('os');
 let HOME_DIR = null;
 try {
   HOME_DIR = path.resolve(os.homedir());
-} catch {}
+} catch { /* module load: hook-logger is not usable yet, and a null HOME_DIR just disables the exclusion (cp-yg1o) */ }
 
 // The OS scratch directory is never a project root either (cp-9krl). Long-lived
 // temp dirs accumulate stray markers from unrelated tooling: on this machine
@@ -64,7 +64,7 @@ try {
 let TMP_DIR = null;
 try {
   TMP_DIR = path.resolve(os.tmpdir());
-} catch {}
+} catch { /* module load: hook-logger is not usable yet, and a null TMP_DIR just disables the exclusion (cp-yg1o) */ }
 
 // Manifest / project files that unambiguously mark a project root.
 // First match while walking up wins (closest ancestor = the project root).
@@ -145,7 +145,7 @@ function dirHasCorroborating(dir) {
   for (const marker of CORROBORATING_DIRS) {
     try {
       if (fs.existsSync(path.join(dir, marker))) return true;
-    } catch {}
+    } catch { /* existence probe: a marker that cannot be stat-ed does not corroborate */ }
   }
   return false;
 }
@@ -157,7 +157,7 @@ function isExcludedRoot(dir) {
   if (TMP_DIR && dir === TMP_DIR) return true;
   try {
     if (dir === path.parse(dir).root) return true;
-  } catch {}
+  } catch { /* path.parse on an exotic path — treat as not-a-root */ }
   return false;
 }
 
@@ -179,14 +179,14 @@ function isInsideObsidianVault(startDir) {
   while (dir && dir !== root) {
     try {
       if (fs.existsSync(path.join(dir, '.obsidian'))) return true;
-    } catch {}
+    } catch { /* existence probe while walking up toward a vault root */ }
     const parent = path.dirname(dir);
     if (parent === dir) break;
     dir = parent;
   }
   try {
     if (fs.existsSync(path.join(root, '.obsidian'))) return true;
-  } catch {}
+  } catch { /* existence probe at the filesystem root */ }
   return false;
 }
 
@@ -267,7 +267,7 @@ function findMarkerRoot(startDir, marker) {
     if (!isExcludedRoot(dir)) {
       try {
         if (fs.existsSync(path.join(dir, marker))) return dir;
-      } catch {}
+      } catch { /* existence probe: an unreadable dir simply does not match */ }
     }
     const parent = path.dirname(dir);
     if (parent === dir) break;

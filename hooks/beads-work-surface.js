@@ -78,7 +78,7 @@ process.stdin.on('end', () => {
       try {
         const open = JSON.parse(openRaw);
         if (Array.isArray(open)) openCount = open.length;
-      } catch {}
+      } catch (e) { log.debug(HOOK, `open-count parse failed: ${e && e.message}`); }
     }
 
     // In-progress check first — if something is claimed, no surface needed.
@@ -105,7 +105,12 @@ process.stdin.on('end', () => {
           ));
           process.exit(0);
         }
-      } catch {}
+      } catch (e) {
+        // A failure here means the in-progress surface silently did not render,
+        // which is indistinguishable from "nothing is claimed" — the exact kind
+        // of silent no-op this channel exists to make visible.
+        log.debug(HOOK, `in-progress surface failed: ${e && e.message}`);
+      }
     }
 
     // Nothing in_progress — surface ready work.
@@ -123,7 +128,7 @@ process.stdin.on('end', () => {
             .map(i => `  [${i.id}] (P${i.priority ?? '?'}) ${i.title}`)
             .join('\n');
         }
-      } catch {}
+      } catch (e) { log.debug(HOOK, `ready-list parse failed: ${e && e.message}`); }
     }
 
     if (readyList) {

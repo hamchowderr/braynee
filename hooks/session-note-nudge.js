@@ -57,7 +57,10 @@ function findMdFiles(dir) {
         results.push(path.join(dir, entry.name));
       }
     }
-  } catch {
+  } catch (e) {
+    // Partial results are returned, so an unreadable directory silently shrinks
+    // the set of session notes this nudge can see.
+    log.debug(HOOK, `session-note walk failed under ${dir}: ${e && e.message}`);
     // Skip unreadable directories
   }
   return results;
@@ -113,14 +116,18 @@ function loadState() {
     if (fs.existsSync(STATE_FILE)) {
       return JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
     }
-  } catch {}
+  } catch { /* no state file yet — the caller returns documented defaults */ }
   return { toolCount: 0, lastNudgeTime: 0 };
 }
 
 function saveState(state) {
   try {
     fs.writeFileSync(STATE_FILE, JSON.stringify(state));
-  } catch {}
+  } catch (e) {
+    // Holds the tool counter and last-nudge time; a failed write makes the
+    // throttle useless without any other symptom.
+    log.debug(HOOK, `could not persist nudge state: ${e && e.message}`);
+  }
 }
 
 // Returns a factual reminder string if the session's Goal is still a

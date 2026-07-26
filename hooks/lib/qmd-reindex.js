@@ -145,7 +145,12 @@ function syncBeadsBodies() {
       timeout: 30000,
       windowsHide: true,
     });
-    try { fs.writeFileSync(BODY_SYNC_STAMP, String(Date.now())); } catch { /* ignore */ }
+    try { fs.writeFileSync(BODY_SYNC_STAMP, String(Date.now())); }
+    catch (e) {
+      // The stamp is the throttle. Without it the body sync re-runs on every
+      // single invocation instead of once per interval — expensive and silent.
+      log.debug(LOG_NAME, `could not write body-sync stamp: ${e && e.message}`);
+    }
     return { ran: true };
   } catch (e) {
     // `reason: 'error'` told the caller nothing about WHAT failed. A permanently

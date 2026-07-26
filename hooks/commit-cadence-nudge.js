@@ -28,7 +28,11 @@ function loadState() {
   try { return JSON.parse(fs.readFileSync(STATE_FILE, 'utf-8')); } catch { return {}; }
 }
 function saveState(s) {
-  try { fs.writeFileSync(STATE_FILE, JSON.stringify(s), 'utf-8'); } catch {}
+  try { fs.writeFileSync(STATE_FILE, JSON.stringify(s), 'utf-8'); }
+  catch (e) {
+    // Cadence state; a failed write silently resets the counter every run.
+    log.debug(HOOK, `could not persist cadence state: ${e && e.message}`);
+  }
 }
 
 let input = '';

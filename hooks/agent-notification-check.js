@@ -115,7 +115,7 @@ process.stdin.on('end', () => {
       );
     }
   } catch (e) {
-    try { log.debug(HOOK, `unhandled: ${e && e.message}`); } catch {}
+    try { log.debug(HOOK, `unhandled: ${e && e.message}`); } catch { /* logging must never break the hook */ }
   }
   process.exit(0);
 });

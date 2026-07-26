@@ -17,6 +17,8 @@ const { execSync } = require('child_process');
 const { getVaultRoot } = require(path.join(__dirname, '..', '..', 'scripts', 'lib', 'vault-root.js'));
 const { resolveProjectLink } = require(path.join(__dirname, 'project-resolver.js'));
 const VAULT_DIR = getVaultRoot();
+const log = require(path.join(__dirname, 'hook-logger.js'));
+const LOG_NAME = 'tasknotes-mirror';
 const TASKNOTES_DIR = path.join(VAULT_DIR, '2. Areas', 'TaskNotes', 'Tasks');
 
 // 0–4 → name (matches beads-status-sync PRIORITY_MAP). Also tolerates the
@@ -72,7 +74,13 @@ function findTasknoteForIssueId(issueId) {
       // which meant ensureMtnTask created a DUPLICATE note for an issue that
       // already had one, and completeMtnTaskByIssueId silently no-op'd so closed
       // work stayed "open". Found by tasknotes-mirror.test.js (cp-ccsh.10).
-      try { fm = (fs.readFileSync(filepath, 'utf8').match(/^﻿?---\r?\n([\s\S]*?)\r?\n---/) || [, ''])[1]; } catch {}
+      try { fm = (fs.readFileSync(filepath, 'utf8').match(/^﻿?---\r?\n([\s\S]*?)\r?\n---/) || [, ''])[1]; }
+      catch (e) {
+        // An unreadable note reads as "no such task note", which is precisely
+        // the failure described above: a DUPLICATE gets created and the close
+        // path silently no-ops. Never let that happen without a record.
+        log.debug(LOG_NAME, `task note unreadable ${filepath}: ${e && e.message}`);
+      }
       return { filepath, fm };
     });
   } catch { return null; }
@@ -118,7 +126,11 @@ function completeMtnTaskByIssueId(issueId) {
     fm = /^status:.*$/m.test(fm) ? fm.replace(/^status:.*$/m, 'status: done') : fm + '\nstatus: done';
     fm = /^completedDate:.*$/m.test(fm) ? fm.replace(/^completedDate:.*$/m, `completedDate: '${date}'`) : fm + `\ncompletedDate: '${date}'`;
     fs.writeFileSync(file, m[1] + fm + m[3] + content.slice(m[0].length));
-  } catch { /* non-fatal: leave task as-is */ }
+  } catch (e) {
+    // Leaves a closed issue's task note showing "open" forever — the mirror
+    // drift this module exists to prevent.
+    log.debug(LOG_NAME, `could not mark task note complete ${file}: ${e && e.message}`);
+  }
 }
 
 // Create the matching TaskNote if one does not already exist for this issue.
@@ -152,7 +164,11 @@ function ensureMtnTask(issueId, title, priority, projectSlug) {
       }
       if (changed) fs.writeFileSync(file, content);
     }
-  } catch { /* non-fatal: keep mtn's output as-is */ }
+  } catch (e) {
+    // The note exists but without `status:`, so later status queries skip it
+    // and it never appears open or closed anywhere.
+    log.debug(LOG_NAME, `could not normalize new task note: ${e && e.message}`);
+  }
   return safeTitle;
 }
 

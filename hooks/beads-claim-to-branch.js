@@ -76,7 +76,7 @@ process.stdin.on('end', () => {
         const issue = JSON.parse(showJson);
         title = issue.title || issueId;
         type = (issue.issue_type || issue.type || '').toLowerCase() === 'bug' ? 'fix' : 'feature';
-      } catch {}
+      } catch { /* bd returned unparseable JSON — fall back to the id-only branch name */ }
     }
 
     const branch = `${type}/${issueId}-${slugify(title)}`;

@@ -15,6 +15,8 @@
 const path = require('path');
 const { findCodeRoot, findBeadsRoot, sessionDir } = require(path.join(__dirname, 'lib', 'is-code-context.js'));
 const map = require(path.join(__dirname, 'lib', 'bd-task-map.js')); // cp-ydy
+const log = require(path.join(__dirname, 'lib', 'hook-logger.js'));
+const HOOK = 'task-completed-check';
 
 function emit(text) {
   process.stdout.write(JSON.stringify({
@@ -50,7 +52,13 @@ process.stdin.on('end', () => {
     // bd_id. A stable id beats fuzzy title matching: if the title was unique at
     // create time, this names the right issue to close, every time.
     let entry = null;
-    try { entry = map.upsert(path.join(beadsRoot, '.beads'), { ccTaskId: taskId, title: rawTitle }); } catch {}
+    try { entry = map.upsert(path.join(beadsRoot, '.beads'), { ccTaskId: taskId, title: rawTitle }); }
+    catch (e) {
+      // Without the entry there is no bd_id to name, so the hook falls back to
+      // the generic "no beads issue is mapped" nudge — which looks like a
+      // correct answer rather than a lookup that failed (cp-ydy).
+      log.debug(HOOK, `task-map lookup failed: ${e && e.message}`);
+    }
 
     if (entry && entry.bd_id) {
       emit(
@@ -66,6 +74,8 @@ process.stdin.on('end', () => {
         `TaskNote complete; otherwise no close is needed.`
       );
     }
-  } catch {}
+  } catch (e) {
+    try { log.debug(HOOK, `unhandled: ${e && e.message}`); } catch { /* logging must never break the hook */ }
+  }
   process.exit(0);
 });

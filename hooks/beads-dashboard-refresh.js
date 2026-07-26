@@ -9,6 +9,8 @@ const os = require('os');
 const { findCodeRoot } = require(path.join(__dirname, 'lib', 'is-code-context.js'));
 
 const CLAUDE_DIR = path.join(os.homedir(), '.claude');
+const log = require(path.join(__dirname, 'lib', 'hook-logger.js'));
+const HOOK = 'beads-dashboard-refresh';
 
 let input = '';
 process.stdin.setEncoding('utf8');
@@ -39,7 +41,7 @@ process.stdin.on('end', () => {
     const SESSIONS_FILE = path.join(CLAUDE_DIR, 'beads-active-sessions.json');
     try {
       let sessions = {};
-      try { sessions = JSON.parse(fs.readFileSync(SESSIONS_FILE, 'utf8')); } catch {}
+      try { sessions = JSON.parse(fs.readFileSync(SESSIONS_FILE, 'utf8')); } catch { /* no sessions file yet, or corrupt — start from an empty set */ }
       const projectName = path.basename(codeRoot);
       sessions[projectName] = { path: codeRoot, lastSeen: new Date().toISOString() };
       const cutoff = Date.now() - 72 * 60 * 60 * 1000;
@@ -47,7 +49,11 @@ process.stdin.on('end', () => {
         if (new Date(v.lastSeen).getTime() < cutoff) delete sessions[k];
       }
       fs.writeFileSync(SESSIONS_FILE, JSON.stringify(sessions));
-    } catch {}
+    } catch (e) {
+      // This registration is how a project reaches the dashboard at all; a
+      // failed write means it silently never appears there.
+      log.debug(HOOK, `could not register project in sessions file: ${e && e.message}`);
+    }
 
     // Regenerate shared dashboard (all active sessions)
     const dashboardPath = path.join(CLAUDE_DIR, 'beads-dashboard.html');

@@ -84,7 +84,13 @@ function loadIgnoreFolders(env, homeDir) {
         }
       }
     }
-  } catch {
+  } catch (e) {
+    // Falling back silently means the user's override is ignored and tracking
+    // quietly reverts to defaults — no error, just different behavior.
+    try {
+      require(path.join(__dirname, 'hook-logger.js'))
+        .debug('ignore-folders', `override file unusable, using defaults: ${e && e.message}`);
+    } catch { /* logging must never break session tracking */ }
     // A broken override file must never break session tracking — fall back to
     // defaults + env only.
   }

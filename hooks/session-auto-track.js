@@ -227,7 +227,10 @@ function walkMdFiles(dir) {
         results.push(path.join(dir, entry.name));
       }
     }
-  } catch {
+  } catch (e) {
+    // Partial results are returned, so a permission error silently shrinks the
+    // set of session notes rather than surfacing as a failure.
+    log.debug(HOOK, `session-note walk failed under ${dir}: ${e && e.message}`);
     // Ignore permission errors etc.
   }
   return results;
@@ -723,7 +726,11 @@ process.stdin.on('end', () => {
               output.push(`✓ BEADS: ${inProgress.length} issue(s) in progress: ${inProgress.map(i => i.id).join(', ')}`);
             }
           }
-        } catch { /* non-fatal */ }
+        } catch (e) {
+          // Swallowing here drops the whole beads work surface from the
+          // session-start output, which reads as "no beads issues exist".
+          log.debug(HOOK, `beads surface failed: ${e && e.message}`);
+        }
       } else {
         // No active session — auto-create one. Pass sessionId so the stub is
         // identifiable and the distiller can upgrade it in place (not duplicate).
@@ -739,7 +746,11 @@ process.stdin.on('end', () => {
               '## Context\n' + contextLines + '\n'
             );
             fs.writeFileSync(created.filepath, sessionContent, 'utf8');
-          } catch (e) { /* non-fatal */ }
+          } catch (e) {
+            // The note still exists but without its ## Context block, so the
+            // loss is invisible unless it is recorded here.
+            log.debug(HOOK, `could not write session context: ${e && e.message}`);
+          }
         }
 
         output.push('');
@@ -801,7 +812,11 @@ process.stdin.on('end', () => {
           activeTimer: null,   // timer filled in later by statusline-state.js async hook
           updatedAt: new Date().toISOString(),
         }));
-      } catch { /* non-fatal */ }
+      } catch (e) {
+        // The statusline reads this file; a failed write silently leaves it
+        // showing the previous session's project.
+        log.debug(HOOK, `could not persist statusline state: ${e && e.message}`);
+      }
     }
 
     process.exit(0);

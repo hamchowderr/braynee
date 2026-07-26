@@ -52,7 +52,7 @@ function issueIdRegex(cwd) {
         return new RegExp(`((?:${escaped})-[a-z0-9]+)`, 'i');
       }
     }
-  } catch {}
+  } catch { /* no prefixes discoverable — fall back to the generic id pattern */ }
   return GENERIC_ID_RE;
 }
 
@@ -123,7 +123,7 @@ process.stdin.on('end', () => {
           log.info(HOOK, `${issueId} already closed — skip`);
           process.exit(0);
         }
-      } catch {}
+      } catch { /* unparseable bd output — proceed as if not already closed */ }
     }
 
     const result = run(`bd close ${issueId}`, { cwd });
