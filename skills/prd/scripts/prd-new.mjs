@@ -16,7 +16,8 @@ const { getVaultRoot } = require(path.join(SCRIPTS_LIB, 'vault-root.js'));
 
 const args = process.argv.slice(2);
 if (!args[0] || args[0].startsWith('--')) {
-  console.error('Usage: prd-new.mjs "<Name>" [--folder <slug>] [--client <name>]');
+  console.error('Usage: prd-new.mjs "<Name>" [--folder <slug>] [--client <name>] [--folder-form]');
+  console.error('  --folder-form   scaffold as a hub + section files under PRDs/<Name>/ (cp-s4uw)');
   process.exit(1);
 }
 const name = args[0];
@@ -24,16 +25,29 @@ const folderArg = args.indexOf('--folder');
 const folder = folderArg !== -1 ? args[folderArg + 1] : name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
 const clientArg = args.indexOf('--client');
 const client = clientArg !== -1 ? args[clientArg + 1] : null;
+// cp-s4uw: folder form — a hub named after its folder plus sibling chapters,
+// matching the layout PRDs are commonly split into by hand.
+const folderForm = args.includes('--folder-form');
 
 const VAULT = getVaultRoot();
 const PRD_DIR = path.join(VAULT, '2. Areas', 'Product Manager', 'PRDs');
 const today = new Date().toISOString().slice(0, 10);
 const slug = name.replace(/[^A-Za-z0-9-]/g, '-');
-const prdPath = path.join(PRD_DIR, `${slug}.md`);
+// Folder form puts the hub at PRDs/<Name>/<Name>.md; the hub is always named
+// after its folder, which is what lib/prd-paths.js resolves against.
+const prdFolder = folderForm ? path.join(PRD_DIR, slug) : null;
+const prdPath = folderForm
+  ? path.join(prdFolder, `${slug}.md`)
+  : path.join(PRD_DIR, `${slug}.md`);
 
-if (fs.existsSync(prdPath)) {
-  console.error(`PRD already exists: ${prdPath}`);
-  process.exit(1);
+// Check BOTH shapes: scaffolding a folder PRD next to an existing monolithic one
+// of the same name would leave two documents that resolve to the same target.
+for (const clash of [path.join(PRD_DIR, `${slug}.md`), path.join(PRD_DIR, slug)]) {
+  if (fs.existsSync(clash)) {
+    console.error(`PRD already exists: ${clash}`);
+    if (!folderForm) console.error(`(to convert an existing PRD to folder form, use scripts/prd-split.mjs)`);
+    process.exit(1);
+  }
 }
 
 const fm = [
@@ -196,9 +210,43 @@ The first time a user experiences the core value.
 - [[1. Projects/${name}]]
 `;
 
-fs.mkdirSync(PRD_DIR, { recursive: true });
-fs.writeFileSync(prdPath, fm + '\n' + body, 'utf-8');
-console.log(`Created: ${prdPath}`);
+if (folderForm) {
+  // Split the scaffold the same way prd-split.mjs does, so the two paths to a
+  // folder PRD (scaffold new / split existing) produce the same shape. The hub
+  // keeps the spine braynee's own tooling reads — MVP Definition, Acceptance
+  // Criteria, Risks — and each long-form chapter becomes a linked sibling.
+  const SPLIT_OUT = [
+    'Triple-Purpose Asset', 'Lean Canvas', 'Personas / Jobs-To-Be-Done',
+    'User Journeys', 'Scope', 'Architecture', 'Milestones',
+  ];
+  const parts = body.split(/\n(?=## )/);
+  const kept = [];
+  const written = [];
+  fs.mkdirSync(prdFolder, { recursive: true });
+
+  for (const part of parts) {
+    const m = part.match(/^##\s+(.+?)\s*$/m);
+    const title = m ? m[1].trim() : null;
+    if (!title || !SPLIT_OUT.includes(title)) { kept.push(part); continue; }
+    const fileName = title.replace(/[\\/:*?"<>|]/g, '-');
+    const file = path.join(prdFolder, `${fileName}.md`);
+    // Section files carry no PRD frontmatter — exactly one hub per folder is
+    // what makes lib/prd-paths.js able to identify the hub unambiguously.
+    fs.writeFileSync(file, `# ${title}\n` + part.replace(/^##\s+.+?\s*$/m, '').replace(/^\n+/, '\n'), 'utf-8');
+    written.push(file);
+    const rel = path.relative(VAULT, file).replace(/\\/g, '/').replace(/\.md$/, '');
+    kept.push(`## ${title}\n\n> See [[${rel}|${fileName}]]\n`);
+  }
+
+  fs.writeFileSync(prdPath, fm + '\n' + kept.join('\n'), 'utf-8');
+  console.log(`Created folder PRD: ${prdFolder}${path.sep}`);
+  console.log(`  hub:      ${path.basename(prdPath)}`);
+  for (const f of written) console.log(`  section:  ${path.basename(f)}`);
+} else {
+  fs.mkdirSync(PRD_DIR, { recursive: true });
+  fs.writeFileSync(prdPath, fm + '\n' + body, 'utf-8');
+  console.log(`Created: ${prdPath}`);
+}
 const projectsRoot = getProjectsDir();
 console.log(`Folder join key: ${folder} → ${path.join(projectsRoot, folder)}/`);
 if (!isProjectsDirConfigured()) {

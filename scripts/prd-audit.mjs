@@ -24,6 +24,8 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const { getProjectsDir, isProjectsDirConfigured } = require('./lib/projects-root.js');
 const { getVaultRoot } = require('./lib/vault-root.js');
+// cp-s4uw: shared PRD path resolution — one definition of "a PRD" for seed+audit.
+const PRDP = require('./lib/prd-paths.js');
 
 const VAULT = process.argv.includes('--vault')
   ? process.argv[process.argv.indexOf('--vault') + 1]
@@ -120,18 +122,35 @@ function audit(file) {
   if (!('seeded_at' in fm)) warnings.push('seeded_at field missing (NEW)');
   if (!('seeded_count' in fm)) warnings.push('seeded_count field missing (NEW)');
 
-  const acCount = countAcceptanceCriteria(content);
-  if (acCount === null) warnings.push('## Acceptance Criteria section not found');
-  else if (acCount === 0) warnings.push('## Acceptance Criteria section has 0 seedable items');
+  // cp-s4uw: count across the hub AND its section files. A split PRD can hold
+  // its criteria in a section, and auditing the hub alone would report "section
+  // not found" for a PRD that is complete — the same blind spot that made
+  // prd-seed find zero issues. Must match what prd-seed actually parses.
+  const sections = PRDP.sectionFilesFor(file, PRD_DIR);
+  const acCount = sections.length
+    ? countAcceptanceCriteria(PRDP.prdFullText(file, PRD_DIR))
+    : countAcceptanceCriteria(content);
+  if (acCount === null) {
+    warnings.push('## Acceptance Criteria section not found'
+      + (sections.length ? ` (searched the hub + ${sections.length} section file(s))` : ''));
+  } else if (acCount === 0) warnings.push('## Acceptance Criteria section has 0 seedable items');
 
-  return { file, fm, issues, warnings, acceptanceCount: acCount };
+  return { file, fm, issues, warnings, acceptanceCount: acCount, sections: sections.length };
 }
 
-const allMd = walkMd(PRD_DIR);
+// cp-s4uw: enumerate PRDs, not markdown files. A folder PRD contributes exactly
+// ONE entry — its hub. Previously this walked recursively and audited every
+// section file as a standalone PRD, so chapters like "Zapier SDK API Reference"
+// and "Architecture & Build Plan" were reported as PRDs missing a project
+// backlink and an Acceptance Criteria section they were never meant to have.
+// Sections have no frontmatter, so the type!=prd filter below never caught them.
+const hubs = PRDP.listPrdHubs(PRD_DIR);
+const sectionCount = hubs.reduce((n, h) => n + PRDP.sectionFilesFor(h, PRD_DIR).length, 0);
+
 // Skip _index.md and reference companion docs (type != "prd").
 // Files with no frontmatter still get audited so we can flag the stub.
 const skipped = [];
-const prdFiles = allMd.filter(f => {
+const prdFiles = hubs.filter(f => {
   if (path.basename(f).startsWith('_')) return false;
   const content = fs.readFileSync(f, 'utf-8');
   const fm = parseFrontmatter(content);
@@ -155,7 +174,8 @@ const warnCount = results.filter(r => r.issues.length === 0 && r.warnings.length
 const errorCount = results.filter(r => r.issues.length > 0).length;
 
 console.log(`# PRD Audit — ${PRD_DIR}\n`);
-console.log(`Found ${prdFiles.length} PRD file(s) (skipped ${skipped.length} reference/companion doc(s)).`);
+console.log(`Found ${prdFiles.length} PRD(s) (skipped ${skipped.length} reference/companion doc(s); ` +
+            `${sectionCount} section file(s) belong to folder PRDs and are audited as part of their hub).`);
 console.log(`  Clean:   ${cleanCount}`);
 console.log(`  Warning: ${warnCount}`);
 console.log(`  Error:   ${errorCount}\n`);

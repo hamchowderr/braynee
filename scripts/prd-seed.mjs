@@ -32,6 +32,8 @@ const TN = require('../hooks/lib/tasknotes-mirror.js');
 // cp-9f2.3/.4: pure parse + DoD + dependency-edge logic (unit-tested in
 // scripts/lib/prd-seed-core.test.js via bin/braynee-self-test §7).
 const CORE = require('./lib/prd-seed-core.js');
+// cp-s4uw: shared PRD path resolution — monolithic AND folder-form PRDs.
+const PRDP = require('./lib/prd-paths.js');
 
 const VAULT = getVaultRoot();
 const PRD_DIR = path.join(VAULT, '2. Areas', 'Product Manager', 'PRDs');
@@ -51,19 +53,12 @@ const PRIORITY_FLAG = { P0: '0', P1: '1', P2: '2', P3: '3' };
 
 function stripBom(s) { return s.replace(/^﻿/, ''); }
 
+// cp-s4uw: this used to return `PRDs/<Name>` unchanged when that was a
+// DIRECTORY — fs.existsSync is true for directories — and the caller's
+// readFileSync then died with EISDIR, so every folder-form PRD was unseedable.
+// Resolution now lives in lib/prd-paths.js so seed and audit cannot drift.
 function resolvePrd(target) {
-  if (fs.existsSync(target)) return path.resolve(target);
-  const tries = [
-    path.join(PRD_DIR, `${target}.md`),
-    path.join(PRD_DIR, `${target.replace(/\s+/g, '-')}.md`),
-    path.join(PRD_DIR, target),
-  ];
-  for (const p of tries) if (fs.existsSync(p)) return p;
-  // Loose match: scan and find a file whose stem matches case-insensitively
-  for (const f of fs.readdirSync(PRD_DIR)) {
-    if (f.toLowerCase() === `${target.toLowerCase()}.md`) return path.join(PRD_DIR, f);
-  }
-  return null;
+  return PRDP.resolvePrdHub(target, PRD_DIR);
 }
 
 function parseFrontmatter(content) {
@@ -198,8 +193,20 @@ const prdPath = resolvePrd(target);
 if (!prdPath) { console.error(`PRD not found: ${target}`); process.exit(1); }
 
 const content = fs.readFileSync(prdPath, 'utf-8');
-const { fm, body } = parseFrontmatter(content);
+const { fm, body: hubBody } = parseFrontmatter(content);
 if (!fm) { console.error(`No frontmatter in ${prdPath}`); process.exit(1); }
+
+// cp-s4uw: for a folder PRD, criteria may have been split out of the hub into a
+// section file. Parse across the hub AND its sections, or a split PRD seeds zero
+// issues and reads as "nothing to build" rather than "looked in the wrong file".
+// Frontmatter still comes from the hub alone — sections carry no PRD metadata.
+const sectionFiles = PRDP.sectionFilesFor(prdPath, PRD_DIR);
+const body = sectionFiles.length
+  ? hubBody + '\n' + sectionFiles.map((f) => {
+      try { return `\n<!-- section: ${path.basename(f, '.md')} -->\n` + fs.readFileSync(f, 'utf-8'); }
+      catch (e) { console.error(`  ! unreadable section ${path.basename(f)}: ${e.message}`); return ''; }
+    }).join('\n')
+  : hubBody;
 // Note: no hard-abort on `seeded: true`. Seeding is idempotent and reconciles
 // against the target repo's actual beads state below — a fully-seeded PRD
 // re-run is a clean no-op; a partial one creates only the missing gap.
