@@ -17,7 +17,13 @@ const { findSessionViaQmd } = require('./lib/qmd-search');
 const log = require(path.join(__dirname, 'lib', 'hook-logger.js'));
 const { findCodeRoot, sessionDir } = require(path.join(__dirname, 'lib', 'is-code-context.js'));
 const { isIgnoredFolder } = require(path.join(__dirname, 'lib', 'ignore-folders.js'));
-const { listProjectNotes } = require(path.join(__dirname, 'lib', 'vault-projects.js')); // cp-7kfh
+// cp-7kfh / cp-3hc5: the ONE shared project lookup. findProjectName is aliased
+// to lookupProjectName — matching the other eight consumers — because this file
+// exposes a one-arg wrapper of the same name below.
+const {
+  listProjectNotes,
+  findProjectName: lookupProjectName,
+} = require(path.join(__dirname, 'lib', 'vault-projects.js'));
 const { findTranscriptDir } = require(path.join(__dirname, 'lib', 'transcript-dir.js'));
 
 const HOOK = 'session-auto-track';
@@ -69,30 +75,14 @@ function findPrdForFolder(folderName) {
   return null;
 }
 
+// Thin wrapper over the shared lookup — callers here always mean this vault.
+//
+// This was the TENTH local copy (cp-3hc5). It recursed, so it was not broken,
+// which is exactly why it survived cp-7kfh: that fix's guard asserted the file
+// merely *required* vault-projects.js, and this file did — for listProjectNotes.
+// A copy that behaves correctly today still drifts tomorrow, so it goes.
 function findProjectName(folderName) {
-  const projectsDir = path.join(VAULT_DIR, '1. Projects');
-  if (!fs.existsSync(projectsDir)) return null;
-
-  // Recurse into project subfolders, not just top-level *.md. The PARA
-  // convention puts multi-note projects in their own folder with the main note
-  // inside (1. Projects/<Name>/<Name>.md). A flat readdirSync missed those, so
-  // findProjectName returned null and the caller auto-created a duplicate flat
-  // file every session (cp-31i; same class as the recursive-audit memory).
-  // Match on the `folder:` frontmatter exactly as before — first match wins.
-  for (const filepath of walkMdFiles(projectsDir)) {
-    try {
-      const content = fs.readFileSync(filepath, 'utf8');
-      const folderMatch = content.match(/^folder:\s*"?([^"\n]+)"?$/m);
-      if (folderMatch && folderMatch[1].trim().toLowerCase() === folderName.toLowerCase()) {
-        const nameMatch = content.match(/^name:\s*"?([^"\n]+)"?$/m);
-        if (nameMatch) return nameMatch[1].trim();
-        return path.basename(filepath).replace(/\.md$/, '');
-      }
-    } catch (e) {
-      continue;
-    }
-  }
-  return null;
+  return lookupProjectName(folderName, VAULT_DIR);
 }
 
 // Convert "webapp" → "Webapp", "ncat-mcp" → "NCAT MCP"
