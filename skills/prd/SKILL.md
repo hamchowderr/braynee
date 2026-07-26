@@ -24,12 +24,48 @@ Acceptance Criteria section.
 # Scaffold a new PRD with the canonical schema
 node {baseDir}/scripts/prd-new.mjs "<Name>"
 
+# Same, but as a multi-file folder PRD (hub + section files)
+node {baseDir}/scripts/prd-new.mjs "<Name>" --folder-form
+
+# Convert an existing monolithic PRD into the folder form
+node {pluginRoot}/scripts/prd-split.mjs "<Name>" [--sections "A,B"] [--all] [--dry-run]
+
 # Audit every PRD against the schema (re-runnable; reports gaps)
 node {pluginRoot}/scripts/prd-audit.mjs
 
 # Seed beads issues from a PRD's Acceptance Criteria section
 node {pluginRoot}/scripts/prd-seed.mjs "<Name>" [--dry-run]
 ```
+
+## Two shapes: single-file and folder PRDs
+
+A PRD is either one file or a folder of files. Both are first-class — `audit`
+and `seed` treat a folder PRD as ONE document, not as many.
+
+```
+monolithic:  PRDs/<Name>.md
+folder:      PRDs/<Name>/<Name>.md      <- the hub: frontmatter lives here
+             PRDs/<Name>/Architecture.md   <- section files (no frontmatter)
+             PRDs/<Name>/Scope.md
+```
+
+**Rules that make the folder form work:**
+
+- **The hub is named after its folder** (`Foo/Foo.md`), and is the ONLY file in
+  the folder with `type: prd` frontmatter. That is how the hub is identified;
+  a second `type: prd` file in the same folder makes it ambiguous.
+- **Section files carry no PRD frontmatter.** They are chapters, not PRDs, and
+  are never audited or seeded on their own.
+- **Acceptance Criteria may live in the hub or in a section file** — `prd-seed`
+  and `prd-audit` both read across the hub and all its sections. Keeping them in
+  the hub is still preferred, since the hub then reads as a complete summary.
+- **Reach for the folder form** when a PRD outgrows one screen of scrolling, or
+  when a section (architecture, competitive research, an API reference) is
+  substantial enough that people will link to it directly.
+
+`prd-split` never rewrites prose: it moves whole `##` sections into files, leaves
+a wikilink in the hub where each one was, and aborts before writing if any line
+of the original would be unaccounted for. Use `--dry-run` to see the plan first.
 
 ## PRD Schema
 

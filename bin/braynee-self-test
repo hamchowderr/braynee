@@ -933,6 +933,24 @@ results.ownerdata = { ok: 0, fail: 0, errors: [] };
     }
   } catch { /* not a git checkout — fall back below */ }
 
+  // Tracked files alone leave a hole: a file authored THIS session is untracked,
+  // so it is invisible to the scan and the gate reports green — right up until
+  // it is committed, by which point the author has already seen a pass. Include
+  // untracked-but-not-ignored files so a new asset is checked while it is being
+  // written. `--exclude-standard` keeps .gitignore'd personal files out, which is
+  // what makes the git path safer than the filesystem walk below.
+  if (shipped) {
+    try {
+      const u = spawnSync('git', ['ls-files', '-z', '--others', '--exclude-standard'], {
+        cwd: PLUGIN_ROOT, encoding: 'utf8', windowsHide: true,
+      });
+      if (u.status === 0 && u.stdout) {
+        const untracked = u.stdout.split('\0').filter(Boolean);
+        if (untracked.length) shipped = [...shipped, ...untracked];
+      }
+    } catch { /* tracked-only is still a useful scan */ }
+  }
+
   if (!shipped) {
     const SKIP_DIRS = new Set(['node_modules', 'mockups']);
     const walkAll = (dir, rel = '') => {
