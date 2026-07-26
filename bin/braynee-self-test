@@ -29,6 +29,28 @@ const { spawnSync } = require('child_process');
 // Find braynee plugin root: this file lives at braynee/bin/braynee-self-test
 const PLUGIN_ROOT = path.resolve(__dirname, '..');
 
+// cp-szoa: spawnSync reports a TIMEOUT as status === null (killed with SIGTERM),
+// which is indistinguishable at the call site from a hard crash. That is how a
+// busy machine produced "CRASH: <hook> (exit null)" roughly 1 run in 6, with a
+// different victim each time — a false failure that makes the gate untrustworthy
+// exactly when it is being relied on before a release.
+//
+// Do NOT paper over it by raising the limits: that hides a genuinely slow hook.
+// Instead name it for what it is, and retry once. A real hang times out twice; a
+// load blip does not. If the retry passes, the result is reported as a pass with
+// a SLOW note, so a hook drifting toward its limit stays visible.
+function timedOut(r) {
+  return !!r && r.status === null && (r.signal === 'SIGTERM' || (r.error && r.error.code === 'ETIMEDOUT'));
+}
+
+// Returns { r, retried, stillTimedOut }.
+function spawnRetry(file, argv, opts) {
+  let r = spawnSync(file, argv, opts);
+  if (!timedOut(r)) return { r, retried: false, stillTimedOut: false };
+  const r2 = spawnSync(file, argv, opts);
+  return { r: r2, retried: true, stillTimedOut: timedOut(r2) };
+}
+
 const args = process.argv.slice(2);
 const jsonMode = args.includes('--json');
 
@@ -191,6 +213,25 @@ const smokeVault = fs.mkdtempSync(path.join(os.tmpdir(), 'braynee-smoke-vault-')
 fs.mkdirSync(path.join(smokeVault, '.obsidian'), { recursive: true });
 fs.mkdirSync(path.join(smokeVault, '1. Projects'), { recursive: true });
 fs.mkdirSync(path.join(smokeVault, '2. Areas', 'Sessions'), { recursive: true });
+// cp-szoa: WARM the fixture before timing anything. `.beads` above is a fresh,
+// empty marker dir, so the first beads-aware hook to run `bd` against it pays a
+// one-off database-initialization cost — measured at ~30s here, versus ~0.6s once
+// warm. Production never pays it (a real repo's .beads is long since initialized),
+// so charging it to whichever hook happened to run first made a random hook blow
+// its 15s budget roughly 1 run in 6, with a different victim each time.
+//
+// Pay it once, up front, outside any per-hook timing. This weakens no assertion:
+// every hook still runs against a real .beads and still exercises its
+// context-detection path — it just no longer gets billed for the fixture's setup.
+// execSync (not spawnSync + shell:true) to match how every hook invokes bd, and
+// because shell:true on Windows flashes a console window on each call.
+try {
+  require('child_process').execSync('bd list --json --status in_progress', {
+    cwd: smokeCwd, encoding: 'utf8', timeout: 60_000, windowsHide: true,
+    stdio: ['pipe', 'pipe', 'ignore'],
+  });
+} catch { /* bd absent or slow — hooks below must tolerate that anyway */ }
+
 const mockInput = JSON.stringify({
   session_id: 'self-test',
   cwd: smokeCwd,
@@ -203,15 +244,23 @@ for (const hookFile of listFiles(path.join(PLUGIN_ROOT, 'hooks'), ['.js'])) {
   // *.test.js are unit tests (run in section 7), not hooks — don't invoke them
   // here with mock stdin (they'd run their suite and muddy this section).
   if (name.endsWith('.test.js') || name.endsWith('.test.mjs')) continue;
-  const r = spawnSync(process.execPath, [hookFile], {
+  const HOOK_TIMEOUT_MS = 15_000;
+  const { r, retried, stillTimedOut } = spawnRetry(process.execPath, [hookFile], {
     input: mockInput,
     encoding: 'utf8',
-    timeout: 15_000,
+    timeout: HOOK_TIMEOUT_MS,
     env: { ...process.env, BRAYNEE_VAULT: smokeVault },
   });
   // Hooks are allowed to exit 0 (success) or 2 (blocking). Anything else is a crash.
-  if (r.status === 0 || r.status === 2) {
+  if (stillTimedOut) {
+    // Timed out twice — treat as a real failure, and say TIMEOUT, not CRASH,
+    // so the cause is not misread as the hook throwing (cp-szoa).
+    results.hooks.fail++;
+    results.hooks.errors.push({ file: name, error: `timed out twice at ${HOOK_TIMEOUT_MS}ms` });
+    log(`  TIMEOUT: ${name} — exceeded ${HOOK_TIMEOUT_MS}ms twice`);
+  } else if (r.status === 0 || r.status === 2) {
     results.hooks.ok++;
+    if (retried) log(`  SLOW: ${name} — timed out once at ${HOOK_TIMEOUT_MS}ms, passed on retry`);
   } else {
     results.hooks.fail++;
     const err = (r.stderr || r.stdout || '').split('\n').slice(0, 3).join(' | ');
@@ -279,10 +328,15 @@ if (testFiles.length === 0) {
 }
 for (const tf of testFiles) {
   const name = path.relative(PLUGIN_ROOT, tf);
-  const r = spawnSync(process.execPath, [tf], { encoding: 'utf8', timeout: 30_000 });
-  if (r.status === 0) {
+  const UNIT_TIMEOUT_MS = 30_000;
+  const { r, retried, stillTimedOut } = spawnRetry(process.execPath, [tf], { encoding: 'utf8', timeout: UNIT_TIMEOUT_MS });
+  if (stillTimedOut) {
+    results.unit.fail++;
+    results.unit.errors.push({ file: name, error: `timed out twice at ${UNIT_TIMEOUT_MS}ms` });
+    log(`  TIMEOUT: ${name} — exceeded ${UNIT_TIMEOUT_MS}ms twice`);
+  } else if (r.status === 0) {
     results.unit.ok++;
-    log(`  OK: ${name} — ${(r.stdout || '').trim().split('\n').pop()}`);
+    log(`  OK: ${name} — ${(r.stdout || '').trim().split('\n').pop()}${retried ? '  [SLOW: passed on retry]' : ''}`);
   } else {
     results.unit.fail++;
     const err = ((r.stderr || '') + (r.stdout || '')).split('\n').filter(Boolean).slice(-4).join(' | ');
