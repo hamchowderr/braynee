@@ -117,6 +117,74 @@ try {
        M.findTasknoteForIssueId('cp-par1.4'), null);
   }
 
+  // ── cp-na6c: the two lookup blind spots that made real notes INVISIBLE ─────
+  // Both had the same consequence: the mirror concluded the note was absent,
+  // tried to create it, and mtn refused with "File already exists" — so the
+  // issue counted as unmirrored forever. Found on live data, not in review.
+  {
+    // 1. mtn writes LONG titles as a YAML folded scalar, so the value is not on
+    //    the `title:` line. The old code read /^title:\s*(.+)$/ and captured
+    //    ">-", so every sub-issue with a long title was unfindable.
+    const folded = note('folded-title.md',
+      'title: >-\n' +
+      '  OM-style complexity guard - agent watches the running builder and can\n' +
+      '  send it back [] .7\n' +
+      'tags: [task, cp-fold1]\nstatus: open');
+    eq('a sub-issue whose title is a FOLDED yaml scalar is found',
+       M.findTasknoteForIssueId('cp-fold1.7'), folded);
+
+    // A literal block (|) must work too — same shape, different indicator.
+    const literal = note('literal-title.md',
+      'title: |\n  Some long literal title here [] .2\ntags: [task, cp-lit1]\nstatus: open');
+    eq('a sub-issue whose title is a LITERAL yaml scalar is found',
+       M.findTasknoteForIssueId('cp-lit1.2'), literal);
+
+    // 2. Multi-level ids. mtn cannot put a dot in a tag, so it tags the note
+    //    with the id up to some dot and pushes the rest into the title. The old
+    //    single-level split of `a.10.4` looked for the tag `a.10`, which mtn
+    //    never writes.
+    const deep = note('deep-sub.md',
+      'title: E4 - Click-installs (deploy buttons) [medium] .10.4\n' +
+      'tags: [task, cp-deep1]\nstatus: open');
+    eq('a TWO-level sub-issue id is found via the root tag plus .N.M',
+       M.findTasknoteForIssueId('cp-deep1.10.4'), deep);
+    eq('a two-level id with the wrong trailing number does not match',
+       M.findTasknoteForIssueId('cp-deep1.10.5'), null);
+  }
+
+  // ── cp-na6c: a note added AFTER a previous lookup must be visible ──────────
+  // The lookup caches its directory scan to avoid re-reading ~2,000 notes per
+  // call. An earlier version keyed freshness on the directory MTIME, so a note
+  // created inside the same tick as the prior scan stayed invisible — it passed
+  // on Windows and failed on Linux. mtn, Obsidian, and other hooks all add notes
+  // without going through this module, so freshness cannot depend on callers
+  // invalidating anything.
+  {
+    eq('sanity: the id is absent before the note exists',
+       M.findTasknoteForIssueId('cp-fresh1'), null);
+    const fresh = note('freshly-added.md', 'title: Just added\ntags: [task, cp-fresh1]\nstatus: open');
+    eq('a note created after a prior lookup is found immediately (no stale cache)',
+       M.findTasknoteForIssueId('cp-fresh1'), fresh);
+    // ...and a deletion is noticed just as promptly.
+    fs.rmSync(fresh);
+    eq('a deleted note stops matching immediately',
+       M.findTasknoteForIssueId('cp-fresh1'), null);
+
+    // SAME-COUNT churn: delete one note and add another, so the file COUNT is
+    // unchanged. A signature built from the count alone (or from the directory
+    // mtime) reports "nothing changed" here and serves a stale list. Only a
+    // signature over the actual listing catches it — which is why the two
+    // cheaper checks were rejected.
+    const a = note('churn-a.md', 'title: Churn A\ntags: [task, cp-churn1]\nstatus: open');
+    eq('sanity: churn-a is found', M.findTasknoteForIssueId('cp-churn1'), a);
+    fs.rmSync(a);
+    const b = note('churn-b.md', 'title: Churn B\ntags: [task, cp-churn2]\nstatus: open');
+    eq('after same-count churn, the REMOVED note no longer matches',
+       M.findTasknoteForIssueId('cp-churn1'), null);
+    eq('after same-count churn, the ADDED note is found',
+       M.findTasknoteForIssueId('cp-churn2'), b);
+  }
+
   // ── findMtnTaskByIssueId returns a tag reference, or null ──────────────────
   eq('findMtnTaskByIssueId returns the #tag form when a note exists',
      M.findMtnTaskByIssueId('cp-aaa1'), '#cp-aaa1');
