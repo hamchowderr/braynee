@@ -1393,6 +1393,136 @@ results.qmdwrap = { ok: 0, fail: 0, errors: [] };
 }
 log(`  ${results.qmdwrap.ok} passed | ${results.qmdwrap.fail} failed`);
 
+// ── 19. main-branch guard: the opt-out must actually be reachable (cp-ar0c) ───
+// The guard documents BRAYNEE_ALLOW_MAIN_COMMITS / _PUSH, but a PreToolUse hook
+// reads its OWN environment, which no in-session `export` or inline `VAR=1`
+// prefix can reach — the hook has run and exited before any shell applies them.
+// That made the documented hatch settable only from a shell profile before CC
+// launched, and hard-blocked repos that ship direct-to-main by design.
+//
+// Behavioral, not a source scan: run the real hook against two throwaway repos
+// that differ ONLY by the git config, and assert both directions. A test that
+// only checked the allow path would pass just as well with the guard removed.
+log('\n=== 19. main-branch guard opt-out (cp-ar0c) ===');
+results.mainguard = { ok: 0, fail: 0, errors: [] };
+{
+  const assertG = (label, cond, detail) => {
+    if (cond) { results.mainguard.ok++; log(`  OK: ${label}`); }
+    else {
+      results.mainguard.fail++;
+      results.mainguard.errors.push({ test: label, detail });
+      log(`  FAIL: ${label}${detail ? ` — ${detail}` : ''}`);
+    }
+  };
+
+  const hook = path.join(PLUGIN_ROOT, 'hooks', 'check-no-main-push.js');
+  const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), 'ar0c-'));
+  try {
+    const repo = path.join(sandbox, 'repo');
+    fs.mkdirSync(repo, { recursive: true });
+    const git = (...args) =>
+      spawnSync('git', args, { cwd: repo, encoding: 'utf8', windowsHide: true, timeout: 15000 });
+    git('init', '-q', '.');
+    git('config', 'user.email', 'selftest@example.invalid');
+    git('config', 'user.name', 'selftest');
+    git('commit', '-q', '--allow-empty', '-m', 'init');
+
+    // The guard keys off the CURRENT branch, so make sure we are on one it
+    // protects regardless of the machine's init.defaultBranch.
+    git('checkout', '-q', '-B', 'main');
+
+    const fire = (command) => {
+      const r = spawnSync(process.execPath, [hook], {
+        input: JSON.stringify({ tool_input: { command }, cwd: repo }),
+        encoding: 'utf8',
+        timeout: 20000,
+        windowsHide: true,
+        // Explicitly cleared: an operator who exported these before launching
+        // the self-test would otherwise make the BLOCK assertions pass vacuously.
+        env: {
+          ...process.env,
+          BRAYNEE_ALLOW_MAIN_COMMITS: '',
+          BRAYNEE_ALLOW_MAIN_PUSH: '',
+        },
+      });
+      return r.status;
+    };
+
+    assertG('a commit on main is blocked with no opt-out', fire('git commit -m x') === 2);
+    assertG('a push from main is blocked with no opt-out', fire('git push') === 2);
+    assertG('an explicit push to main is blocked with no opt-out',
+            fire('git push origin main') === 2);
+
+    // cp-fznk: compound commands. Every one of these was ALLOWED by the shipped
+    // 2.1.21 hook, because the guards anchored at the start of the whole string
+    // and `git` merely had to not be the first word. `cd . && git push origin
+    // main` defeating the headline guard is the case that matters.
+    assertG('`cd . && git commit` is blocked (was a bypass)',
+            fire('cd . && git commit -m x') === 2);
+    assertG('`true; git commit` is blocked (was a bypass)',
+            fire('true; git commit -m x') === 2);
+    assertG('`cd . && git push origin main` is blocked (was a bypass)',
+            fire('cd . && git push origin main') === 2);
+    assertG('`cd . && git checkout --orphan main` is blocked (was a bypass)',
+            fire('cd . && git checkout --orphan main') === 2);
+
+    // The in-session forms the message used to advertise. Both must STILL be
+    // blocked: the env prefix never reaches the hook, so honoring it would mean
+    // the hook is trusting command TEXT as a permission grant.
+    assertG('`export VAR=1 && git commit` does not defeat the guard',
+            fire('export BRAYNEE_ALLOW_MAIN_COMMITS=1 && git commit -m x') === 2);
+    assertG('an inline `VAR=1 git commit` prefix does not defeat the guard',
+            fire('BRAYNEE_ALLOW_MAIN_COMMITS=1 git commit -m x') === 2);
+
+    // The other direction. Segment matching must not turn into a substring
+    // search: a guard that blocks a command merely MENTIONING git is one that
+    // gets switched off, which costs more than the hole it closes.
+    assertG('a command that only quotes a git command is allowed',
+            fire('echo "git push origin main"') === 0);
+    assertG('an unrelated command is allowed', fire('ls -la') === 0);
+    assertG('a commit MESSAGE mentioning the phrase is allowed on a feature branch',
+            (() => { git('checkout', '-q', '-B', 'feature/x');
+                     const s = fire('git commit -m "document git push origin main"');
+                     git('checkout', '-q', '-B', 'main');
+                     return s === 0; })());
+
+    git('config', '--local', 'braynee.allow-main-commits', 'true');
+    assertG('the per-repo commit opt-out allows a commit on main',
+            fire('git commit -m x') === 0);
+    assertG('...and does NOT also unlock the push guard',
+            fire('git push origin main') === 2);
+
+    git('config', '--local', 'braynee.allow-main-push', 'true');
+    assertG('the per-repo push opt-out allows a push from main', fire('git push') === 0);
+
+    // A neighbouring repo must be unaffected — .git/config is per-repo, which is
+    // the whole reason it was chosen over an exported variable.
+    const other = path.join(sandbox, 'other');
+    fs.mkdirSync(other, { recursive: true });
+    const git2 = (...args) =>
+      spawnSync('git', args, { cwd: other, encoding: 'utf8', windowsHide: true, timeout: 15000 });
+    git2('init', '-q', '.');
+    git2('config', 'user.email', 'selftest@example.invalid');
+    git2('config', 'user.name', 'selftest');
+    // An empty repo has no resolvable HEAD, so the commit guard would fall into
+    // its "not a git repo" path and allow — passing this assertion for the wrong
+    // reason. The repo needs a real commit to be a valid control.
+    git2('commit', '-q', '--allow-empty', '-m', 'init');
+    git2('checkout', '-q', '-B', 'main');
+    const rOther = spawnSync(process.execPath, [hook], {
+      input: JSON.stringify({ tool_input: { command: 'git commit -m x' }, cwd: other }),
+      encoding: 'utf8', timeout: 20000, windowsHide: true,
+      env: { ...process.env, BRAYNEE_ALLOW_MAIN_COMMITS: '', BRAYNEE_ALLOW_MAIN_PUSH: '' },
+    });
+    assertG('the opt-out does not leak to a different repo', rOther.status === 2);
+  } catch (e) {
+    assertG('main-guard sandbox ran', false, e && e.message);
+  } finally {
+    fs.rmSync(sandbox, { recursive: true, force: true });
+  }
+}
+log(`  ${results.mainguard.ok} passed | ${results.mainguard.fail} failed`);
+
 // ── Summary ──────────────────────────────────────────────────────────────────
 const totalOk = Object.values(results).reduce((s, r) => s + r.ok, 0);
 const totalFail = Object.values(results).reduce((s, r) => s + r.fail, 0);
