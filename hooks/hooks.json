@@ -72,7 +72,7 @@
             "type": "command",
             "command": "node",
             "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/check-beads-init.js"],
-            "timeout": 20
+            "timeout": 90
           }
         ]
       },
@@ -82,7 +82,7 @@
             "type": "command",
             "command": "node",
             "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/beads-server-heal.js"],
-            "timeout": 20,
+            "timeout": 60,
             "statusMessage": "Checking beads server health..."
           }
         ]

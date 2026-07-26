@@ -18,6 +18,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const log = require(path.join(__dirname, 'lib', 'hook-logger.js'));
+const { makeBudget } = require(path.join(__dirname, 'lib', 'time-budget.js'));
 
 const HOOK = 'stop-task-verify';
 
@@ -36,16 +37,15 @@ const ACTIVE_ISSUE_FILE = path.join(HOME, '.claude', 'beads-active-issue.json');
 // are strictly better than being killed with none. The budget starts at module
 // load because that is when Claude Code starts its own clock.
 const BUDGET_MS = 12_000;   // under the 15s allowance, leaving room for node boot + stdin
-const DEADLINE = Date.now() + BUDGET_MS;
-let skippedForBudget = 0;
+const budget = makeBudget(BUDGET_MS);
 
 function run(cmd, opts = {}) {
-  const remaining = DEADLINE - Date.now();
-  if (remaining < 750) { skippedForBudget++; return null; }  // too little left to be useful
+  const timeout = budget.allow(8000);
+  if (timeout === null) return null;      // no time left to be useful
   try {
     return execSync(cmd, {
       encoding: 'utf8',
-      timeout: Math.min(8000, remaining),
+      timeout,
       stdio: ['pipe', 'pipe', 'ignore'],
       windowsHide: true,
       ...opts,
@@ -143,8 +143,8 @@ process.stdin.on('end', () => {
 
     // A skipped check is not a clean bill of health — say so rather than let the
     // hook look like it verified everything (cp-szoa).
-    if (skippedForBudget > 0) {
-      log.debug(HOOK, `${skippedForBudget} check(s) skipped: ${BUDGET_MS}ms budget exhausted by slow CLI calls`);
+    if (budget.skipped > 0) {
+      log.debug(HOOK, `${budget.skipped} check(s) skipped: ${BUDGET_MS}ms budget exhausted by slow CLI calls`);
     }
 
     if (warnings.length === 0) {
