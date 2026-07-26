@@ -1338,6 +1338,61 @@ results.budgets = { ok: 0, fail: 0, errors: [] };
 }
 log(`  ${results.budgets.ok} passed | ${results.budgets.fail} failed`);
 
+// ── 18. qmd-wrapper zero-result diagnosis (cp-ee67) ──────────────────────────
+// `qmd search` is AND-based and its query tokenizer cannot match some dotted
+// terms (`llms.txt`, `hooks.json`) that ARE present in indexed notes — so a good
+// query silently returns nothing and an agent concludes the knowledge is absent.
+// The QMD hook mandates this search every turn, so a silent zero is expensive.
+//
+// The live behavior needs a populated qmd index, which CI does not have, so this
+// asserts wiring + the one regression that actually bit during implementation,
+// and upgrades to a real behavioral check when an index is present.
+log('\n=== 18. qmd-wrapper zero-result diagnosis ===');
+results.qmdwrap = { ok: 0, fail: 0, errors: [] };
+{
+  const assertQ = (label, cond, detail) => {
+    if (cond) { results.qmdwrap.ok++; log(`  OK: ${label}`); }
+    else {
+      results.qmdwrap.fail++;
+      results.qmdwrap.errors.push({ test: label, detail });
+      log(`  FAIL: ${label}`);
+      for (const d of (detail || []).slice(0, 6)) log(`        ${d}`);
+    }
+  };
+
+  const wrapPath = path.join(PLUGIN_ROOT, 'scripts', 'qmd-wrapper.mjs');
+  let src = '';
+  try { src = fs.readFileSync(wrapPath, 'utf8'); } catch { /* asserted below */ }
+
+  assertQ('qmd-wrapper.mjs ships', src.length > 0);
+  assertQ('a zero-result search is diagnosed rather than passed through bare',
+    /diagnoseZeroResults/.test(src) && /args\[0\] === 'search' && !hasHits\(/.test(src));
+
+  // The regression that actually happened: counting hits by the `Path:` line,
+  // which annotate() ADDS. A raw qmd probe never has it, so every retry read as
+  // zero hits and the whole diagnosis silently no-oped.
+  assertQ('hit counting keys on qmd\'s own marker, not the annotated Path: line',
+    /match\(\/qmd:\\\/\\\//.test(src) && !/match\(\/\^Path:\/gm\)/.test(src));
+
+  assertQ('dotted terms are retried space-split before giving up',
+    /isDotted/.test(src) && /replace\(\/\\\.\/g, ' '\)/.test(src));
+
+  // Live check — only meaningful with a populated index.
+  const probe = spawnSync(process.execPath, [wrapPath, 'search', 'hooks.json'], {
+    encoding: 'utf8', timeout: 90_000, windowsHide: true,
+  });
+  const out = `${probe.stdout || ''}`;
+  const haveIndex = /qmd:\/\//.test(out) || /No results found/.test(out);
+  if (!haveIndex) {
+    log('  SKIP: live dotted-term probe (no qmd index available here)');
+  } else {
+    assertQ('a dotted term either finds hits or explains why it found none',
+      /qmd:\/\//.test(out) || /\[qmd-wrapper\]/.test(out),
+      [out.replace(/\s+/g, ' ').slice(0, 180)]);
+  }
+}
+log(`  ${results.qmdwrap.ok} passed | ${results.qmdwrap.fail} failed`);
+
 // ── Summary ──────────────────────────────────────────────────────────────────
 const totalOk = Object.values(results).reduce((s, r) => s + r.ok, 0);
 const totalFail = Object.values(results).reduce((s, r) => s + r.fail, 0);
