@@ -50,7 +50,7 @@ process.stdin.on('end', () => {
     const cmd = (data.tool_input?.command || '').trim();
     const cwd = data.cwd || process.cwd();
 
-    const m = cmd.match(/^bd\s+(?:update\s+([\w-]+).*--claim|claim\s+([\w-]+))/);
+    const m = cmd.match(/^bd\s+(?:update\s+([\w.-]+).*--claim|claim\s+([\w.-]+))/);
     if (!m) process.exit(0);
     const issueId = m[1] || m[2];
 

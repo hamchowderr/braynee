@@ -44,7 +44,7 @@ process.stdin.on('end', () => {
     const cmd = (data.tool_input?.command || '').trim();
     const cwd = data.cwd || process.cwd();
 
-    const closeMatch = cmd.match(/^bd\s+(?:close\s+([\w-]+)|update\s+([\w-]+).*--status\s+closed)/);
+    const closeMatch = cmd.match(/^bd\s+(?:close\s+([\w.-]+)|update\s+([\w.-]+).*--status\s+closed)/);
     if (!closeMatch) process.exit(0);
     const issueId = closeMatch[1] || closeMatch[2];
 
