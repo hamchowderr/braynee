@@ -20,6 +20,8 @@ const { getVaultRoot } = require(path.join(__dirname, '..', 'scripts', 'lib', 'v
 const VAULT_DIR = getVaultRoot();
 const SESSIONS_DIR = path.join(VAULT_DIR, '2. Areas', 'Sessions');
 const STATE_FILE = path.join(os.homedir(), '.claude', 'statusline-live.json');
+const log = require(path.join(__dirname, 'lib', 'hook-logger.js'));
+const HOOK = 'statusline-state';
 
 // cp-7kfh: one shared, RECURSIVE lookup. This was a local copy that read only
 // `1. Projects/*.md` and so missed every note nested in a project subfolder.
@@ -38,7 +40,11 @@ function findMdFiles(dir) {
         results.push(path.join(dir, entry.name));
       }
     }
-  } catch {}
+  } catch (e) {
+    // Partial results are returned; the statusline then shows no session
+    // rather than reporting that it could not read them.
+    log.debug(HOOK, `session-note walk failed under ${dir}: ${e && e.message}`);
+  }
   return results;
 }
 

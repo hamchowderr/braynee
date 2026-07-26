@@ -16,6 +16,9 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
+const log = require(path.join(__dirname, 'hook-logger.js'));
+const LOG_NAME = 'session-report-state';
+
 const STATE_MAX = 200;
 
 function stateFile(name) {
@@ -40,7 +43,11 @@ function writeState(file, map) {
     }
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, JSON.stringify(map));
-  } catch { /* best-effort */ }
+  } catch (e) {
+    // This file IS the dedup memory. A failed write makes every run look like
+    // the first, so one-shot notices repeat on every event.
+    log.debug(LOG_NAME, `could not persist report state to ${file}: ${e && e.message}`);
+  }
 }
 
 // True when `value` has NOT already been reported for `sessionId`, recording it

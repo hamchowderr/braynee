@@ -78,7 +78,7 @@ process.stdin.on('end', () => {
       if (fs.existsSync(ACTIVE_ISSUE_FILE)) {
         activeIssue = JSON.parse(fs.readFileSync(ACTIVE_ISSUE_FILE, 'utf-8'));
       }
-    } catch {}
+    } catch { /* no active-issue file — that is the normal state */ }
 
     // Stale-check: if the file is older than 12h, OR the bd issue says the work
     // is already closed, treat the pointer as stale and auto-clear it.
@@ -89,11 +89,11 @@ process.stdin.on('end', () => {
       if (hasBeadsDir) {
         const showJson = run(`bd show ${activeIssue.id} --json`, { cwd });
         if (showJson) {
-          try { bdSaysClosed = JSON.parse(showJson).status === 'closed'; } catch {}
+          try { bdSaysClosed = JSON.parse(showJson).status === 'closed'; } catch { /* unparseable bd output — leave bdSaysClosed false */ }
         }
       }
       if (isOld || bdSaysClosed) {
-        try { fs.unlinkSync(ACTIVE_ISSUE_FILE); } catch {}
+        try { fs.unlinkSync(ACTIVE_ISSUE_FILE); } catch { /* cleanup of a stale marker; already gone is fine */ }
         activeIssue = null;
       }
     }
@@ -125,7 +125,11 @@ process.stdin.on('end', () => {
             const list = inProgressIssues.map(i => `    [${i.id}] ${i.title}`).join('\n');
             warnings.push(`${inProgressIssues.length} beads issue(s) still in_progress:\n${list}`);
           }
-        } catch {}
+        } catch (e) {
+          // A parse failure here makes the stop gate report "nothing in
+          // progress", which is exactly the state it exists to catch.
+          log.debug(HOOK, `in-progress scan failed: ${e && e.message}`);
+        }
       }
     }
 

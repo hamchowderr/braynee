@@ -18,6 +18,8 @@
 // regeneration (that's the server's own background job), never opens a browser.
 const { spawn } = require('child_process');
 const path = require('path');
+const log = require(path.join(__dirname, 'lib', 'hook-logger.js'));
+const HOOK = 'ensure-dashboard';
 
 try {
   if (String(process.env.BRAYNEE_DASHBOARD_MODE || '').toLowerCase() !== 'server') {
@@ -37,7 +39,10 @@ try {
     env: process.env,
   });
   child.unref();
-} catch {
+} catch (e) {
+  // A dashboard that never starts is indistinguishable from one the user
+  // simply has not opened, so the failure needs a record of its own.
+  try { log.debug(HOOK, `dashboard spawn failed: ${e && e.message}`); } catch { /* logging must never break the hook */ }
   /* non-fatal — a dashboard that fails to start must never break a session */
 }
 

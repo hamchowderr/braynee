@@ -45,7 +45,7 @@ function readHead(filepath) {
   } catch {
     return '';
   } finally {
-    if (fd !== undefined) { try { fs.closeSync(fd); } catch {} }
+    if (fd !== undefined) { try { fs.closeSync(fd); } catch { /* fd cleanup; a failed close has nothing left to report */ } }
   }
 }
 
@@ -70,7 +70,11 @@ function findActiveSession(projectName) {
           results.push(path.join(dir, entry.name));
         }
       }
-    } catch {}
+    } catch (e) {
+      // Partial results are returned, so a failed walk reads downstream as
+      // "no matching session note exists" and the close silently does nothing.
+      log.debug(LOG_NAME, `session-note walk failed under ${dir}: ${e && e.message}`);
+    }
     return results;
   }
 
@@ -134,7 +138,11 @@ function closeActiveSession(data, { stopTimer = false } = {}) {
       // An unclean end (API error) never ran the Stop timer-stop hooks.
       try {
         execSync('mtn timer stop', { encoding: 'utf8', timeout: 8000, stdio: ['pipe', 'pipe', 'ignore'], windowsHide: true });
-      } catch {}
+      } catch (e) {
+        // A swallowed failure here leaves the timer RUNNING after an unclean
+        // end — the tracked hours keep accruing with nothing to show for it.
+        log.debug(LOG_NAME, `mtn timer stop failed: ${e && e.message}`);
+      }
     }
 
     if (!codeRoot || folderName.toLowerCase() === 'workspace') return result;

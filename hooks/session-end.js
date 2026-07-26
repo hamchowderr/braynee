@@ -44,7 +44,7 @@ process.stdin.on('end', () => {
       log.info(HOOK, `no active session for ${r.project} — nothing to close`);
     }
   } catch (e) {
-    try { log.error(HOOK, `crash: ${e.message}`); } catch {}
+    try { log.error(HOOK, `crash: ${e.message}`); } catch { /* logging must never break the hook */ }
   }
   process.exit(0);
 });

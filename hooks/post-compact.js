@@ -20,6 +20,8 @@ const SESSIONS_DIR = path.join(VAULT_DIR, '2. Areas', 'Sessions');
 // cp-7kfh: one shared, RECURSIVE lookup. This was a local copy that read only
 // `1. Projects/*.md` and so missed every note nested in a project subfolder.
 const { findProjectName: lookupProjectName } = require(path.join(__dirname, 'lib', 'vault-projects.js'));
+const log = require(path.join(__dirname, 'lib', 'hook-logger.js'));
+const HOOK = 'post-compact';
 function findProjectName(folderName) {
   return lookupProjectName(folderName, VAULT_DIR);
 }
@@ -34,7 +36,11 @@ function findMdFiles(dir) {
         results.push(path.join(dir, entry.name));
       }
     }
-  } catch {}
+  } catch (e) {
+    // Partial results are returned, so a failed walk silently reduces the set
+    // of session notes available for post-compact recovery.
+    log.debug(HOOK, `session-note walk failed under ${dir}: ${e && e.message}`);
+  }
   return results;
 }
 

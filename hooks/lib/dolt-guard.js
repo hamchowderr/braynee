@@ -61,12 +61,17 @@ function cachedCount() {
   try {
     const raw = JSON.parse(fs.readFileSync(CACHE_FILE, 'utf8'));
     if (raw && typeof raw.count === 'number' && (Date.now() - raw.at) < CACHE_MS) return raw.count;
-  } catch {}
+  } catch { /* no usable cache — fall through and recount */ }
   const count = countDoltProcesses();
   try {
     fs.mkdirSync(path.dirname(CACHE_FILE), { recursive: true });
     fs.writeFileSync(CACHE_FILE, JSON.stringify({ count, at: Date.now() }));
-  } catch {}
+  } catch (e) {
+    // The cache is the only thing keeping this off a full process enumeration
+    // on EVERY hook invocation; a failed write degrades that silently.
+    require(path.join(__dirname, 'hook-logger.js'))
+      .debug('dolt-guard', `could not write dolt-count cache: ${e && e.message}`);
+  }
   return count;
 }
 

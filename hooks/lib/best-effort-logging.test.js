@@ -136,12 +136,69 @@ try {
       ['context-budget-warn.js', /log\.debug\(/],
       ['stop-task-verify.js', /log\.debug\(/],
       ['statusline.js', /\.debug\('statusline'/],
+      // cp-yg1o — the remainder of the B9 sweep.
+      ['beads-work-surface.js', /log\.debug\(/],
+      ['beads-status-sync.js', /log\.debug\(/],
+      ['beads-dashboard-refresh.js', /log\.debug\(/],
+      ['beads-nudge.js', /log\.debug\(/],
+      ['beads-todo-reminder.js', /log\.debug\(/],
+      ['braynee-heartbeat.js', /log\.debug\(/],
+      ['check-no-main-push.js', /log\.debug\(/],
+      ['commit-cadence-nudge.js', /log\.debug\(/],
+      ['ensure-dashboard.js', /log\.debug\(/],
+      ['post-compact.js', /log\.debug\(/],
+      ['pre-compact-snapshot.js', /log\.debug\(/],
+      ['reinject-after-compact.js', /\.debug\('reinject-after-compact'/],
+      ['session-auto-close.js', /log\.debug\(/],
+      ['session-auto-track.js', /log\.debug\(/],
+      ['session-note-nudge.js', /log\.debug\(/],
+      ['statusline-resync.js', /\.debug\('statusline-resync'/],
+      ['statusline-state.js', /log\.debug\(/],
+      ['task-completed-check.js', /log\.debug\(/],
+      ['task-created-check.js', /log\.debug\(/],
+      ['lib/dolt-guard.js', /\.debug\('dolt-guard'/],
+      ['lib/ignore-folders.js', /\.debug\('ignore-folders'/],
+      ['lib/session-report-state.js', /log\.debug\(/],
+      ['lib/tasknotes-mirror.js', /log\.debug\(/],
     ];
     for (const [rel, re] of instrumented) {
       const src = fs.readFileSync(path.join(HOOKS, rel), 'utf8');
       ok(`${rel} routes a best-effort failure to hook-logger`, re.test(src));
       ok(`${rel} requires hook-logger`, /hook-logger/.test(src));
     }
+  }
+
+  // ── 6. every remaining bare catch must say WHY it stays bare ──────────────
+  // cp-yg1o's acceptance criterion. The sweep deliberately leaves ~74 catches
+  // uninstrumented (control flow, existence probes, cleanup, and the
+  // logging-the-logger guard) — logging those would fire on every healthy run
+  // and bury the signal. An UNCOMMENTED bare catch is the ambiguous case: it
+  // reads identically whether it was classified or simply missed.
+  {
+    const walk = (dir, out = []) => {
+      for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+        const p = path.join(dir, e.name);
+        if (e.isDirectory()) walk(p, out);
+        else if (e.name.endsWith('.js') && !e.name.endsWith('.test.js')) out.push(p);
+      }
+      return out;
+    };
+    const BARE = /catch\s*(\([^)]*\))?\s*\{(?:\s|\/\/[^\n]*|\/\*[\s\S]*?\*\/)*\}/g;
+    const undocumented = [];
+    for (const file of walk(HOOKS)) {
+      const src = fs.readFileSync(file, 'utf8');
+      const lines = src.split(/\r?\n/);
+      let m;
+      BARE.lastIndex = 0;
+      while ((m = BARE.exec(src))) {
+        if (/\/[/*]/.test(m[0])) continue;                       // comment inside the braces
+        const ln = src.slice(0, m.index).split(/\r?\n/).length;
+        if (/\/\/|\*/.test((lines[ln - 2] || '') + (lines[ln - 3] || ''))) continue; // comment just above
+        undocumented.push(`${path.relative(HOOKS, file)}:${ln}`);
+      }
+    }
+    ok(`every bare catch records why it stays bare (${undocumented.length} undocumented: ${undocumented.slice(0, 5).join(', ')})`,
+       undocumented.length === 0);
   }
 
   // ── 5. instrumentation must not write to stdout ───────────────────────────

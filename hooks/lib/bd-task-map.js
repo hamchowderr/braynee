@@ -36,7 +36,7 @@ function load(beadsDir) {
     const raw = fs.readFileSync(mapPath(beadsDir), 'utf8');
     const data = JSON.parse(raw);
     if (data && Array.isArray(data.entries)) return { version: data.version || VERSION, entries: data.entries };
-  } catch {}
+  } catch { /* missing or corrupt map — callers get a fresh empty one */ }
   return { version: VERSION, entries: [] };
 }
 

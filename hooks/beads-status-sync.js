@@ -16,6 +16,8 @@ const os = require('os');
 const path = require('path');
 const { findBeadsRoot } = require(path.join(__dirname, 'lib', 'is-code-context.js'));
 const TN = require(path.join(__dirname, 'lib', 'tasknotes-mirror.js'));
+const log = require(path.join(__dirname, 'lib', 'hook-logger.js'));
+const HOOK = 'beads-status-sync';
 
 const HOME = os.homedir();
 const { getVaultRoot } = require(path.join(__dirname, '..', 'scripts', 'lib', 'vault-root.js'));
@@ -55,7 +57,11 @@ function findActiveSession(projectName) {
         if (entry.isDirectory() && !entry.name.startsWith('.')) results.push(...walkMd(path.join(dir, entry.name)));
         else if (entry.isFile() && entry.name.endsWith('.md')) results.push(path.join(dir, entry.name));
       }
-    } catch {}
+    } catch (e) {
+      // Partial results are returned, so a failed walk makes task notes look
+      // absent and the status sync silently skips them.
+      log.debug(HOOK, `task-note walk failed under ${dir}: ${e && e.message}`);
+    }
     return results;
   }
 
@@ -240,7 +246,7 @@ process.stdin.on('end', () => {
       try {
         const active = JSON.parse(fs.readFileSync(ACTIVE_ISSUE_FILE, 'utf-8'));
         if (active.id === issueId) fs.unlinkSync(ACTIVE_ISSUE_FILE);
-      } catch {}
+      } catch { /* active-issue file absent or already removed — nothing to clear */ }
     }
 
     // Regenerate shared dashboard (all active sessions). F-5.3: use the

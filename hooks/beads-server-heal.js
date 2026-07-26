@@ -178,9 +178,9 @@ function clearStaleLocks(beadsRoot) {
     const shared = path.join(os.homedir(), '.beads', 'shared-server');
     candidates.push(path.join(shared, 'dolt-server.lock'));
     candidates.push(path.join(shared, '.dolt-pid'));
-  } catch {}
+  } catch { /* homedir() unavailable — just skip the shared-server candidates */ }
   for (const f of candidates) {
-    try { if (fs.existsSync(f)) fs.rmSync(f, { force: true }); } catch {}
+    try { if (fs.existsSync(f)) fs.rmSync(f, { force: true }); } catch { /* cleanup of a stale lock; already gone is the expected case */ }
   }
 }
 
@@ -193,7 +193,7 @@ function killPid(pid) {
         encoding: 'utf8', timeout: 8000, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true,
       });
       return true;
-    } catch {}
+    } catch { /* taskkill fallback — the pid is already dead if this fails */ }
   }
   return false;
 }
@@ -212,7 +212,7 @@ function configuredPort(beadsRoot) {
     try {
       const p = Number(String(fs.readFileSync(f, 'utf8')).trim());
       if (p > 0) return p;
-    } catch {}
+    } catch { /* probe: try the next port-file candidate */ }
   }
   return null;
 }
@@ -320,7 +320,7 @@ if (require.main === module) {
       heal(beadsRoot);
       process.exit(0);
     } catch (e) {
-      try { log.error(HOOK, `crash: ${e.message}`); } catch {}
+      try { log.error(HOOK, `crash: ${e.message}`); } catch { /* logging must never break the hook */ }
       process.exit(0);
     }
   });

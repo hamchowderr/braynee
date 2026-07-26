@@ -37,7 +37,11 @@ function writeState(state) {
   try {
     fs.mkdirSync(path.dirname(STATE_FILE), { recursive: true });
     fs.writeFileSync(STATE_FILE, JSON.stringify(state));
-  } catch {}
+  } catch (e) {
+    // State is what throttles the nudge. A failed write means every run reads
+    // the default and the nudge either repeats forever or never fires again.
+    log.debug(HOOK, `could not persist nudge state: ${e && e.message}`);
+  }
 }
 
 function hasInProgress(beadsRoot) {

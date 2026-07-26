@@ -34,7 +34,7 @@ function getCachedGit(cwd, sessionId) {
       const cached = JSON.parse(fs.readFileSync(cacheFile, 'utf8'));
       if (cached.cwd === cwd) return cached;
     }
-  } catch {}
+  } catch { /* no usable cache — fall through and recompute */ }
 
   // Branch only. The repo URL now comes from Claude Code's provided
   // workspace.repo (parsed from origin) — no `git remote` subprocess, which
@@ -45,9 +45,9 @@ function getCachedGit(cwd, sessionId) {
     result.branch = execSync('git branch --show-current', {
       cwd, encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'], windowsHide: true,
     }).trim();
-  } catch {}
+  } catch { /* not a git repo, or git missing — render with an empty branch */ }
 
-  try { fs.writeFileSync(cacheFile, JSON.stringify(result)); } catch {}
+  try { fs.writeFileSync(cacheFile, JSON.stringify(result)); } catch { /* perf cache only; the statusline renders on every keystroke, so logging a persistently unwritable cache here would flood the log */ }
   return result;
 }
 

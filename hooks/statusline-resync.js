@@ -23,6 +23,13 @@ try {
   if (shippedSrc !== activeSrc) {
     fs.writeFileSync(active, shippedSrc);
   }
-} catch { /* best-effort — never block session start */ }
+} catch (e) {
+  // When this fails the user keeps running an OUTDATED statusline indefinitely
+  // — it still renders, so nothing looks wrong.
+  try {
+    require(path.join(__dirname, 'lib', 'hook-logger.js'))
+      .debug('statusline-resync', `could not sync statusline.js: ${e && e.message}`);
+  } catch { /* never block session start to log */ }
+}
 
 process.exit(0);

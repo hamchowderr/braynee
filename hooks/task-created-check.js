@@ -7,6 +7,8 @@
 const path = require('path');
 const { findCodeRoot, findBeadsRoot, sessionDir } = require(path.join(__dirname, 'lib', 'is-code-context.js'));
 const map = require(path.join(__dirname, 'lib', 'bd-task-map.js')); // cp-ydy
+const log = require(path.join(__dirname, 'lib', 'hook-logger.js'));
+const HOOK = 'task-created-check';
 
 // cp-068/HD-4.1: non-UserPromptSubmit stdout doesn't reach Claude unless sent
 // via hookSpecificOutput.additionalContext as a FACTUAL statement. Used on the
@@ -67,7 +69,12 @@ process.stdin.on('end', () => {
     // task id (assigned after the hook fires), so we can only seed the title
     // here — TaskCompleted binds the cc_task_id to it later. If `bd create`
     // already recorded a bd_id under this title, this is a no-op merge.
-    try { map.upsert(path.join(beadsRoot, '.beads'), { title: subject }); } catch {}
+    try { map.upsert(path.join(beadsRoot, '.beads'), { title: subject }); }
+    catch (e) {
+      // Seeds the title key that TaskCompleted later binds a cc_task_id to.
+      // Losing it here means the completion hook finds no mapping (cp-ydy).
+      log.debug(HOOK, `could not seed task-map title: ${e && e.message}`);
+    }
     emit(
       `A Claude Code task "${subject}" was created. ` +
       `beads is the source of truth: it is out of sync unless a beads issue tracks this work. ` +

@@ -17,6 +17,8 @@ const path = require('path');
 // cp-ydy: record bd_id<->title into the stable id map so back-prop can resolve
 // the exact issue later (best-effort — a map failure must never break the mirror).
 const map = require(path.join(__dirname, 'lib', 'bd-task-map.js'));
+const log = require(path.join(__dirname, 'lib', 'hook-logger.js'));
+const HOOK = 'beads-todo-reminder';
 
 // cp-psc / HD-4.1 + HD-R2.2: PostToolUse stdout is NOT added to Claude's
 // context — only UserPromptSubmit/UserPromptExpansion/SessionStart stdout is.
@@ -75,7 +77,13 @@ process.stdin.on('end', () => {
         // cp-ydy: persist the bd_id<->title link; TaskCompleted later binds the
         // cc_task_id to this entry by title (the only join point, since the CC
         // task id does not exist until completion time).
-        try { map.upsert(path.join(cwd, '.beads'), { bdId: idMatch[1], title }); } catch {}
+        try { map.upsert(path.join(cwd, '.beads'), { bdId: idMatch[1], title }); }
+        catch (e) {
+          // This entry is the ONLY join point between a bd id and the CC task
+          // id bound later at completion. Losing it silently breaks the close
+          // path in a different hook, minutes or hours later (cp-ydy).
+          log.debug(HOOK, `could not record bd_id<->title link: ${e && e.message}`);
+        }
         emit(
           `beads issue ${idMatch[1]} was created ("${title}"). ` +
           `The Claude Code todo list and the TaskNotes vault mirror are out of sync with beads for this issue until the todo list includes it as a pending item ` +
@@ -106,7 +114,8 @@ process.stdin.on('end', () => {
       );
       process.exit(0);
     }
-  } catch {
+  } catch (e) {
+    try { log.debug(HOOK, `unhandled: ${e && e.message}`); } catch { /* logging must never break the hook */ }
     // Hooks must never break the tool call. Swallow.
   }
   process.exit(0);

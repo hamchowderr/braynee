@@ -78,7 +78,14 @@ function emit() {
       out.push('');
       out.push(`Session file: 2. Areas/Sessions/${snapshot.sessionNoteFilename}`);
       out.push('── END SESSION NOTE ──');
-    } catch { /* skip on read error */ }
+    } catch (e) {
+      // Silently skipping means the post-compact context is missing exactly
+      // the session note it exists to restore.
+      try {
+        require(path.join(__dirname, 'lib', 'hook-logger.js'))
+          .debug('reinject-after-compact', `session note unreadable: ${e && e.message}`);
+      } catch { /* logging must never break reinjection */ }
+    }
   } else if (snapshot.sessionNoteFilename) {
     out.push(`Active session: ${snapshot.sessionNoteFilename} (file not found)`);
   }

@@ -54,7 +54,12 @@ function findActiveSession(projectName) {
           results.push(path.join(dir, entry.name));
         }
       }
-    } catch {}
+    } catch (e) {
+      // Partial, not empty: whatever was collected before the throw is still
+      // returned, so a failure here looks like "fewer session notes exist"
+      // rather than an error. Record it or the shortfall is undetectable.
+      log.debug(HOOK, `session-note walk failed under ${dir}: ${e && e.message}`);
+    }
     return results;
   }
 

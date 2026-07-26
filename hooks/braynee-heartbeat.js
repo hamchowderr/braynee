@@ -21,6 +21,8 @@ const os = require('os');
 const path = require('path');
 
 const HEARTBEAT_FILE = path.join(os.homedir(), '.claude', 'braynee-hooks-heartbeat');
+const log = require(path.join(__dirname, 'lib', 'hook-logger.js'));
+const HOOK = 'braynee-heartbeat';
 
 try {
   const payload = JSON.stringify({
@@ -30,7 +32,11 @@ try {
   });
   fs.mkdirSync(path.dirname(HEARTBEAT_FILE), { recursive: true });
   fs.writeFileSync(HEARTBEAT_FILE, payload + '\n', 'utf8');
-} catch {
+} catch (e) {
+  // The sentinel is the evidence that braynee's hooks ran at all. If writing
+  // it fails, /braynee:health reports "hooks never fired" — the diagnostic and
+  // the thing it diagnoses fail together unless this is recorded.
+  try { log.debug(HOOK, `could not write heartbeat: ${e && e.message}`); } catch { /* logging must never break the hook */ }
   // Best-effort sentinel; never fail the session start.
 }
 process.exit(0);
