@@ -37,12 +37,20 @@ function eqPath(name, got, want) {
   eq(name, got === null || got === undefined ? got : slash(got), want === null || want === undefined ? want : slash(want));
 }
 
-// Negative assertions cannot demand a strict null. findCodeRoot walks up past
-// $HOME to the filesystem root, and on a real machine an ancestor of the temp
-// dir may carry a marker — verified on the dev box, where %TEMP% itself holds
-// stray .beads/ and .git/ directories left by earlier tooling. So "not a code
-// context" is asserted as "did not resolve to anything inside our fixture tree",
-// which is what the module is actually responsible for.
+// Strict negative: nothing resolved at all. Usable since cp-9krl, which stopped
+// the walk AT $HOME and excluded the OS temp dir as a candidate root. Before
+// that, a fixture under %TEMP% resolved to %TEMP% itself on this dev box, where
+// stray .beads/ and .git/ dirs left by earlier tooling still live.
+function noRoot(name, got) {
+  ok(name, got === null);
+}
+
+// Tolerant negative, still required for the fake-$HOME child probe below.
+// cp-9krl stops the walk at $HOME — but that child sets HOME to a fixture dir
+// BELOW the real temp dir, so walking up from it still ascends past the fake
+// home toward the real filesystem root, where this process has no say over what
+// markers exist. For those cases the module's actual responsibility is "did not
+// resolve to anything inside our fixture tree", so assert exactly that.
 function notInside(name, got, dir) {
   ok(name, got === null || !slash(got).startsWith(slash(dir)));
 }
@@ -81,8 +89,8 @@ try {
     const parent = mkdir('srcparent');
     touch(parent, 'index.ts', '');
     const child = mkdir('srcparent', 'sub');
-    notInside('source files in a PARENT do not mark it (start-dir check only)',
-              findCodeRoot(child), sandbox);
+    noRoot('source files in a PARENT do not mark it (start-dir check only)',
+           findCodeRoot(child));
   }
 
   // ── walking up to the nearest manifest ─────────────────────────────────────
@@ -105,7 +113,7 @@ try {
   }
   {
     const d = mkdir('nothing', 'at', 'all');
-    notInside('a directory with no signal at all is not a code context', findCodeRoot(d), sandbox);
+    noRoot('a directory with no signal at all is not a code context', findCodeRoot(d));
     eq('isCodeContext mirrors findCodeRoot', isCodeContext(d), findCodeRoot(d) !== null);
   }
 
@@ -134,8 +142,8 @@ try {
     eq('findBeadsRoot finds the nearest .beads ancestor', findBeadsRoot(deep), repo);
 
     const bare = mkdir('markers', 'bare');
-    notInside('findGitRoot finds no .git inside a bare fixture tree', findGitRoot(bare), sandbox);
-    notInside('findBeadsRoot finds no .beads inside a bare fixture tree', findBeadsRoot(bare), sandbox);
+    noRoot('findGitRoot finds no .git inside a bare fixture tree', findGitRoot(bare));
+    noRoot('findBeadsRoot finds no .beads inside a bare fixture tree', findBeadsRoot(bare));
 
     const inner = mkdir('markers', 'repo', 'pkg');
     fs.mkdirSync(path.join(inner, '.beads'), { recursive: true });
@@ -147,8 +155,8 @@ try {
   eq('findCodeRoot("") → null', findCodeRoot(''), null);
   eq('findBeadsRoot(null) → null', findBeadsRoot(null), null);
   eq('findGitRoot(undefined) → null', findGitRoot(undefined), null);
-  notInside('findCodeRoot on a non-existent path finds nothing in the fixture tree',
-            findCodeRoot(path.join(sandbox, 'no', 'such', 'dir')), sandbox);
+  noRoot('findCodeRoot on a non-existent path resolves nothing',
+         findCodeRoot(path.join(sandbox, 'no', 'such', 'dir')));
 
   // ── sessionDir: no session_id falls back to the event cwd ──────────────────
   {
@@ -160,7 +168,16 @@ try {
 
   // ── $HOME exclusion + the session anchor, in a child with a fake $HOME ─────
   {
-    const fakeHome = mkdir('fakehome');
+    // $HOME is nested one level down so it HAS a marker-bearing ancestor
+    // (cp-9krl): `homeouter` carries a .git and a manifest. Nothing above $HOME
+    // may ever win, and without the walk stopping at $HOME, `homeouter` does.
+    // Kept off the sandbox root deliberately — a marker there would be an
+    // ancestor of every other fixture and would break the strict noRoot cases.
+    const homeOuter = mkdir('homeouter');
+    fs.mkdirSync(path.join(homeOuter, '.git'), { recursive: true });
+    touch(homeOuter, 'package.json', '{}');
+
+    const fakeHome = mkdir('homeouter', 'home');
     // Global markers that must NOT make $HOME a project root.
     fs.mkdirSync(path.join(fakeHome, '.beads'), { recursive: true });
     fs.mkdirSync(path.join(fakeHome, '.git'), { recursive: true });
@@ -170,12 +187,15 @@ try {
     fs.writeFileSync(path.join(repo, 'package.json'), '{}');
     const wandered = path.join(fakeHome, 'elsewhere');
     fs.mkdirSync(wandered, { recursive: true });
+    const bareBelowHome = path.join(fakeHome, 'bare');
+    fs.mkdirSync(bareBelowHome, { recursive: true });
 
     const script = `
       const M = require(${JSON.stringify(MODULE.replace(/\\/g, '/'))});
       const HOME = ${JSON.stringify(fakeHome.replace(/\\/g, '/'))};
       const REPO = ${JSON.stringify(repo.replace(/\\/g, '/'))};
       const WANDERED = ${JSON.stringify(wandered.replace(/\\/g, '/'))};
+      const BARE = ${JSON.stringify(bareBelowHome.replace(/\\/g, '/'))};
       const out = {
         homeIsNotCode: M.findCodeRoot(HOME),
         homeBeadsExcluded: M.findBeadsRoot(HOME),
@@ -183,6 +203,10 @@ try {
         repoIsCode: M.findCodeRoot(REPO),
         // A project below $HOME must not resolve UP to the global ~/.beads.
         repoBeads: M.findBeadsRoot(REPO),
+        // cp-9krl: the walk must STOP at $HOME, not merely refuse to return it.
+        // BARE is empty, and the only marker above it is in $HOME's parent.
+        aboveHomeIgnoredCode: M.findCodeRoot(BARE),
+        aboveHomeIgnoredGit: M.findGitRoot(BARE),
         // First call anchors the session cwd; later calls keep it even though the
         // per-event cwd has wandered.
         anchor1: M.sessionDir({ session_id: 'sess-A', cwd: REPO }),
@@ -212,6 +236,14 @@ try {
     notInside('a dotfiles ~/.git is excluded from findGitRoot', o.homeGitExcluded, fakeHome);
     eqPath('a real repo below $HOME is a code root', o.repoIsCode, repo);
     notInside('a repo does not inherit the global ~/.beads', o.repoBeads, fakeHome);
+
+    // cp-9krl, defect (a): the walk stops AT $HOME. Strict null is assertable
+    // here even in the child, because the answer can only be $HOME's parent —
+    // which is inside the fixture tree — or nothing.
+    noRoot('findCodeRoot never escapes above $HOME to a parent manifest',
+           o.aboveHomeIgnoredCode);
+    noRoot('findGitRoot never escapes above $HOME to a parent .git',
+           o.aboveHomeIgnoredGit);
 
     eqPath('the first sessionDir call anchors the session cwd', o.anchor1, repo);
     eqPath('a later call keeps the anchor even though cwd wandered', o.anchor2, repo);

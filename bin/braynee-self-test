@@ -564,15 +564,16 @@ function runGuard(payload) {
   assertGate('directory-added-check dedups the same directory within one session',
     runDirAdded({ session_id: `${sid}-a`, directory: codeDir }).out.trim() === '');
 
-  // Written as "does not name the plain dir" rather than strict silence, and
-  // deliberately so: cp-9krl means findCodeRoot walks above the fixture and
-  // resolves any temp path to %TEMP% itself when %TEMP% carries a stray .git or
-  // .beads (it does on this machine). The hook is then correctly reporting the
-  // root findCodeRoot handed it. Same accommodation is-code-context.test.js
-  // makes for the same bug. Tighten this to `=== ''` once cp-9krl lands.
+  // Strict silence, tightened when cp-9krl landed. This was previously written
+  // as the weaker "does not name the plain dir": findCodeRoot walked above the
+  // fixture and resolved any temp path to %TEMP% itself, because %TEMP% on this
+  // machine carries a stray .git and .beads — so the hook fired on a directory
+  // with no project in it and was, given its input, correct to. cp-9krl excluded
+  // the OS temp dir as a candidate root, so a plain directory now resolves to
+  // nothing and the hook must say nothing at all.
   const plainOut = runDirAdded({ session_id: `${sid}-b`, directory: plainDir }).out;
-  assertGate('directory-added-check never reports a non-code directory as a project (cp-9krl-tolerant)',
-    !plainOut.includes('plaindir'));
+  assertGate('directory-added-check stays SILENT for a non-code directory',
+    plainOut.trim() === '', [plainOut.slice(0, 160)]);
 
   assertGate('directory-added-check stays SILENT when the added dir is the anchored project',
     runDirAdded({ session_id: `${sid}-c`, directory: PLUGIN_ROOT }).out.trim() === '');

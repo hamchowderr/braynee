@@ -47,6 +47,25 @@ try {
   HOME_DIR = path.resolve(os.homedir());
 } catch {}
 
+// The OS scratch directory is never a project root either (cp-9krl). Long-lived
+// temp dirs accumulate stray markers from unrelated tooling: on this machine
+// %TEMP% (C:\Users\HamCh\AppData\Local\Temp) holds BOTH a stray `.git` and a
+// stray `.beads`, so findCodeRoot() of any directory beneath it resolved to
+// %TEMP% instead of null — including a directory containing nothing at all.
+// Every hook gating on isCodeContext/isSessionCodeContext then fired for
+// temp-dir sessions that are not projects.
+//
+// Note %TEMP% lives INSIDE $HOME on Windows, so the HOME_DIR stop below does not
+// cover this — the walk finds the stray marker long before it reaches $HOME.
+//
+// This excludes the temp dir ITSELF, never its children: the self-test's
+// section-4 smoke fixture and scripts/hook-sandbox.mjs both create real project
+// fixtures under temp and must keep resolving.
+let TMP_DIR = null;
+try {
+  TMP_DIR = path.resolve(os.tmpdir());
+} catch {}
+
 // Manifest / project files that unambiguously mark a project root.
 // First match while walking up wins (closest ancestor = the project root).
 const MANIFEST_FILES = [
@@ -135,6 +154,7 @@ function dirHasCorroborating(dir) {
 // them as a code project root regardless of what markers they contain.
 function isExcludedRoot(dir) {
   if (HOME_DIR && dir === HOME_DIR) return true;
+  if (TMP_DIR && dir === TMP_DIR) return true;
   try {
     if (dir === path.parse(dir).root) return true;
   } catch {}
@@ -201,6 +221,13 @@ function findCodeRoot(startDir) {
   const root = path.parse(dir).root;
   let cur = path.dirname(dir);
   while (cur && cur !== root) {
+    // Stop AT $HOME rather than merely refusing to return it (cp-9krl). A
+    // per-user project is never an ancestor of $HOME, so nothing above it is a
+    // useful answer — and continuing let a stray manifest in C:\Users, C:\ or
+    // /home decide the result, making the module hostage to whatever sits in a
+    // shared drive root. When startDir is outside $HOME entirely this never
+    // triggers and the walk reaches the filesystem root as before.
+    if (HOME_DIR && cur === HOME_DIR) break;
     if (!isExcludedRoot(cur) && (dirHasManifest(cur) || dirHasCorroborating(cur))) {
       return cur;
     }
@@ -233,6 +260,10 @@ function findMarkerRoot(startDir, marker) {
   }
   const root = path.parse(dir).root;
   while (dir && dir !== root) {
+    // Same stop as findCodeRoot (cp-9krl): a global marker above $HOME must not
+    // make a project look initialized. $HOME itself was already unmatchable via
+    // isExcludedRoot, so this only stops the walk from continuing past it.
+    if (HOME_DIR && dir === HOME_DIR) break;
     if (!isExcludedRoot(dir)) {
       try {
         if (fs.existsSync(path.join(dir, marker))) return dir;
