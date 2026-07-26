@@ -17,6 +17,7 @@
 const { execSync } = require('child_process');
 const path = require('path');
 const { findCodeRoot, findBeadsRoot, sessionDir } = require(path.join(__dirname, 'lib', 'is-code-context.js'));
+const { makeBudget } = require(path.join(__dirname, 'lib', 'time-budget.js'));
 
 // ── Pure helpers (exported for the unit test) ────────────────────────────────
 
@@ -41,9 +42,20 @@ module.exports = { countOpenGates, hasOpenGates, gatesResolved };
 
 // ── Hook body (only when run directly) ───────────────────────────────────────
 if (require.main === module) {
+  // cp-szoa: this hook gets 15s in hooks.json but made up to four bd calls —
+  // two of them explicitly allowed 30s each — for a 100s worst case. Claude Code
+  // killed it mid-run and no gate-resolution message was ever emitted. All four
+  // calls are read-only gate queries, and the hook already treats discover as
+  // best-effort, so truncating is safe: spend one budget down across them.
+  const BUDGET_MS = 12_000;
+  const budget = makeBudget(BUDGET_MS);
+
   function run(cmd, opts = {}) {
+    const { timeout: cap = 20000, ...rest } = opts;
+    const timeout = budget.allow(cap);
+    if (timeout === null) return null;
     try {
-      return execSync(cmd, { encoding: 'utf8', timeout: 20000, stdio: ['pipe', 'pipe', 'ignore'], windowsHide: true, ...opts }).trim();
+      return execSync(cmd, { encoding: 'utf8', timeout, stdio: ['pipe', 'pipe', 'ignore'], windowsHide: true, ...rest }).trim();
     } catch { return null; }
   }
 

@@ -1264,6 +1264,80 @@ results.projlookup = { ok: 0, fail: 0, errors: [] };
 }
 log(`  ${results.projlookup.ok} passed | ${results.projlookup.fail} failed`);
 
+// ── 17. Hook CLI timeouts fit inside the hook's own budget (cp-szoa) ──────────
+// A hook gets ONE timeout from hooks.json, but these hooks shell out to bd/mtn/
+// git several times, each with its own generous per-call cap. When the caps
+// exceed the hook's allowance, Claude Code kills the hook mid-run and it emits
+// NOTHING — no error, no partial output, just a dead process. That is how
+// stop-task-verify (3 x 8s against 15s) and beads-gate-check (2 x 30s against
+// 15s) shipped broken, and it is invisible to every other section here because
+// the hooks exit 0 in the smoke run when the CLIs happen to be warm.
+//
+// Two shapes are acceptable, and this asserts whichever the hook chose:
+//   - hooks using lib/time-budget.js clamp every call, so only their BUDGET_MS
+//     needs to fit inside the hooks.json timeout;
+//   - every other hook must have each individual call cap fit.
+log('\n=== 17. Hook CLI timeouts vs hooks.json budget ===');
+results.budgets = { ok: 0, fail: 0, errors: [] };
+{
+  const assertBudget = (label, cond, detail) => {
+    if (cond) { results.budgets.ok++; log(`  OK: ${label}`); }
+    else {
+      results.budgets.fail++;
+      results.budgets.errors.push({ test: label, detail });
+      log(`  FAIL: ${label}`);
+      for (const d of (detail || []).slice(0, 20)) log(`        ${d}`);
+    }
+  };
+
+  // hook filename -> smallest hooks.json timeout it is registered with
+  const budgetFor = {};
+  (function walk(node) {
+    if (Array.isArray(node)) return node.forEach(walk);
+    if (node && typeof node === 'object') {
+      if (Array.isArray(node.args) && node.timeout) {
+        const m = String(node.args[0]).match(/hooks\/([\w.-]+\.js)/);
+        if (m) budgetFor[m[1]] = Math.min(budgetFor[m[1]] ?? Infinity, node.timeout);
+      }
+      Object.values(node).forEach(walk);
+    }
+  })(JSON.parse(fs.readFileSync(path.join(PLUGIN_ROOT, 'hooks', 'hooks.json'), 'utf8')));
+
+  const offenders = [];
+  let checked = 0;
+  for (const [file, secs] of Object.entries(budgetFor)) {
+    let src = '';
+    try { src = fs.readFileSync(path.join(PLUGIN_ROOT, 'hooks', file), 'utf8'); } catch { continue; }
+    const budgetMs = secs * 1000;
+    checked++;
+
+    if (src.includes('time-budget.js')) {
+      // Budgeted: every call is clamped, so only the budget itself must fit.
+      for (const m of src.matchAll(/BUDGET_MS\s*=\s*([0-9_]+)/g)) {
+        const declared = parseInt(m[1].replace(/_/g, ''), 10);
+        if (declared >= budgetMs) {
+          offenders.push(`${file}: BUDGET_MS ${declared}ms >= hooks.json ${budgetMs}ms`);
+        }
+      }
+      continue;
+    }
+
+    // Unbudgeted: each individual per-call cap must fit on its own. Sub-second
+    // values are not CLI caps (debounce/poll intervals), so ignore those.
+    for (const m of src.matchAll(/timeout:\s*([0-9_]+)/g)) {
+      const ms = parseInt(m[1].replace(/_/g, ''), 10);
+      if (ms >= 1000 && ms > budgetMs) {
+        offenders.push(`${file}: a single call allows ${ms}ms but the hook only gets ${budgetMs}ms`);
+      }
+    }
+  }
+
+  assertBudget(`no hook allows a CLI call more time than the hook itself gets (${checked} hooks checked)`,
+    offenders.length === 0, offenders);
+  assertBudget('the timeout scan actually found hooks to check', checked >= 10, [`checked=${checked}`]);
+}
+log(`  ${results.budgets.ok} passed | ${results.budgets.fail} failed`);
+
 // ── Summary ──────────────────────────────────────────────────────────────────
 const totalOk = Object.values(results).reduce((s, r) => s + r.ok, 0);
 const totalFail = Object.values(results).reduce((s, r) => s + r.fail, 0);

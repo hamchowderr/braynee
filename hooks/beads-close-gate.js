@@ -21,6 +21,7 @@ const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const log = require(path.join(__dirname, 'lib', 'hook-logger.js'));
+const { makeBudget } = require(path.join(__dirname, 'lib', 'time-budget.js'));
 
 const HOOK = 'beads-close-gate';
 const MODE = (process.env.BRAYNEE_CLOSE_GATE || '').toLowerCase(); // '', 'block', 'off'
@@ -50,10 +51,21 @@ function parseClose(cmd) {
   return { ids, force, reason };
 }
 
+// cp-szoa: `bd close a b c` calls this once PER id, and each call previously
+// allowed 15s against the hook's 10s hooks.json budget — so closing two issues
+// could already outlive the hook, which Claude Code then killed mid-run, emitting
+// no gate message at all. This is a read-only pre-close check and is safe to
+// truncate: an id we run out of time for is simply not gated (fail open), which
+// is the same outcome as bd being unavailable.
+const BUDGET_MS = 7_000;
+const budget = makeBudget(BUDGET_MS);
+
 function showIssue(id, cwd) {
+  const timeout = budget.allow(15000);
+  if (timeout === null) return null;
   try {
     const out = execSync(`bd show ${id} --json`, {
-      cwd, encoding: 'utf8', timeout: 15000, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true,
+      cwd, encoding: 'utf8', timeout, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true,
     });
     let j = JSON.parse(out.trim() || 'null');
     if (Array.isArray(j)) j = j[0];
