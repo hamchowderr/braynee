@@ -30,6 +30,7 @@
 'use strict';
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const log = require(path.join(__dirname, 'lib', 'hook-logger.js'));
 const { getVaultRoot } = require(path.join(__dirname, '..', 'scripts', 'lib', 'vault-root.js'));
@@ -37,7 +38,29 @@ const { getVaultRoot } = require(path.join(__dirname, '..', 'scripts', 'lib', 'v
 const HOOK = 'vault-search-guard';
 const PLUGIN_ROOT = path.join(__dirname, '..');
 const QMD = path.join(PLUGIN_ROOT, 'scripts', 'qmd-wrapper.mjs');
-const ALLOW = process.env.BRAYNEE_ALLOW_VAULT_GREP === '1';
+// cp-0oqe: BRAYNEE_ALLOW_VAULT_GREP is read from THIS process, which inherits
+// Claude Code's environment — not the command being checked. So neither
+// `export BRAYNEE_ALLOW_VAULT_GREP=1 && grep ...` nor an inline `VAR=1 grep ...`
+// prefix can ever reach it: the hook has run and exited before any shell applies
+// them. The message advertised an escape hatch that could not be used, which is
+// worse than having none. (Same defect class as cp-ar0c on the main-branch guard.)
+//
+// The ticket file below CAN be created in-session. It is deliberately
+// time-limited rather than a permanent switch: an override that stays on is how a
+// guard quietly stops guarding.
+const TICKET = path.join(os.homedir(), '.claude', 'braynee-allow-vault-grep');
+const TICKET_TTL_MS = 5 * 60 * 1000;
+
+function ticketValid() {
+  try {
+    const age = Date.now() - fs.statSync(TICKET).mtimeMs;
+    return age >= 0 && age < TICKET_TTL_MS;
+  } catch {
+    return false;   // absent is the normal case: guard stays on
+  }
+}
+
+const ALLOW = process.env.BRAYNEE_ALLOW_VAULT_GREP === '1' || ticketValid();
 
 const norm = (p) => path.resolve(p).replace(/\\/g, '/').toLowerCase();
 
@@ -101,7 +124,7 @@ function isPathLike(tok, cwd) {
 // with no path argument at all, i.e. it searches the cwd.
 function searchPathArgs(cmd, cwd) {
   const paths = [];
-  let sawSearch = false, noPathSearch = false;
+  let sawSearch = false, sawFsSearch = false, noPathSearch = false;
   // Keep the separators so a stdin-fed segment can be told from a fresh command.
   // A single `|` pipes stdin in; `||`, `&&` and `;` start a new command that
   // reads the filesystem. `qmd … | grep -v x` must stay untouched — it filters
@@ -137,22 +160,40 @@ function searchPathArgs(cmd, cwd) {
     // A stdin-fed grep with no path reads the pipe, not the cwd — never a vault
     // search, so it must not trip the cwd rule.
     else if (!piped) noPathSearch = true;
+    // Does this segment actually READ THE FILESYSTEM? A piped grep with no path
+    // argument only filters stdout. cp-0oqe: `git -C <vault> log --diff-filter=D
+    // --name-only | grep x` was blocked despite being the one way to answer
+    // "what did this deleted note contain" — QMD indexes the working tree only,
+    // so it structurally cannot. Blocking it left no compliant path at all.
+    if (found.length || !piped) sawFsSearch = true;
   }
-  return { paths, sawSearch, noPathSearch };
+  return { paths, sawSearch, sawFsSearch, noPathSearch };
 }
 
 // Returns null (allow) or { what, certain } describing why it is blocked.
 function blockReasonForBash(cmd, vaultRoot, cwd) {
-  if (!SEARCH_TOOL.test(cmd)) return null;
+  if (!SEARCH_TOOL.test(cmd)) return null;   // cheap pre-filter only
 
-  // (a) The command text names the vault root outright. Raw-text containment —
-  // see `text` above for why this must not go through path.resolve.
-  if (text(cmd).includes(text(vaultRoot))) {
+  // cp-0oqe: every rule below now requires a real search command in COMMAND
+  // POSITION. Rule (a) used to fire on raw text alone, so a command merely
+  // CONTAINING the words was blocked:
+  //   • `node -e "...split(/\n/).find(l => re.test(l))..."` over one known vault
+  //     file — \bfind\b matches inside `.find(`, and the vault path is in the
+  //     text, so a read-only precise read of a single file was blocked.
+  //   • filing the bug report itself was blocked, because the report QUOTES the
+  //     offending command.
+  // The cost was behavioral: it taught the override as a reflex, which erodes the
+  // guard for the cases that matter. A word boundary is not enough — `.find(`
+  // has one. Command position is the discriminator.
+  const { paths, sawSearch, sawFsSearch, noPathSearch } = searchPathArgs(cmd, cwd);
+  if (!sawSearch) return null; // only a `… | grep` stdout filter, or no search at all
+
+  // (a) A filesystem search whose command text names the vault root outright.
+  // Raw-text containment — see `text` above for why this must not go through
+  // path.resolve — but gated on an actual fs-reading search.
+  if (sawFsSearch && text(cmd).includes(text(vaultRoot))) {
     return { what: 'a grep/find naming a vault path', certain: true };
   }
-
-  const { paths, sawSearch, noPathSearch } = searchPathArgs(cmd, cwd);
-  if (!sawSearch) return null; // only a `… | grep` stdout filter
 
   // (b) A path argument RESOLVES into the vault. Relative arguments are resolved
   // against the event cwd, so `../../Obsidian Vault/...` from a code repo is
@@ -189,7 +230,11 @@ function denyMessage(what, terms, certain) {
     `  node "${QMD}" search "${t}"      # BM25 keyword\n` +
     `  node "${QMD}" vsearch "${t}"     # semantic\n` +
     `  node "${QMD}" query "${t}"       # deep research\n` +
-    `${tail} Deliberate one-off override: BRAYNEE_ALLOW_VAULT_GREP=1.`
+    `${tail}\n` +
+    `If a filesystem read is genuinely required (git history of a deleted note, or a\n` +
+    `precise read of one known file), take a 5-minute override — note that setting\n` +
+    `the env var inside the command CANNOT work, because this hook already ran:\n` +
+    `  node -e "require('fs').writeFileSync(process.env.USERPROFILE + '/.claude/braynee-allow-vault-grep','')"`
   );
 }
 
