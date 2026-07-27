@@ -1541,6 +1541,134 @@ results.mainguard = { ok: 0, fail: 0, errors: [] };
 }
 log(`  ${results.mainguard.ok} passed | ${results.mainguard.fail} failed`);
 
+// ── 20. version-bump gate: warn mid-batch, fail on release (cp-0gs2) ─────────
+// The gate used to FAIL on any unreleased shipping change, which contradicted the
+// batched-release rule (commits accumulate; ONE release per batch). Main was red
+// by design between releases, so a REAL failure had nowhere to show.
+//
+// Behavioral, against throwaway repos: the four states differ only by context, so
+// asserting them any other way would just restate the implementation.
+log('\n=== 20. version-bump gate modes (cp-0gs2) ===');
+results.versiongate = { ok: 0, fail: 0, errors: [] };
+{
+  const assertV = (label, cond, detail) => {
+    if (cond) { results.versiongate.ok++; log(`  OK: ${label}`); }
+    else {
+      results.versiongate.fail++;
+      results.versiongate.errors.push({ test: label, detail });
+      log(`  FAIL: ${label}${detail ? ` — ${detail}` : ''}`);
+    }
+  };
+
+  const script = path.join(PLUGIN_ROOT, 'scripts', 'check-version-bump.mjs');
+  const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), 'cp0gs2-'));
+  try {
+    const repo = path.join(sandbox, 'repo');
+    fs.mkdirSync(path.join(repo, '.claude-plugin'), { recursive: true });
+    fs.mkdirSync(path.join(repo, 'hooks'), { recursive: true });
+
+    const git = (...args) => spawnSync('git', args, {
+      cwd: repo, encoding: 'utf8', windowsHide: true, timeout: 20000,
+      // A backdated tag needs both dates; set them per-call where needed.
+      env: { ...process.env, GIT_AUTHOR_NAME: 'selftest', GIT_AUTHOR_EMAIL: 's@e.invalid',
+             GIT_COMMITTER_NAME: 'selftest', GIT_COMMITTER_EMAIL: 's@e.invalid' },
+    });
+    const setVersion = (v) =>
+      fs.writeFileSync(path.join(repo, '.claude-plugin', 'plugin.json'),
+        JSON.stringify({ name: 'braynee', version: v }, null, 2) + '\n');
+
+    git('init', '-q', '.');
+    git('config', 'user.email', 's@e.invalid');
+    git('config', 'user.name', 'selftest');
+    setVersion('1.0.0');
+    git('add', '-A'); git('commit', '-q', '-m', 'release 1.0.0');
+    git('tag', 'braynee--v1.0.0');
+
+    const run = (...extra) => {
+      const r = spawnSync(process.execPath, [script, ...extra], {
+        cwd: repo, encoding: 'utf8', windowsHide: true, timeout: 30000,
+      });
+      return { status: r.status, out: (r.stdout || '') + (r.stderr || '') };
+    };
+
+    // 1. No shipping changes since the tag — clean either way.
+    assertV('a clean tree passes', run().status === 0);
+    assertV('...and passes on the release path too', run('--strict').status === 0);
+
+    // 2. Unreleased shipping change, still on the old version.
+    fs.writeFileSync(path.join(repo, 'hooks', 'x.js'), '// shipped change\n');
+    git('add', '-A'); git('commit', '-q', '-m', 'phase-1 fix');
+
+    const warn = run();
+    assertV('an unreleased batch does NOT fail on main', warn.status === 0, warn.out.slice(0, 160));
+    assertV('...and says so, rather than passing silently',
+            /unreleased batch/i.test(warn.out), warn.out.slice(0, 160));
+    assertV('...naming the file that is unreleased',
+            /hooks\/x\.js/.test(warn.out), warn.out.slice(0, 160));
+
+    const strict = run('--strict');
+    assertV('the same tree FAILS on the release path', strict.status === 1, strict.out.slice(0, 160));
+
+    // 3. Tagging a release WITHOUT bumping the version must fail.
+    //    This is the case that exposed a vacuous gate: the baseline used to be
+    //    "newest tag", which at release time is HEAD's own tag, so the gate
+    //    diffed HEAD against itself, saw nothing, and passed unconditionally.
+    //    The baseline now skips tags on HEAD, so the comparison is against the
+    //    PREVIOUS release and the missing bump is caught.
+    git('tag', 'braynee--v1.0.1');   // tagged, but plugin.json still says 1.0.0
+    const taggedNoBump = run();
+    assertV('tagging a release without bumping the version FAILS, no flag needed',
+            taggedNoBump.status === 1, taggedNoBump.out.slice(0, 200));
+    assertV('...and the baseline is the PREVIOUS release, not HEAD itself',
+            /braynee--v1\.0\.0/.test(taggedNoBump.out), taggedNoBump.out.slice(0, 200));
+    git('tag', '-d', 'braynee--v1.0.1');
+
+    // 4. Bumping the version clears it everywhere.
+    setVersion('1.0.1');
+    git('add', '-A'); git('commit', '-q', '-m', 'bump');
+    assertV('a bumped version passes on main', run().status === 0);
+    assertV('a bumped version passes on the release path', run('--strict').status === 0);
+
+    // 5. Staleness escalation — the cp-e2s protection the warn mode must not lose.
+    //    A batch left unreleased past the limit fails even on main.
+    const repo2 = path.join(sandbox, 'stale');
+    fs.mkdirSync(path.join(repo2, '.claude-plugin'), { recursive: true });
+    fs.mkdirSync(path.join(repo2, 'hooks'), { recursive: true });
+    const OLD = '2020-01-01T00:00:00';
+    const git2 = (...args) => spawnSync('git', args, {
+      cwd: repo2, encoding: 'utf8', windowsHide: true, timeout: 20000,
+      env: { ...process.env, GIT_AUTHOR_NAME: 'selftest', GIT_AUTHOR_EMAIL: 's@e.invalid',
+             GIT_COMMITTER_NAME: 'selftest', GIT_COMMITTER_EMAIL: 's@e.invalid',
+             GIT_AUTHOR_DATE: OLD, GIT_COMMITTER_DATE: OLD },
+    });
+    fs.writeFileSync(path.join(repo2, '.claude-plugin', 'plugin.json'),
+      JSON.stringify({ name: 'braynee', version: '1.0.0' }, null, 2) + '\n');
+    git2('init', '-q', '.');
+    git2('config', 'user.email', 's@e.invalid');
+    git2('config', 'user.name', 'selftest');
+    git2('add', '-A'); git2('commit', '-q', '-m', 'ancient release');
+    git2('tag', 'braynee--v1.0.0');
+    fs.writeFileSync(path.join(repo2, 'hooks', 'y.js'), '// long-unreleased\n');
+    git2('add', '-A'); git2('commit', '-q', '-m', 'unreleased for years');
+
+    const runStale = (...extra) => spawnSync(process.execPath, [script, ...extra], {
+      cwd: repo2, encoding: 'utf8', windowsHide: true, timeout: 30000,
+    });
+    const aged = runStale();
+    assertV('a batch unreleased past the age limit FAILS even on main',
+            aged.status === 1, ((aged.stdout || '') + (aged.stderr || '')).slice(0, 200));
+    assertV('...and explains it is an age escalation, not a normal bump demand',
+            /unreleased for \d+ days/i.test((aged.stdout || '') + (aged.stderr || '')));
+    assertV('--max-age-days 0 disables the escalation',
+            runStale('--max-age-days', '0').status === 0);
+  } catch (e) {
+    assertV('version-gate sandbox ran', false, e && e.message);
+  } finally {
+    fs.rmSync(sandbox, { recursive: true, force: true });
+  }
+}
+log(`  ${results.versiongate.ok} passed | ${results.versiongate.fail} failed`);
+
 // ── Summary ──────────────────────────────────────────────────────────────────
 const totalOk = Object.values(results).reduce((s, r) => s + r.ok, 0);
 const totalFail = Object.values(results).reduce((s, r) => s + r.fail, 0);

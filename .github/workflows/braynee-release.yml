@@ -22,6 +22,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Full history + tags: check-version-bump diffs against the previous
+          # braynee--v* tag, which a depth-1 checkout cannot see.
+          fetch-depth: 0
+
+      # cp-0gs2: the RELEASE path is where the version-bump gate must bite.
+      # Plugin Self-Tests runs only on push-to-main / PRs, where the gate now
+      # warns instead of failing so an accumulating batch does not leave main
+      # permanently red. Nothing enforced it at tag time, so it is enforced here.
+      - name: Require a version bump for shipping changes (release path)
+        shell: bash
+        run: node scripts/check-version-bump.mjs --strict
 
       - name: Verify tag matches plugin.json and marketplace agree
         shell: bash
