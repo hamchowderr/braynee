@@ -806,6 +806,36 @@ function assertRule(label, cond) {
   assertRule('beads-conventions documents the create-time guard (validation.on-create)',
     /validation\.on-create/i.test(r));
 
+  // cp-lj73.1: the commit/PR standard both hook layers (.2 Claude-side, .3
+  // git-side) enforce. It has to SHIP as a rule template — if it lives only in
+  // an issue or a vault note, the hooks enforce something no installed user can
+  // read, and the rule cannot be cited when a commit is rejected.
+  const cp = path.join(PLUGIN_ROOT, 'skills', 'setup', 'rules-templates', 'commit-pr-conventions.md');
+  const cpText = fs.existsSync(cp) ? fs.readFileSync(cp, 'utf8') : '';
+  assertRule('commit-pr-conventions.md ships in rules-templates (cp-lj73.1)', !!cpText);
+  assertRule('...is a path-scoped rule (paths: frontmatter), not always-on context',
+    /^---[\s\S]*?\npaths:\s*\n\s*-\s*"/.test(cpText));
+  assertRule('...defines the Conventional Commits subject grammar',
+    /type\(scope\)!?:\s*summary/.test(cpText));
+  assertRule('...names the breaking-change forms (! and BREAKING CHANGE footer)',
+    /BREAKING CHANGE/.test(cpText) && /feat!/.test(cpText));
+  assertRule('...carries the 50/72 rule with the imperative mood',
+    /50/.test(cpText) && /72/.test(cpText) && /imperative/i.test(cpText));
+  assertRule('...states that commit count != PR count',
+    /commit count and pr count are unrelated/i.test(cpText));
+  assertRule('...carries the "and" test for splitting a PR',
+    /without saying "and", it is two PRs/i.test(cpText));
+  assertRule('...sizes PRs with the evidence, not as taste (SmartBear/Cisco)',
+    /200[–-]400 LOC/.test(cpText) && /SmartBear|Cohen/.test(cpText));
+  assertRule('...says squash-merge is the default',
+    /squash-merge[\s\S]{0,40}default/i.test(cpText));
+  assertRule('...types a PR by its highest-impact commit',
+    /highest-impact/i.test(cpText));
+  // The rule ships to every install, so it must not name the author's own repos
+  // or businesses — section 13 scans this file too, but assert the intent here.
+  assertRule('...carries no owner-specific example',
+    !/otaku|myrp|chowderr|foreman/i.test(cpText));
+
   // cp-ccsh.7 / B6: two divergent copies of qmd-wrapper.mjs exist on a dev box —
   // the standalone ~/.claude/scripts/ one (stale) and the plugin's bundled one
   // (what every hook actually invokes). A shipped asset pointing at the
