@@ -16,7 +16,7 @@
 
 const {
   TYPES, SUBJECT_TARGET, flagValue, extractCommitMessage, commitMessageFor,
-  messageIsElsewhere, checkSubject, findIssueRefs,
+  messageIsElsewhere, checkSubject, findIssueRefs, referencesKnownIssue,
 } = require('./commit-format.js');
 const { commandSegments } = require('./git-command.js');
 
@@ -173,6 +173,39 @@ ok('a dotted sub-issue id is found', findIssueRefs('feat: x (cp-lj73.2)').includ
 ok('a Refs: footer is found', findIssueRefs('feat: x\n\nRefs: bd-123').includes('bd-123'));
 ok('a Closes: footer is found', findIssueRefs('fix: y\n\nCloses: proj-9a').includes('proj-9a'));
 eq('a message with no id finds none', findIssueRefs('feat: add the login page').length, 0);
+
+// ── referencesKnownIssue (cp-lj73.4) ─────────────────────────────────────────
+// findIssueRefs guesses at the SHAPE of an id, and its 2+ char suffix rule
+// (tuned to skip "utf-8") misses short real ids. That was harmless while a
+// missing reference only warned; once it can BLOCK a commit, the miss blocks
+// correct work. These pin the exact matcher that replaced the guess.
+{
+  const IDS = ['tt-1', 'tt-42', 'cp-lj73', 'cp-lj73.2'];
+  const refs = (s) => referencesKnownIssue(s, IDS);
+
+  ok('the shape guess MISSES a short id (the bug)', !findIssueRefs('Refs: tt-1').includes('tt-1'));
+  ok('...and the exact matcher finds it', refs('Refs: tt-1').includes('tt-1'));
+
+  ok('an id in parentheses is found', refs('fix: tidy up (tt-42)').includes('tt-42'));
+  ok('a Refs: footer is found', refs('feat: x\n\nRefs: cp-lj73.2').includes('cp-lj73.2'));
+  ok('a Closes: footer is found', refs('feat: x\n\nCloses: tt-42').includes('tt-42'));
+  ok('an id at the very start is found', refs('tt-42 done').includes('tt-42'));
+  ok('an id at the very end is found', refs('done tt-42').includes('tt-42'));
+
+  // Near-misses must NOT count, or the block is trivially bypassed by typo.
+  ok('tt-1 does not match inside tt-123', !refs('see tt-123').includes('tt-1'));
+  ok('tt-42 does not match inside tt-420', !refs('see tt-420').includes('tt-42'));
+  ok('an unknown id matches nothing', refs('see zz-999').length === 0);
+  ok('an unrelated hyphenated token matches nothing', refs('move to utf-8 encoding').length === 0);
+
+  // A parent id counts for its children: citing the epic still traces the work.
+  ok('the parent id is found on its own', refs('feat: x (cp-lj73)').includes('cp-lj73'));
+  ok('citing the child also matches the parent prefix',
+    refs('feat: x (cp-lj73.2)').includes('cp-lj73.2'));
+
+  eq('an empty id list finds nothing', referencesKnownIssue('tt-42', []).length, 0);
+  eq('empty text finds nothing', refs('').length, 0);
+}
 
 // ── flagValue ────────────────────────────────────────────────────────────────
 eq('--title with a space', flagValue('gh pr create --title "feat: x" --body y', ['--title', '-t']), 'feat: x');

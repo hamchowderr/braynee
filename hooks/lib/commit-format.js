@@ -238,6 +238,36 @@ function findIssueRefs(text) {
   return [...out];
 }
 
+/**
+ * Which of `ids` this text actually cites. Exact, unlike findIssueRefs.
+ *
+ * findIssueRefs has to guess at the shape of an id, and its `{2,}` suffix rule
+ * MISSES short real ids like `tt-1` or `bd-9` — it was tuned to avoid matching
+ * "utf-8" back when a missed reference only suppressed a warning. Once a missing
+ * reference can BLOCK a commit (cp-lj73.4), that miss becomes a false positive
+ * that blocks correct work, which is the failure direction that gets a guard
+ * switched off.
+ *
+ * So when the repo's own issue ids are known, match against those instead: no
+ * guessing, no false positives, no false negatives. findIssueRefs stays as the
+ * fallback for when the id list cannot be read.
+ *
+ * A parent id counts for its children — citing `cp-lj73` on work for
+ * `cp-lj73.2` is still a trace back to the tracked work.
+ */
+function referencesKnownIssue(text, ids) {
+  const s = String(text || '');
+  const hits = [];
+  for (const id of ids || []) {
+    if (!id) continue;
+    // Escape, then require non-word boundaries so `tt-1` does not match inside
+    // `tt-12`. \b is unreliable here because ids contain `-` and `.`.
+    const esc = String(id).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    if (new RegExp(`(^|[^\\w.-])${esc}($|[^\\w-])`).test(s)) hits.push(id);
+  }
+  return hits;
+}
+
 module.exports = {
   TYPES,
   RULE_PATH,
@@ -248,4 +278,5 @@ module.exports = {
   messageIsElsewhere,
   checkSubject,
   findIssueRefs,
+  referencesKnownIssue,
 };
