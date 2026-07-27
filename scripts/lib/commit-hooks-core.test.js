@@ -164,6 +164,40 @@ try {
     ok('a runtime dep is not duplicated into devDependencies', !r3.pkg.devDependencies.a);
   }
 
+  // ── the PR template (cp-lj73.4) ──────────────────────────────────────────
+  {
+    const t = CORE.pullRequestTemplate();
+    ok('the PR template prompts for the issues it closes', /Closes:/.test(t));
+    ok('...explains Refs: for a partial touch', /Refs:/.test(t));
+    ok('...says opening the PR stamps external-ref', /external-ref gh-/.test(t));
+    ok('...reminds about the title grammar', /type\(scope\): summary/.test(t));
+    ok('...reminds about reviewable size', /200-400 LOC/.test(t));
+
+    const fresh = mkrepo('prtpl', { 'package.json': '{"name":"t"}' });
+    const p = CORE.planInstall(fresh);
+    ok('a repo with no PR template gets one',
+      p.files.some((f) => f.path.endsWith(path.join('.github', 'pull_request_template.md'))));
+
+    // A team's existing template must survive — replacing it would silently drop
+    // whatever checklist they rely on.
+    for (const loc of ['.github/pull_request_template.md', '.github/PULL_REQUEST_TEMPLATE.md',
+                       'docs/pull_request_template.md', 'pull_request_template.md']) {
+      const r = mkrepo(`prtpl-${loc.replace(/[^a-z]/gi, '')}`, {
+        'package.json': '{"name":"t"}', [loc]: '# ours\n',
+      });
+      const plan = CORE.planInstall(r);
+      ok(`an existing ${loc} is left alone`,
+        !plan.files.some((f) => f.path.includes('pull_request_template')),
+        JSON.stringify(plan.files.map((f) => path.basename(f.path))));
+      // Case-insensitively: on Windows `.github/pull_request_template.md` and
+      // `.github/PULL_REQUEST_TEMPLATE.md` are the SAME file, so the note names
+      // whichever spelling was probed first. Detection is what matters.
+      ok(`...and that is reported for ${loc}`,
+        plan.notes.join(' ').toLowerCase().includes(loc.toLowerCase()),
+        plan.notes.join(' '));
+    }
+  }
+
   // ── the sh fallback must actually run (skipped where there is no sh) ──────
   {
     const hook = path.join(sandbox, 'commit-msg');

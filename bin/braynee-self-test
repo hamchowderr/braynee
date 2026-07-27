@@ -83,6 +83,27 @@ function listDirs(dir) {
     .map(d => path.join(dir, d.name));
 }
 
+/**
+ * Remove a throwaway sandbox. Never throws.
+ *
+ * A plain `fs.rmSync(dir, {recursive, force})` in a `finally` block threw EPERM
+ * on Windows when a spawned process still held the directory, and because it ran
+ * AFTER every assertion had already passed, it crashed the whole suite and
+ * suppressed the summary — turning a leaked file handle into "the gate failed",
+ * with no result to read. Cleanup is housekeeping; it must never be able to
+ * decide the outcome of the run.
+ *
+ * force:true does not cover EPERM (that is for ENOENT), hence the retries and
+ * the catch.
+ */
+function rmSandbox(dir) {
+  try {
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+  } catch (e) {
+    log(`  note: could not remove sandbox ${dir} (${e.code || e.message}) — leaving it behind`);
+  }
+}
+
 // ── 1. Parse all JS/MJS files ────────────────────────────────────────────────
 log('=== 1. Parse JS/MJS files ===');
 const jsFiles = [
@@ -1603,7 +1624,7 @@ results.mainguard = { ok: 0, fail: 0, errors: [] };
   } catch (e) {
     assertG('main-guard sandbox ran', false, e && e.message);
   } finally {
-    fs.rmSync(sandbox, { recursive: true, force: true });
+    rmSandbox(sandbox);
   }
 }
 log(`  ${results.mainguard.ok} passed | ${results.mainguard.fail} failed`);
@@ -1731,7 +1752,7 @@ results.versiongate = { ok: 0, fail: 0, errors: [] };
   } catch (e) {
     assertV('version-gate sandbox ran', false, e && e.message);
   } finally {
-    fs.rmSync(sandbox, { recursive: true, force: true });
+    rmSandbox(sandbox);
   }
 }
 log(`  ${results.versiongate.ok} passed | ${results.versiongate.fail} failed`);
@@ -1828,7 +1849,7 @@ results.vaultguard = { ok: 0, fail: 0, errors: [] };
   } catch (e) {
     assertG('vault-guard sandbox ran', false, e && e.message);
   } finally {
-    fs.rmSync(sandbox, { recursive: true, force: true });
+    rmSandbox(sandbox);
   }
 }
 log(`  ${results.vaultguard.ok} passed | ${results.vaultguard.fail} failed`);
@@ -1996,10 +2017,181 @@ results.commitformat = { ok: 0, fail: 0, errors: [] };
   } catch (e) {
     assertG('commit-format sandbox ran', false, e && e.message);
   } finally {
-    fs.rmSync(sandbox, { recursive: true, force: true });
+    rmSandbox(sandbox);
   }
 }
 log(`  ${results.commitformat.ok} passed | ${results.commitformat.fail} failed`);
+
+// ── 23. commit/PR ↔ beads traceability (cp-lj73.4) ───────────────────────────
+// Two halves of one loop, enforced at different times because they have to be:
+//
+//   commit -> issue   BEFORE the fact, in commit-format-check. cp-lj73.2 only
+//                     WARNED here, because an agent that cannot legitimately
+//                     satisfy a block will invent an id — false traceability is
+//                     worse than none. That objection vanishes exactly when work
+//                     is CLAIMED: there is then a real id to cite. So the block
+//                     is conditional on claimed work, and the assertions below
+//                     pin BOTH directions of that condition.
+//
+//   issue -> PR       AFTER the fact, in beads-pr-external-ref, because the PR
+//                     number does not exist until `gh pr create` has run.
+log('\n=== 23. commit/PR ↔ beads traceability (cp-lj73.4) ===');
+results.traceability = { ok: 0, fail: 0, errors: [] };
+{
+  const assertT = (label, cond, detail) => {
+    if (cond) { results.traceability.ok++; log(`  OK: ${label}`); }
+    else {
+      results.traceability.fail++;
+      results.traceability.errors.push({ test: label, detail });
+      log(`  FAIL: ${label}${detail ? ` — ${detail}` : ''}`);
+    }
+  };
+
+  const fmtHook = path.join(PLUGIN_ROOT, 'hooks', 'commit-format-check.js');
+  const refHook = path.join(PLUGIN_ROOT, 'hooks', 'beads-pr-external-ref.js');
+  const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), 'lj734-'));
+  try {
+    const repo = path.join(sandbox, 'repo');
+    fs.mkdirSync(path.join(repo, '.beads'), { recursive: true });
+    const git = (...args) =>
+      spawnSync('git', args, { cwd: repo, encoding: 'utf8', windowsHide: true, timeout: 15000 });
+    git('init', '-q', '.');
+    git('config', 'user.email', 'selftest@example.invalid');
+    git('config', 'user.name', 'selftest');
+
+    const jsonl = path.join(repo, '.beads', 'issues.jsonl');
+    const writeIssues = (rows) =>
+      fs.writeFileSync(jsonl, rows.map((r) => JSON.stringify(r)).join('\n') + '\n');
+
+    const fireFmt = (command) => spawnSync(process.execPath, [fmtHook], {
+      input: JSON.stringify({ tool_name: 'Bash', tool_input: { command }, cwd: repo }),
+      encoding: 'utf8', timeout: 20000, windowsHide: true,
+      env: { ...process.env, BRAYNEE_ALLOW_FREEFORM_COMMITS: '' },
+    });
+
+    // ── nothing claimed: warn, never block (the cp-lj73.2 contract holds) ────
+    writeIssues([{ id: 'tt-1', title: 'open work', status: 'open', priority: 2 }]);
+    assertT('with nothing claimed an untraceable commit is ALLOWED',
+      fireFmt('git commit -m "feat: add login"').status === 0);
+
+    // ── work claimed: the id demonstrably exists, so cite it ─────────────────
+    writeIssues([
+      { id: 'tt-1', title: 'open work', status: 'open', priority: 2 },
+      { id: 'tt-42', title: 'claimed work', status: 'in_progress', priority: 1 },
+    ]);
+    {
+      const r = fireFmt('git commit -m "feat: add login"');
+      assertT('with work claimed an untraceable commit is BLOCKED', r.status === 2);
+      assertT('the block names the claimed id so the fix is copy-pasteable',
+        /tt-42/.test(r.stderr || ''), (r.stderr || '').slice(0, 160));
+      assertT('the block offers both the subject and footer forms',
+        /Refs:/.test(r.stderr || '') && /Closes:/.test(r.stderr || ''));
+    }
+    assertT('an id in the subject satisfies it',
+      fireFmt('git commit -m "feat: add login (tt-42)"').status === 0);
+    assertT('a Refs: footer satisfies it',
+      fireFmt('git commit -m "feat: add login" -m "Refs: tt-42"').status === 0);
+    assertT('a Closes: footer satisfies it',
+      fireFmt('git commit -m "feat: add login" -m "Closes: tt-42"').status === 0);
+    // Citing a DIFFERENT tracked issue is still traceable — the hook must not
+    // demand the claimed one specifically.
+    assertT('citing another issue is also accepted',
+      fireFmt('git commit -m "fix: tidy up (tt-1)"').status === 0);
+    // `tt-1` is the case that caught the shape-guessing bug: findIssueRefs
+    // requires a 2+ char suffix (tuned to skip "utf-8"), so it MISSES short real
+    // ids. Once a missing ref can block, that miss blocks correct work — hence
+    // the exact match against the repo's own ids.
+    assertT('a short id like tt-1 is recognised (shape-guessing missed it)',
+      fireFmt('git commit -m "fix: tidy up" -m "Refs: tt-1"').status === 0);
+    // ...while a near-miss must NOT count as a reference.
+    assertT('a near-miss id is not accepted as a reference',
+      fireFmt('git commit -m "fix: tidy up (tt-123)"').status === 2);
+    assertT('an unrelated hyphenated token is not accepted as a reference',
+      fireFmt('git commit -m "build: move to utf-8 encoding"').status === 2);
+    // Format errors must still win: a traceable commit with a bad subject is
+    // still a bad subject.
+    assertT('a malformed subject is still blocked even when traceable',
+      fireFmt('git commit -m "did some stuff (tt-42)"').status === 2);
+
+    // ── the narrow opt-out, reachable in-session (cp-ar0c) ───────────────────
+    git('config', '--local', 'braynee.allow-untracked-commits', 'true');
+    assertT('the untracked-commits opt-out unblocks it',
+      fireFmt('git commit -m "feat: add login"').status === 0);
+    assertT('...but format is STILL enforced (it is a narrow opt-out)',
+      fireFmt('git commit -m "added the login page"').status === 2);
+    git('config', '--local', '--unset', 'braynee.allow-untracked-commits');
+    assertT('with the opt-out removed the block is back',
+      fireFmt('git commit -m "feat: add login"').status === 2);
+
+    // A repo with no beads at all must be untouched by any of this.
+    {
+      const bare = path.join(sandbox, 'bare');
+      fs.mkdirSync(bare, { recursive: true });
+      spawnSync('git', ['init', '-q', '.'], { cwd: bare, windowsHide: true, timeout: 15000 });
+      const r = spawnSync(process.execPath, [fmtHook], {
+        input: JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'git commit -m "feat: add login"' }, cwd: bare }),
+        encoding: 'utf8', timeout: 20000, windowsHide: true,
+        env: { ...process.env, BRAYNEE_ALLOW_FREEFORM_COMMITS: '' },
+      });
+      assertT('a repo without beads is unaffected', r.status === 0 && !(r.stdout || '').includes('beads'));
+    }
+
+    // ── issue -> PR: external-ref stamping ──────────────────────────────────
+    writeIssues([
+      { id: 'tt-1', title: 'open work', status: 'open', priority: 2 },
+      { id: 'tt-42', title: 'claimed work', status: 'in_progress', priority: 1 },
+    ]);
+    const fireRef = (command, stdout, cwd = repo) => spawnSync(process.execPath, [refHook], {
+      input: JSON.stringify({
+        tool_name: 'Bash', tool_input: { command }, tool_response: { stdout }, cwd,
+      }),
+      encoding: 'utf8', timeout: 25000, windowsHide: true,
+    });
+    const ctxOf = (r) => {
+      if (!(r.stdout || '').trim()) return '';
+      try { return JSON.parse(r.stdout).hookSpecificOutput.additionalContext || ''; }
+      catch { return ''; }
+    };
+    const PR_URL = 'https://github.com/o/r/pull/77';
+
+    assertT('a non-PR command is ignored',
+      fireRef('npm test', '').stdout.trim() === '');
+    // The PR number comes from the OUTPUT: a failed create has no URL, so there
+    // is nothing to stamp and nothing to announce (the cp-snh2 lesson).
+    assertT('a FAILED gh pr create stamps nothing',
+      fireRef('gh pr create --title "feat: x (tt-42)"', 'error: pull request create failed').stdout.trim() === '');
+    assertT('a PR naming no known issue reports the gap',
+      /references no beads issue/.test(ctxOf(fireRef('gh pr create --title "feat: x"', PR_URL))));
+    // An id that does not exist in THIS repo must not be stamped.
+    assertT('an unknown id is not treated as a link',
+      /references no beads issue/.test(ctxOf(fireRef('gh pr create --title "feat: x (zz-999)"', PR_URL))));
+    // cp-fznk: the compound form must still be seen.
+    {
+      const r = fireRef('cd . && gh pr create --title "feat: x (tt-42)" --body "Closes: tt-42"', PR_URL);
+      const ctx = ctxOf(r);
+      assertT('`cd . && gh pr create` is still seen', ctx !== '');
+      assertT('the stamp names the PR number', /gh-77/.test(ctx), ctx.slice(0, 160));
+      assertT('it names the issue it linked or could not link', /tt-42/.test(ctx), ctx.slice(0, 200));
+      assertT('the hook never fails the PR', r.status === 0);
+      // This sandbox's .beads holds only a jsonl — NOT an initialized repo. The
+      // hook must refuse to shell out to bd here. Writing anyway is what left a
+      // stray bd process holding this directory, and what made bd resolve a
+      // DIFFERENT project's database (observed: `gastownhall/beads`). So this
+      // assertion is the regression guard for both, and it keeps the self-test
+      // hermetic: no bd write ever runs from the suite.
+      assertT('an uninitialized .beads is NOT written through bd',
+        /not initialized/.test(ctx), ctx.slice(0, 200));
+    }
+    // Scope: the Executed-By trailer belongs to cp-uif3.5, not here.
+    assertT('this hook writes no Executed-By trailer (cp-uif3.5 owns it)',
+      !fs.readFileSync(refHook, 'utf8').includes('Executed-By:'));
+  } catch (e) {
+    assertT('traceability sandbox ran', false, e && e.message);
+  } finally {
+    rmSandbox(sandbox);
+  }
+}
+log(`  ${results.traceability.ok} passed | ${results.traceability.fail} failed`);
 
 // ── Summary ──────────────────────────────────────────────────────────────────
 const totalOk = Object.values(results).reduce((s, r) => s + r.ok, 0);

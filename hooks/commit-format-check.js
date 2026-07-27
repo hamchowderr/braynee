@@ -44,6 +44,7 @@ const path = require('path');
 const log = require(path.join(__dirname, 'lib', 'hook-logger.js'));
 const { commandSegments, repoAllows } = require(path.join(__dirname, 'lib', 'git-command.js'));
 const CF = require(path.join(__dirname, 'lib', 'commit-format.js'));
+const { readIssues } = require(path.join(__dirname, 'lib', 'read-issues-jsonl.js'));
 
 const HOOK = 'commit-format-check';
 
@@ -72,6 +73,49 @@ function emit(lines) {
 /** True when this repo tracks work in beads, so a missing ref is worth noting. */
 function usesBeads(cwd) {
   try { return fs.existsSync(path.join(cwd, '.beads')); } catch { return false; }
+}
+
+/**
+ * Issue ids currently CLAIMED (in_progress) in this repo.
+ *
+ * cp-lj73.4 uses this to make traceability enforcement precise instead of
+ * absolute. The reason .2 only warned was that an agent who cannot legitimately
+ * satisfy a block will invent an id, turning a traceability control into a
+ * source of false traceability. That argument disappears exactly when work is
+ * claimed: there is then a real id to cite, and citing it is the whole point.
+ *
+ * So: claimed work + no reference -> block, naming the ids so the fix is
+ * copy-pasteable. Nothing claimed -> warn, as before. The hook never demands an
+ * id that does not exist.
+ *
+ * Read from .beads/issues.jsonl, never via `bd` (cp-6j5 / dolt-guard): a
+ * subprocess per commit against the shared Dolt server is how orphan dolt
+ * servers pile up when several sessions run at once. The file is bd's own
+ * export, repo-scoped by construction, and needs no process spawn.
+ */
+function beadsState(cwd) {
+  try {
+    const issues = readIssues(cwd);
+    return {
+      claimed: issues.filter((i) => i && i.status === 'in_progress' && i.id).map((i) => i.id),
+      all: issues.filter((i) => i && i.id).map((i) => i.id),
+    };
+  } catch {
+    return { claimed: [], all: [] };
+  }
+}
+
+/**
+ * Does this message trace back to tracked work?
+ *
+ * Prefers an EXACT match against the repo's own issue ids. The shape-guessing
+ * fallback misses short ids like `tt-1`, and a missed reference now blocks a
+ * commit rather than just warning — so guessing is only acceptable when the real
+ * id list is unavailable.
+ */
+function isTraceable(message, ids) {
+  if (ids.length) return CF.referencesKnownIssue(message, ids).length > 0;
+  return CF.findIssueRefs(message).length > 0;
 }
 
 /**
@@ -153,7 +197,23 @@ process.stdin.on('end', () => {
 
           warnings.push(...subWarn);
 
-          if (usesBeads(cwd) && !CF.findIssueRefs(message).length) {
+          const beads = usesBeads(cwd) ? beadsState(cwd) : null;
+          if (beads && !isTraceable(message, beads.all)) {
+            // cp-lj73.4: block ONLY when there is demonstrably an id to cite.
+            const claimed = repoAllows(cwd, 'allow-untracked-commits') ? [] : beads.claimed;
+            if (claimed.length) {
+              log.warn(HOOK, `blocked untraceable commit; ${claimed.length} issue(s) claimed`);
+              process.stderr.write(
+                `BLOCKED: This commit references no beads issue, but work is currently claimed ` +
+                `in this repo: ${claimed.slice(0, 8).join(', ')}` +
+                `${claimed.length > 8 ? `, +${claimed.length - 8} more` : ''}.\n` +
+                `Add the id to the subject — \`type(scope): summary (${claimed[0]})\` — or as a ` +
+                `\`Refs: ${claimed[0]}\` / \`Closes: ${claimed[0]}\` footer, then run the command again.\n` +
+                `If this commit genuinely belongs to no tracked issue, run ` +
+                `\`git config --local braynee.allow-untracked-commits true\`.`
+              );
+              process.exit(2);
+            }
             warnings.push(
               'No beads issue id appears in the message, so this commit cannot be traced ' +
               'back to the work that motivated it; adding it to the subject or a Refs: footer would fix that.'

@@ -467,6 +467,17 @@
             "async": true
           }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/beads-pr-external-ref.js"],
+            "timeout": 15
+          }
+        ]
       }
     ],
     "PostToolBatch": [
