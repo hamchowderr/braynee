@@ -33,9 +33,14 @@
 // That was only safe to add after the lookup was made fast: findTasknoteForIssueId
 // cost 1,105 ms per call (it re-read all 2,067 task notes), so this hook needed
 // ~484 s for one repo against its 60 s timeout and was killed mid-sweep on every
-// batch. It is now ~0.09 ms per call, so the whole fleet fits in ~11 s.
+// batch — burning its whole budget re-checking issues that were ALREADY mirrored
+// and never reaching the missing ones. It is now ~3.8 ms per call.
+//
+// The fleet pass runs in a DETACHED child (see spawnFleetSweep below), not
+// inline: even at ~32 s it is too heavy for a hook that fires after every batch.
 const fs = require('fs');
 const os = require('os');
+const { spawn } = require('child_process');
 const path = require('path');
 const log = require(path.join(__dirname, 'lib', 'hook-logger.js'));
 const { findBeadsRoot, findCodeRoot, sessionDir } = require(path.join(__dirname, 'lib', 'is-code-context.js'));
@@ -91,35 +96,40 @@ function fleetSweepDue() {
 // work nobody will do.
 const DEAD_REPO = /^sophon(-|$)|^comfyui-sophon$/;
 
-function sweepFleet(skipRoot) {
-  const root = process.env.BRAYNEE_PROJECTS_DIR || process.env.BEADS_CODE_DIR
-    || path.join(os.homedir(), 'code');
-  let entries;
+// The fleet pass walks ~35 repos and measured ~32 s. Running it INSIDE this hook
+// was wrong regardless of budget: a PostToolBatch hook fires after every batch,
+// and a wall-clock budget only checks BETWEEN repos, so one large repo still
+// overruns it (measured 35 s against a 20 s budget). It also blew the self-test's
+// 15 s smoke cap.
+//
+// So it is spawned DETACHED instead — the same pattern ensure-dashboard uses.
+// The hook returns immediately, the sweep runs on its own clock with no timeout
+// pressure, and it reuses scripts/mirror-reconcile.mjs so the hook and the manual
+// backfill cannot drift apart. Output goes nowhere: a detached child writing to
+// the hook's stdout would corrupt the hook protocol.
+function spawnFleetSweep() {
+  const script = path.join(__dirname, '..', 'scripts', 'mirror-reconcile.mjs');
+  if (!fs.existsSync(script)) return false;
   try {
-    entries = fs.readdirSync(root, { withFileTypes: true });
-  } catch {
-    return { created: 0, repos: 0 };
+    const child = spawn(process.execPath, [script, '--write'], {
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: true,
+      env: process.env,
+    });
+    child.unref();
+  } catch (err) {
+    log.debug(HOOK, `could not spawn fleet sweep: ${err && err.message}`);
+    return false;
   }
-  let created = 0;
-  let repos = 0;
-  for (const e of entries) {
-    if (!e.isDirectory() || e.name.startsWith('.') || DEAD_REPO.test(e.name)) continue;
-    const dir = path.join(root, e.name);
-    if (skipRoot && path.resolve(dir) === path.resolve(skipRoot)) continue;  // already done
-    if (!fs.existsSync(path.join(dir, '.beads'))) continue;
-    try {
-      const n = reconcileRepo(dir);
-      if (n) { created += n; repos++; }
-    } catch (err) {
-      log.debug(HOOK, `fleet sweep failed for ${e.name}: ${err && err.message}`);
-    }
-  }
+  // Stamped on SPAWN, not on completion — the child owns its own outcome, and a
+  // failed spawn is already reported above. Stamping here is what keeps this to
+  // one background sweep per interval rather than one per batch.
   try { fs.writeFileSync(FLEET_STAMP, String(Date.now())); }
   catch (err) {
-    // Without the stamp the sweep runs on EVERY batch instead of every 6h.
     log.debug(HOOK, `could not write fleet-sweep stamp: ${err && err.message}`);
   }
-  return { created, repos };
+  return true;
 }
 
 let input = '';
@@ -162,28 +172,27 @@ process.stdin.on('end', () => {
     //    consistent immediately.
     const created = reconcileRepo(beadsRoot);
 
-    // 2. Every OTHER repo, at most every 6h. This is the part that was missing:
-    //    a repo never opened in a session was never reconciled at all.
-    let fleet = { created: 0, repos: 0 };
-    if (fleetSweepDue()) fleet = sweepFleet(beadsRoot);
+    // 2. Every OTHER repo, at most every 6h, in a DETACHED child. This is the
+    //    part that was missing: a repo never opened in a session was never
+    //    reconciled at all, which is how four repos reached exactly 0%.
+    let fleetSpawned = false;
+    if (fleetSweepDue()) fleetSpawned = spawnFleetSweep();
 
-    const total = created + fleet.created;
-    if (total > 0) {
+    if (created > 0) {
       log.info(HOOK, `reconciled ${created} for ${projectSlug}` +
-        (fleet.created ? ` + ${fleet.created} across ${fleet.repos} other repo(s)` : ''));
+        (fleetSpawned ? ' (fleet sweep spawned)' : ''));
       process.stdout.write(JSON.stringify({
         hookSpecificOutput: {
           hookEventName: 'PostToolBatch',
           additionalContext:
-            `Beads→TaskNotes reconcile: ${total} beads issue(s) had no TaskNote ` +
-            `(created in a batched/piped command that bypassed the per-call mirror) and were mirrored now` +
-            (fleet.created ? `, including ${fleet.created} in ${fleet.repos} repo(s) outside "${projectSlug}"` : ` for "${projectSlug}"`) +
-            `. The three-way task mirror is consistent.`,
+            `Beads→TaskNotes reconcile: ${created} beads issue(s) for "${projectSlug}" had no ` +
+            `TaskNote (created in a batched/piped command that bypassed the per-call mirror) ` +
+            `and were mirrored now. The three-way task mirror is consistent.`,
         },
       }));
     } else {
       log.info(HOOK, `no unmirrored issues for ${projectSlug}` +
-        (fleet.repos ? ` (fleet swept, all clean)` : ''));
+        (fleetSpawned ? ' (fleet sweep spawned)' : ''));
     }
   } catch (e) {
     try { log.error(HOOK, `crash: ${e.message}`); } catch { /* logging must never break the hook */ }
