@@ -318,6 +318,10 @@ const scripts = [
   { file: 'vault-query.mjs', args: ['--help'], expectExit: [0, 1] },
   { file: 'beads-dashboard.js', args: ['--help'], expectExit: [0, 1] },
   { file: 'install-commit-hooks.mjs', args: ['--help'], expectExit: [0] },
+  { file: 'beads-dr.mjs', args: ['--help'], expectExit: [0] },
+  { file: 'beads-dr-verify.mjs', args: ['--help'], expectExit: [0] },
+  // No target named: must refuse rather than guess a repo to restore over.
+  { file: 'beads-dr-verify.mjs', args: [], expectExit: [1] },
   { file: 'gen-ci-workflow.mjs', args: ['--repo', os.tmpdir(), '--dry-run'], expectExit: [0] },
 ];
 for (const s of scripts) {
@@ -2192,6 +2196,124 @@ results.traceability = { ok: 0, fail: 0, errors: [] };
   }
 }
 log(`  ${results.traceability.ok} passed | ${results.traceability.fail} failed`);
+
+// ── 24. beads DR: the sync must be SCHEDULED, not merely configured (cp-uif3.2) ─
+// The failure this guards against is not a missing backup — it is a backup that
+// stops. Measured on the one repo that HAD a destination:
+//
+//   Last backup: 8h ago      <- bd's internal auto-backup, reassuring
+//   Last sync:   35h43m ago  <- the destination, and the one that protects you
+//
+// Two different fields, and the reassuring one is not the one that matters. So
+// these assert the SCHEDULING contract: the hook spawns a sync, throttles to one
+// a day, and never configures anything on its own.
+log('\n=== 24. beads DR scheduled sync (cp-uif3.2) ===');
+results.beadsdr = { ok: 0, fail: 0, errors: [] };
+{
+  const assertD = (label, cond, detail) => {
+    if (cond) { results.beadsdr.ok++; log(`  OK: ${label}`); }
+    else {
+      results.beadsdr.fail++;
+      results.beadsdr.errors.push({ test: label, detail });
+      log(`  FAIL: ${label}${detail ? ` — ${detail}` : ''}`);
+    }
+  };
+
+  const hook = path.join(PLUGIN_ROOT, 'hooks', 'beads-dr-sync.js');
+  const script = path.join(PLUGIN_ROOT, 'scripts', 'beads-dr.mjs');
+  const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), 'uif32-'));
+  try {
+    assertD('beads-dr.mjs ships', fs.existsSync(script));
+    assertD('the scheduled-sync hook ships', fs.existsSync(hook));
+
+    const hookSrc = fs.readFileSync(hook, 'utf8');
+    // The hook must never roll out configuration behind the user's back:
+    // configuring backup destinations fleet-wide is a deliberate, reviewable act.
+    assertD('the hook syncs but never runs --init',
+      hookSrc.includes("'--sync'") && !hookSrc.includes("'--init'"));
+    // A detached child: the sweep walks ~36 repos shelling out to bd, far too
+    // heavy to run inline on a hook that fires whenever a session opens.
+    assertD('the sweep is spawned DETACHED, not run inline',
+      /detached:\s*true/.test(hookSrc) && /stdio:\s*'ignore'/.test(hookSrc));
+    assertD('the hook is registered on SessionStart', (() => {
+      const j = JSON.parse(fs.readFileSync(path.join(PLUGIN_ROOT, 'hooks', 'hooks.json'), 'utf8'));
+      const all = JSON.stringify(j.hooks.SessionStart || []);
+      return all.includes('beads-dr-sync.js');
+    })());
+
+    // Throttle: first run spawns, immediate second run stays silent. Without
+    // this the sweep would fire on every session open.
+    const home = path.join(sandbox, 'home');
+    fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
+    const fire = () => spawnSync(process.execPath, [hook], {
+      input: JSON.stringify({ session_id: 'self-test', cwd: sandbox, source: 'startup' }),
+      encoding: 'utf8', timeout: 20000, windowsHide: true,
+      env: { ...process.env, HOME: home, USERPROFILE: home },
+    });
+    const stamp = path.join(home, '.claude', 'braynee-beads-dr-sync');
+    const first = fire();
+    assertD('the first run exits cleanly', first.status === 0);
+    assertD('the first run writes a throttle stamp', fs.existsSync(stamp));
+    const t1 = fs.existsSync(stamp) ? fs.readFileSync(stamp, 'utf8') : '';
+    fire();
+    const t2 = fs.existsSync(stamp) ? fs.readFileSync(stamp, 'utf8') : '';
+    assertD('an immediate second run is throttled (stamp unchanged)', t1 === t2 && t1 !== '');
+
+    // ...and an aged stamp lets it run again, or the sweep would fire once ever.
+    const old = Date.now() - 25 * 60 * 60 * 1000;
+    fs.writeFileSync(stamp, String(old));
+    fire();
+    const t3 = fs.readFileSync(stamp, 'utf8');
+    assertD('a day-old stamp allows the next sweep', Number(t3) > old);
+
+    // The hook must never emit on a normal session: SessionStart output becomes
+    // context, and a daily housekeeping job has nothing to tell the model.
+    assertD('the hook stays SILENT on stdout', (first.stdout || '').trim() === '');
+
+    // The tool's own contract: read-only unless asked. An audit that could
+    // configure something by default would be unsafe to run for information.
+    const drSrc = fs.readFileSync(script, 'utf8');
+    assertD('beads-dr only acts under --init/--sync',
+      /const INIT = flag\('--init'\)/.test(drSrc) && /const SYNC = flag\('--sync'\)/.test(drSrc)
+      && /if \(INIT && row\.inScope/.test(drSrc) && /if \(SYNC && row\.inScope/.test(drSrc));
+    assertD('beads-dr scopes by measured history, not a hand-kept list',
+      /MIN_ISSUES/.test(drSrc) && /issueCount/.test(drSrc));
+    // Reading 124 repos via `bd` would hammer the shared Dolt server and leave
+    // orphan processes (cp-6j5) — the issue counting must come from the jsonl.
+    assertD('the issue count is read from jsonl, not by shelling out to bd',
+      /issues\.jsonl/.test(drSrc) && !/bd\(\['list'/.test(drSrc));
+    assertD('the disk-loss limit is stated in the output, not just the source',
+      /NOT disk loss/.test(drSrc));
+
+    // ── the restore verifier must not be able to destroy what it verifies ────
+    // `bd backup restore --force` with no path reads .beads/backup and
+    // OVERWRITES THE LIVE DATABASE of the repo it runs in. These pin the two
+    // properties that keep the check safe and meaningful.
+    const vPath = path.join(PLUGIN_ROOT, 'scripts', 'beads-dr-verify.mjs');
+    assertD('the restore verifier ships', fs.existsSync(vPath));
+    const vSrc = fs.existsSync(vPath) ? fs.readFileSync(vPath, 'utf8') : '';
+    assertD('every restore is scoped with -C and an explicit source path',
+      /'backup',\s*'restore',\s*source,\s*'--force',\s*'-C',\s*probe/.test(vSrc), 'restore call shape');
+    assertD('the probe lives under the OS temp dir, never inside a project',
+      /mkdtempSync\(path\.join\(os\.tmpdir\(\)/.test(vSrc));
+    // An earlier attempt restored 1 issue instead of 214 because the probe was
+    // reading the shared server. A probe that does not start empty makes every
+    // later count meaningless, so it must abort rather than report a pass.
+    assertD('a probe that does not start EMPTY aborts instead of passing',
+      /before\.n !== 0/.test(vSrc) && /not isolated/.test(vSrc));
+    assertD('the verdict compares restored vs expected counts',
+      /after\.n === expected/.test(vSrc));
+    // bd v2.0 moves list payloads under .data; a parser that only knows the
+    // legacy shape would silently read null and report a failed restore.
+    assertD('bd stats parsing tolerates both legacy and v2 envelope shapes',
+      /j\.data/.test(vSrc));
+  } catch (e) {
+    assertD('beads-dr sandbox ran', false, e && e.message);
+  } finally {
+    rmSandbox(sandbox);
+  }
+}
+log(`  ${results.beadsdr.ok} passed | ${results.beadsdr.fail} failed`);
 
 // ── Summary ──────────────────────────────────────────────────────────────────
 const totalOk = Object.values(results).reduce((s, r) => s + r.ok, 0);
