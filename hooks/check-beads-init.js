@@ -158,6 +158,30 @@ function ensureBeadsExportConfig(cwd) {
 function finishBdSetup(cwd) {
   const steps = [];
 
+  // 0. Backup destination (cp-uif3.2). A project that starts tracking work with
+  //    no recovery path accrues history that exists in exactly one place, and
+  //    nobody goes back to configure it later — which is how 36 repos reached
+  //    2679 issues with one backup between them.
+  //
+  //    OUTSIDE the project (~/beads-backups/<name>): an in-project
+  //    .beads/backup dies with `rm -rf <project>`, a likelier way to lose a repo
+  //    than disk failure.
+  //
+  //    Configuring is not protecting: bd backup sync is MANUAL, so the daily
+  //    beads-dr-sync hook is what keeps this destination from silently rotting.
+  try {
+    const dest = path.join(os.homedir(), 'beads-backups', path.basename(cwd));
+    fs.mkdirSync(dest, { recursive: true });
+    execSync(`bd backup init "file://${dest}"`, {
+      cwd, encoding: 'utf8', timeout: 30_000, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true,
+    });
+    steps.push({ step: 'backup-destination', ok: true });
+  } catch (err) {
+    // Already configured is the common re-run case and is not a failure worth
+    // reporting; anything else is best-effort like every other step here.
+    steps.push({ step: 'backup-destination', ok: false, error: err.stderr?.toString() || err.message });
+  }
+
   // 1. git hooks (.git/hooks/) — only meaningful inside a git repo.
   if (fs.existsSync(path.join(cwd, '.git'))) {
     try {
