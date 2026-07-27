@@ -113,3 +113,53 @@ Fix token refresh race (cp-abc)
 Agent-Signature: claude-code-opus-4.8-high on behalf of <git user.name>
 Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
 ```
+
+## Backups — configuring is not protecting
+
+Issue history lives in a local Dolt database. Without a recovery path, one
+corrupting unclean shutdown loses it.
+
+**Default posture: a Dolt-native backup destination outside the project.**
+
+```bash
+node <braynee>/scripts/beads-dr.mjs              # audit, read-only
+node <braynee>/scripts/beads-dr.mjs --init --sync   # configure + populate
+```
+
+Destination is `~/beads-backups/<repo>`, deliberately **outside** the repo —
+an in-project `.beads/backup` dies with `rm -rf <project>`, which is a likelier
+way to lose a repo than disk failure. New projects get this automatically at
+`bd init`.
+
+Scope is measured, not curated: a repo qualifies when it has issue history and a
+database. Backing up an empty scaffold protects nothing and buries the repos
+that matter in the report.
+
+### The trap: two different "backup" numbers
+
+`bd backup status` prints both, and the reassuring one is not the one that
+protects you:
+
+| Line | What it is | Runs by itself? |
+|---|---|---|
+| `Last backup:` | bd's internal auto-backup, on by default when a git remote is detected | yes, every 15m |
+| `Last sync:` | the Dolt-native **destination** — the actual recovery path | **no, `bd backup sync` is manual** |
+
+A destination nobody pushes to rots silently while `Last backup` still reads
+minutes. Measured on one fleet: 107 repos held archives that *looked* like
+coverage, most 23 days stale. Whatever adopts this must run `bd backup sync` on
+a schedule — braynee does it daily from a SessionStart hook.
+
+Also note `Database size:` is a **global** figure. The same number prints in
+repos with no destination at all; it is not this repo's backup size.
+
+### What this does and does not survive
+
+Survives DB corruption and unclean-shutdown journal damage. **Does not survive
+losing the disk** — the backup sits on the same drive. Off-machine protection
+needs a Dolt remote, which stays opt-in per project rather than mandatory.
+
+A backup you have never restored is a hypothesis. Verify with
+`scripts/beads-dr-verify.mjs`, which restores into a throwaway directory and
+compares issue counts. It refuses to report success unless the probe is provably
+isolated — a check that cannot prove isolation must never claim a restore worked.
