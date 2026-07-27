@@ -104,6 +104,16 @@
           {
             "type": "command",
             "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/beads-dr-sync.js"],
+            "timeout": 20
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
             "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/beads-version-check.js"],
             "timeout": 20
           }
