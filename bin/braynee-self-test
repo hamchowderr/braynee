@@ -296,6 +296,8 @@ const scripts = [
   { file: 'qmd-wrapper.mjs', args: ['--help'], expectExit: [0, 1, 127] },
   { file: 'vault-query.mjs', args: ['--help'], expectExit: [0, 1] },
   { file: 'beads-dashboard.js', args: ['--help'], expectExit: [0, 1] },
+  { file: 'install-commit-hooks.mjs', args: ['--help'], expectExit: [0] },
+  { file: 'gen-ci-workflow.mjs', args: ['--repo', os.tmpdir(), '--dry-run'], expectExit: [0] },
 ];
 for (const s of scripts) {
   const fp = path.join(PLUGIN_ROOT, 'scripts', s.file);
@@ -835,6 +837,41 @@ function assertRule(label, cond) {
   // or businesses — section 13 scans this file too, but assert the intent here.
   assertRule('...carries no owner-specific example',
     !/otaku|myrp|chowderr|foreman/i.test(cpText));
+
+  // cp-lj73.3: the rule is also where "how do I turn this on for an existing
+  // repo" has to live. A hook that rejects a commit while citing a rule that
+  // documents no way to install, or to opt out, is an obstacle with a footnote.
+  assertRule('...documents the three enforcement layers and their strengths',
+    /Claude-side hook/.test(cpText) && /commit-msg. hook/.test(cpText) && /PR-title CI/.test(cpText));
+  assertRule('...points at the installer for an existing repo',
+    /install-commit-hooks\.mjs/.test(cpText));
+  assertRule('...states the git-side layers are opt-in per repo',
+    /opt-in per repo/i.test(cpText));
+  assertRule('...documents the agent-side opt-out',
+    /braynee\.allow-freeform-commits/.test(cpText));
+  assertRule('...records that beads does not own commit-msg (coexistence)',
+    /prepare-commit-msg/.test(cpText) && /never\s*\n?`?commit-msg/.test(cpText));
+
+  // The installer and the CI job must exist for the rule's instructions to work:
+  // a documented command that is not shipped is worse than no documentation.
+  const ich = path.join(PLUGIN_ROOT, 'scripts', 'install-commit-hooks.mjs');
+  assertRule('install-commit-hooks.mjs ships (cp-lj73.3)', fs.existsSync(ich));
+  const chc = path.join(PLUGIN_ROOT, 'scripts', 'lib', 'commit-hooks-core.js');
+  assertRule('commit-hooks-core.js ships', fs.existsSync(chc));
+  {
+    // One shared type list across all three layers. Three hand-maintained copies
+    // would drift, and a commit the agent accepts but CI rejects is the worst
+    // possible outcome — it fails only after the work is pushed.
+    const { TYPES } = require(path.join(PLUGIN_ROOT, 'hooks', 'lib', 'commit-format.js'));
+    const core = fs.readFileSync(chc, 'utf8');
+    const ciCore = fs.readFileSync(path.join(PLUGIN_ROOT, 'scripts', 'lib', 'ci-workflow-core.js'), 'utf8');
+    assertRule('commit-hooks-core imports the shared type list, not its own copy',
+      /require\([^)]*commit-format\.js[^)]*\)/.test(core) && !/'feat',\s*'fix'/.test(core));
+    assertRule('ci-workflow-core imports the shared type list, not its own copy',
+      /require\([^)]*commit-format\.js[^)]*\)/.test(ciCore) && !/'feat',\s*'fix'/.test(ciCore));
+    assertRule('the shared type list is non-empty and conventional',
+      TYPES.includes('feat') && TYPES.includes('fix') && TYPES.length >= 10);
+  }
 
   // cp-ccsh.7 / B6: two divergent copies of qmd-wrapper.mjs exist on a dev box —
   // the standalone ~/.claude/scripts/ one (stale) and the plugin's bundled one
