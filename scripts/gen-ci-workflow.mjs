@@ -4,6 +4,7 @@
 // gate on (no vacuous green). The ci-harness formula step calls this. (cp-asf)
 //
 // Usage: node gen-ci-workflow.mjs [--repo <dir>] [--name ci.yml] [--branch main] [--dry-run]
+//        [--no-pr-lint]   omit the PR-title/PR-size jobs (cp-lj73.3)
 // Idempotent: if .github/workflows/<name> already exists, it reports and does nothing.
 
 import fs from 'node:fs';
@@ -19,6 +20,8 @@ const repoDir = path.resolve(opt('--repo', process.cwd()));
 const name = opt('--name', 'ci.yml');
 const branch = opt('--branch', 'main');
 const dryRun = args.includes('--dry-run');
+// cp-lj73.3: PR-title + PR-size jobs ride along by default.
+const prLint = !args.includes('--no-pr-lint');
 
 const wfDir = path.join(repoDir, '.github', 'workflows');
 const wfPath = path.join(wfDir, name);
@@ -29,7 +32,7 @@ if (fs.existsSync(wfPath)) {
 }
 
 const stack = detectStack(repoDir);
-const yaml = composeWorkflow(stack, branch);
+const yaml = composeWorkflow(stack, branch, { prLint });
 const checks = ['lint', 'typecheck', 'test'].filter(k => stack[k]);
 
 if (dryRun) {

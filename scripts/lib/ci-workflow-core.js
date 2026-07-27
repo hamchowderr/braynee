@@ -8,6 +8,11 @@
 const fs = require('fs');
 const path = require('path');
 
+// One shared type list across all three enforcement layers (cp-lj73.3): the
+// Claude-side PreToolUse guard, commitlint's generated config, and the PR-title
+// CI job below. Three hand-maintained copies would drift.
+const { TYPES } = require(path.join(__dirname, '..', '..', 'hooks', 'lib', 'commit-format.js'));
+
 // How you invoke a package.json script under each package manager.
 function scriptCmd(pm, name) {
   return pm === 'npm' ? `npm run ${name}` : `${pm} ${name}`;
@@ -46,7 +51,11 @@ function detectStack(repoDir) {
 // `name` is the on-disk workflow file name (default ci.yml); the workflow's display
 // name is "CI" — deliberately NOT "Claude Code Review" (that advisory workflow is
 // excluded from the gate, so the generated one must be distinct to count).
-function composeWorkflow(stack, branch = 'main') {
+// cp-lj73.3 adds the PR-title + PR-size jobs by default (opts.prLint=false opts
+// out). They live in this workflow rather than a separate file on purpose: a
+// second workflow would be a second thing for the gh:run gate to reason about.
+function composeWorkflow(stack, branch = 'main', opts = {}) {
+  const { prLint = true, locWarn = 400 } = opts;
   const steps = [];
   if (stack.lint) steps.push({ name: 'Lint', run: stack.lint });
   if (stack.typecheck) steps.push({ name: 'Typecheck', run: stack.typecheck });
@@ -85,7 +94,7 @@ jobs:
       - name: Install
         run: ${stack.install}
 ${yamlSteps}
-`;
+${prLint ? prTitleJob(TYPES, locWarn) : ''}`;
 }
 
 // True when the gh:run gate should IGNORE this workflow name (the advisory reviewer).
@@ -93,4 +102,73 @@ function isAdvisoryWorkflow(nameOrFile) {
   return /claude[\s_-]*code[\s_-]*review/i.test(String(nameOrFile || ''));
 }
 
-module.exports = { scriptCmd, detectStack, composeWorkflow, isAdvisoryWorkflow };
+// cp-lj73.3 — the server-side third of the commit/PR conventions. The
+// commit-msg hook covers commits in a clone that installed it; this covers the
+// PR TITLE, which no local hook can see, and which is what actually lands on
+// main under squash-merge.
+//
+// Hand-rolled rather than a third-party action (the issue suggested
+// amannn/action-semantic-pull-request): the type list here is generated from
+// braynee's single shared list, so the CI check, the Claude-side guard and
+// commitlint cannot drift apart. A third-party action brings its own grammar,
+// its own default config, and a version to keep pinned.
+//
+// SECURITY — a PR title is attacker-controlled text. Interpolating
+// `${{ github.event.pull_request.title }}` directly into a run: block is the
+// classic GitHub Actions script-injection hole: a title containing `"; curl …`
+// executes on the runner. It is passed through env: instead, where the shell
+// only ever sees it as a variable's value.
+function prTitleJob(types, locWarn = 400) {
+  const alt = types.join('|');
+  return `
+  pr-title:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check the PR title is Conventional Commits form
+        env:
+          # Passed via env, never interpolated into the script: a PR title is
+          # untrusted input and \${{ }} inside run: would execute it.
+          PR_TITLE: \${{ github.event.pull_request.title }}
+        run: |
+          if ! printf '%s' "$PR_TITLE" | grep -Eq '^(${alt})(\\([^)]+\\))?!?: .+'; then
+            echo "::error title=PR title::Not Conventional Commits form: $PR_TITLE"
+            echo "Expected 'type(scope): summary'. Types: ${types.join(', ')}"
+            echo "Title the PR by its highest-impact commit."
+            exit 1
+          fi
+          echo "PR title OK: $PR_TITLE"
+
+  pr-size:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      # Advisory only — never fails the build. A big PR is sometimes correct
+      # (a generated file, a mechanical rename); the reason to flag it is that
+      # review quality drops past this size, which is a judgement call.
+      - name: Warn when the diff is past the reviewable ceiling
+        env:
+          BASE_SHA: \${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: \${{ github.event.pull_request.head.sha }}
+        run: |
+          # awk, not bc/paste: one dependency-free pass, and --shortstat omits
+          # the insertions or deletions clause entirely when a side is zero.
+          loc=$(git diff --shortstat "$BASE_SHA...$HEAD_SHA" | awk '
+            { i = 0; d = 0
+              for (n = 1; n <= NF; n++) {
+                if ($n ~ /^insertion/) i = $(n-1)
+                if ($n ~ /^deletion/)  d = $(n-1)
+              }
+              print i + d }')
+          loc=\${loc:-0}
+          echo "Changed lines: $loc"
+          if [ "$loc" -gt ${locWarn} ]; then
+            echo "::warning title=PR size::~$loc lines changed; the reviewable ceiling is ~${locWarn}. Consider splitting or stacking."
+          fi
+`;
+}
+
+module.exports = { scriptCmd, detectStack, composeWorkflow, isAdvisoryWorkflow, prTitleJob };
