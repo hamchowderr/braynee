@@ -402,7 +402,7 @@ function assertGate(label, cond) {
 // command produces no stdout and a clean exit (the self-gate fires first).
 for (const h of ['commit-cadence-nudge.js', 'beads-claim-to-branch.js',
                  'beads-status-sync.js', 'beads-dashboard-refresh.js', 'mtn-to-beads-sync.js',
-                 'beads-close-gate.js']) {
+                 'beads-close-gate.js', 'commit-format-check.js']) {
   const noise = runHook(h, 'echo hello world');
   assertGate(`${h} stays SILENT + exit 0 on a non-matching command`,
     noise.out.trim() === '' && (noise.status === 0 || noise.status === 2));
@@ -1795,6 +1795,174 @@ results.vaultguard = { ok: 0, fail: 0, errors: [] };
   }
 }
 log(`  ${results.vaultguard.ok} passed | ${results.vaultguard.fail} failed`);
+
+// ── 22. commit/PR format guard: block form, warn on judgement (cp-lj73.2) ────
+// This guard BLOCKS commits, so the cost of a wrong verdict is asymmetric: a
+// missed bad commit is a style nit, a blocked GOOD commit is an obstacle that
+// gets the guard turned off permanently (the cp-0oqe failure mode). So the
+// allow-path assertions below matter more than the block-path ones, and both
+// are driven through the real hook over stdin rather than unit-testing regexes.
+//
+// The escape hatch is asserted the same way as cp-ar0c: it must be reachable
+// from INSIDE a session (git config), and the in-command `export` form must
+// still fail, because a PreToolUse hook cannot see an env var set by the very
+// command it is checking.
+log('\n=== 22. commit/PR format guard (cp-lj73.2) ===');
+results.commitformat = { ok: 0, fail: 0, errors: [] };
+{
+  const assertG = (label, cond, detail) => {
+    if (cond) { results.commitformat.ok++; log(`  OK: ${label}`); }
+    else {
+      results.commitformat.fail++;
+      results.commitformat.errors.push({ test: label, detail });
+      log(`  FAIL: ${label}${detail ? ` — ${detail}` : ''}`);
+    }
+  };
+
+  const hook = path.join(PLUGIN_ROOT, 'hooks', 'commit-format-check.js');
+  const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), 'lj732-'));
+  try {
+    const repo = path.join(sandbox, 'repo');
+    fs.mkdirSync(repo, { recursive: true });
+    const git = (...args) =>
+      spawnSync('git', args, { cwd: repo, encoding: 'utf8', windowsHide: true, timeout: 15000 });
+    git('init', '-q', '.');
+    git('config', 'user.email', 'selftest@example.invalid');
+    git('config', 'user.name', 'selftest');
+    fs.writeFileSync(path.join(repo, 'README.md'), 'base\n');
+    git('add', '-A');
+    git('commit', '-q', '-m', 'init');
+    git('checkout', '-q', '-B', 'main');
+
+    const fire = (command, cwd = repo) => {
+      const r = spawnSync(process.execPath, [hook], {
+        input: JSON.stringify({ tool_name: 'Bash', tool_input: { command }, cwd }),
+        encoding: 'utf8', timeout: 20000, windowsHide: true,
+        // Cleared explicitly: an operator who exported this before launching the
+        // self-test would otherwise make every BLOCK assertion pass vacuously.
+        env: { ...process.env, BRAYNEE_ALLOW_FREEFORM_COMMITS: '' },
+      });
+      return { status: r.status, out: r.stdout || '', err: r.stderr || '' };
+    };
+    const ctx = (command) => {
+      const r = fire(command);
+      if (r.status !== 0 || !r.out.trim()) return '';
+      try { return JSON.parse(r.out).hookSpecificOutput.additionalContext || ''; }
+      catch { return ''; }
+    };
+
+    // ── BLOCK: the subject is not Conventional Commits form ─────────────────
+    assertG('a bare sentence subject is blocked',
+            fire('git commit -m "added the login page"').status === 2);
+    assertG('a missing colon is blocked',
+            fire('git commit -m "feat add login"').status === 2);
+    assertG('an invented type is blocked',
+            fire('git commit -m "feature: add login"').status === 2);
+    assertG('a PR title in prose is blocked',
+            fire('gh pr create --title "My changes" --body x').status === 2);
+    // cp-fznk: the compound form that defeated the main-branch guard entirely.
+    assertG('`cd . && git commit` is still checked (was the cp-fznk bypass)',
+            fire('cd . && git commit -m "some stuff"').status === 2);
+    assertG('`true; git commit` is still checked',
+            fire('true; git commit -m "some stuff"').status === 2);
+
+    // The block message must be actionable on its own: name the required form
+    // and where the full rule is, or the agent is left guessing.
+    {
+      const e = fire('git commit -m "added the login page"').err;
+      assertG('the block names the required form', /type\(scope\).*summary/.test(e), e.slice(0, 120));
+      assertG('the block cites the installed rule',
+              /rules\/commit-pr-conventions\.md/.test(e), e.slice(0, 200));
+      assertG('the block names the opt-out', /allow-freeform-commits/.test(e), e.slice(0, 200));
+    }
+
+    // ── ALLOW: conforming, or unreadable and therefore unjudgeable ──────────
+    assertG('a conventional subject passes', fire('git commit -m "feat: add login"').status === 0);
+    assertG('a scoped conventional subject passes',
+            fire('git commit -m "fix(hooks): stop the crash"').status === 0);
+    // The message form Claude Code documents. A segment-only read truncates the
+    // subject to `"$(cat` and would block this valid commit.
+    assertG('a heredoc commit message passes',
+            fire('git commit -m "$(cat <<\'EOF\'\nfeat(hooks): add the guard\n\nBody; with | punctuation.\nEOF\n)"').status === 0);
+    // Nothing on the command line to judge — guessing would block valid work.
+    assertG('an editor commit passes', fire('git commit').status === 0);
+    assertG('--amend --no-edit passes', fire('git commit --amend --no-edit').status === 0);
+    assertG('-F message-from-file passes', fire('git commit -F msg.txt').status === 0);
+    assertG('--fixup passes', fire('git commit --fixup HEAD').status === 0);
+    assertG('gh pr create --fill passes', fire('gh pr create --fill').status === 0);
+    // Mentioning a command is not running it (the cp-0oqe lesson).
+    assertG('echoing a bad commit message is allowed',
+            fire('echo "git commit -m added stuff"').status === 0);
+    assertG('filing an issue that quotes a bad message is allowed',
+            fire('bd create --title="git commit -m added stuff is blocked"').status === 0);
+    // The decoy case: an earlier quoted -m must not be judged as THIS message.
+    assertG('a quoted decoy -m does not block the real commit',
+            fire('echo "git commit -m \'oops\'" && git commit -m "feat: real subject"').status === 0);
+    assertG('a non-git command is ignored', fire('npm test').status === 0);
+
+    // ── WARN: judgement calls report but never block ────────────────────────
+    assertG('past tense warns without blocking',
+            /imperative/.test(ctx('git commit -m "feat: added the login page"')));
+    {
+      const long = 'feat(hooks): ' + 'x'.repeat(70);
+      assertG('an over-long subject warns without blocking', /50/.test(ctx(`git commit -m "${long}"`)));
+    }
+    assertG('wip noise warns without blocking', /noise/.test(ctx('git commit -m "chore: wip"')));
+    assertG('a clean conventional commit emits NOTHING',
+            ctx('git commit -m "feat: add login"') === '');
+
+    // ── traceability: warn only where beads actually tracks the work ────────
+    assertG('no beads dir means no traceability warning',
+            !/beads/.test(ctx('git commit -m "feat: add login"')));
+    fs.mkdirSync(path.join(repo, '.beads'), { recursive: true });
+    assertG('a beads repo warns when the message has no issue id',
+            /beads/.test(ctx('git commit -m "feat: add login"')));
+    assertG('an id in the subject satisfies traceability',
+            !/beads/.test(ctx('git commit -m "feat: add login (cp-lj73.2)"')));
+    assertG('a Refs: footer satisfies traceability',
+            !/beads/.test(ctx('git commit -m "feat: add login" -m "Refs: cp-lj73.2"')));
+    // Traceability must never BLOCK: an agent that cannot satisfy a block
+    // legitimately will invent an id, turning the control into false evidence.
+    assertG('missing traceability does not block',
+            fire('git commit -m "feat: add login"').status === 0);
+    fs.rmSync(path.join(repo, '.beads'), { recursive: true, force: true });
+
+    // ── PR size: warn past the rule's reviewable ceiling ────────────────────
+    git('checkout', '-q', '-b', 'feature/small');
+    fs.writeFileSync(path.join(repo, 'small.txt'), 'a\nb\nc\n');
+    git('add', '-A');
+    git('commit', '-q', '-m', 'feat: small');
+    assertG('a small branch does not warn about size',
+            !/reviewable/.test(ctx('gh pr create --title "feat: add a thing" --body "Refs: cp-1"')));
+    git('checkout', '-q', 'main');
+    git('checkout', '-q', '-b', 'feature/big');
+    fs.writeFileSync(path.join(repo, 'big.txt'), Array.from({ length: 600 }, (_, i) => `line ${i}`).join('\n') + '\n');
+    git('add', '-A');
+    git('commit', '-q', '-m', 'feat: big');
+    assertG('an oversized branch warns about size',
+            /reviewable/.test(ctx('gh pr create --title "feat: add a thing" --body "Refs: cp-1"')));
+    assertG('an oversized branch is still ALLOWED (size is judgement, not law)',
+            fire('gh pr create --title "feat: add a thing"').status === 0);
+    git('checkout', '-q', 'main');
+
+    // ── the opt-out must be reachable IN-session (cp-ar0c) ──────────────────
+    assertG('an in-command export does NOT defeat the guard',
+            fire('export BRAYNEE_ALLOW_FREEFORM_COMMITS=1 && git commit -m "added stuff"').status === 2);
+    assertG('an inline VAR=1 prefix does NOT defeat the guard',
+            fire('BRAYNEE_ALLOW_FREEFORM_COMMITS=1 git commit -m "added stuff"').status === 2);
+    git('config', '--local', 'braynee.allow-freeform-commits', 'true');
+    assertG('the per-repo git config opt-out works',
+            fire('git commit -m "added stuff"').status === 0);
+    git('config', '--local', '--unset', 'braynee.allow-freeform-commits');
+    assertG('with the opt-out removed the guard is back on',
+            fire('git commit -m "added stuff"').status === 2);
+  } catch (e) {
+    assertG('commit-format sandbox ran', false, e && e.message);
+  } finally {
+    fs.rmSync(sandbox, { recursive: true, force: true });
+  }
+}
+log(`  ${results.commitformat.ok} passed | ${results.commitformat.fail} failed`);
 
 // ── Summary ──────────────────────────────────────────────────────────────────
 const totalOk = Object.values(results).reduce((s, r) => s + r.ok, 0);

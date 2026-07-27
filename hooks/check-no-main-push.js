@@ -18,75 +18,20 @@ const fs = require('fs');
 const path = require('path');
 const log = require(path.join(__dirname, 'lib', 'hook-logger.js'));
 
+// cp-lj73.2: commandSegments (the cp-fznk compound-command fix) and repoAllows
+// (the cp-ar0c reachable-opt-out fix) moved to lib/git-command.js when the
+// commit/PR format guard needed exactly the same two behaviors. Shared rather
+// than copied: a copy lets one guard silently regress while the other stays
+// correct. The rationale for each lives with the code there.
+const { commandSegments, repoAllows } = require(path.join(__dirname, 'lib', 'git-command.js'));
+
 const HOOK = 'check-no-main-push';
 
-// cp-ar0c: the env opt-outs below are read from THIS process, which inherits
-// Claude Code's environment — not the shell command being checked. So neither
-// `export BRAYNEE_ALLOW_MAIN_COMMITS=1 && git commit` nor the inline
-// `BRAYNEE_ALLOW_MAIN_COMMITS=1 git commit` prefix can ever reach it: the hook
-// has already run and exited by the time any shell would apply them. That left
-// the documented escape hatch settable only from a shell profile BEFORE
-// launching CC — unusable by the agent the message addresses, and a hard block
-// on repos (braynee itself, per its CLAUDE.md) that ship direct-to-main by design.
-//
-// The per-repo source below fixes that. It lives in .git/config, so it is
-// explicit, durable, greppable, and scoped to exactly one repo. Deliberately NOT
-// a tracked file: that could be committed and would then travel to other users.
-//
+// Per-repo opt-outs, settable mid-session (the env vars still work and win):
 //   git config --local braynee.allow-main-commits true
 //   git config --local braynee.allow-main-push true
-//
-// The env vars still work and still win, so nothing that relied on them breaks.
-function repoAllows(cwd, key) {
-  try {
-    const v = execSync(`git config --get braynee.${key}`, {
-      cwd,
-      encoding: 'utf8',
-      stdio: ['pipe', 'pipe', 'ignore'],
-      timeout: 5000,
-      windowsHide: true,
-    }).trim().toLowerCase();
-    return v === 'true' || v === '1' || v === 'yes';
-  } catch {
-    // Unset is the overwhelmingly common case and git exits 1 for it, so this
-    // is control flow, not an error: no opt-out means the guard stays on.
-    return false;
-  }
-}
-
 const ENV_ALLOW_MAIN = process.env.BRAYNEE_ALLOW_MAIN_COMMITS === '1';
 const ENV_ALLOW_MAIN_PUSH = process.env.BRAYNEE_ALLOW_MAIN_PUSH === '1';
-
-// cp-fznk: every guard below used to anchor at the start of the WHOLE command
-// (/^\s*git\s+push/), so `git` merely had to not be the first word to slip past.
-// Verified against the shipped 2.1.21 hook:
-//
-//   git commit -m x                -> blocked          (correct)
-//   cd . && git commit -m x        -> ALLOWED          (bypass)
-//   true; git commit -m x          -> ALLOWED          (bypass)
-//   cd . && git push origin main   -> ALLOWED          (bypass)
-//
-// `cd <dir> && git push` is the ordinary way to act on another repo, so the
-// headline guard was defeated by a three-character prefix in everyday use.
-//
-// Fix: split on shell operators and match each segment on its own. The anchor
-// stays INSIDE the segment rather than becoming a substring search, because an
-// unanchored search would fire on `echo "git push origin main"` and on commit
-// messages quoting a git command — and a guard that blocks correct usage is one
-// people turn off. This is not a shell parser; it closes the compound-command
-// hole. Over-matching a real git call inside a quoted string fails safe
-// (blocked, retry); under-matching fails open, which is what happened here.
-function commandSegments(command) {
-  return String(command)
-    .split(/&&|\|\||[;\n|]/)
-    .map((s) => s.trim())
-    // Strip leading `VAR=value` env assignments so `FOO=1 git commit` is still
-    // seen as a git commit. This form previously bypassed the guard entirely,
-    // which is why `BRAYNEE_ALLOW_MAIN_COMMITS=1 git commit` LOOKED like a
-    // working opt-out — it was never honored, just never matched (cp-ar0c).
-    .map((s) => s.replace(/^(?:[A-Za-z_][A-Za-z0-9_]*=(?:"[^"]*"|'[^']*'|\S*)\s+)+/, ''))
-    .filter(Boolean);
-}
 
 let input = '';
 process.stdin.setEncoding('utf8');
