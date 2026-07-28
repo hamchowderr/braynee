@@ -1,6 +1,6 @@
 // branch-name-check.js
 // Hook: PreToolUse (Bash, if Bash(git push *)) — soft warning when pushing a
-// branch whose name doesn't follow the feature/*, fix/*, chore/* convention.
+// branch whose name doesn't follow the feat|feature/*, fix/*, chore/* convention.
 // Never blocks (exit 0). Issues a stderr warning that Claude can relay to the user.
 
 const { execSync } = require('child_process');
@@ -8,7 +8,9 @@ const path = require('path');
 const log = require(path.join(__dirname, 'lib', 'hook-logger.js'));
 
 const HOOK = 'branch-name-check';
-const ALLOWED = /^(feature|fix|chore|hotfix|refactor|docs|test)\//;
+// `feat` is the conventional-commits type, so branches routinely use it as the
+// short form of `feature`; `spike` covers time-boxed investigation branches.
+const ALLOWED = /^(feat|feature|fix|chore|hotfix|refactor|docs|test|spike)\//;
 
 let input = '';
 process.stdin.setEncoding('utf8');
@@ -46,7 +48,7 @@ process.stdin.on('end', () => {
         hookSpecificOutput: {
           hookEventName: 'PreToolUse',
           additionalContext:
-            `Branch '${branch}' does not follow the feature/*, fix/*, chore/*, refactor/*, docs/*, test/* naming convention. ` +
+            `Branch '${branch}' does not follow the feat/*, feature/*, fix/*, chore/*, hotfix/*, refactor/*, docs/*, test/*, spike/* naming convention. ` +
             `The push is allowed; renaming the branch would make it consistent with the convention.`,
         },
       }));
