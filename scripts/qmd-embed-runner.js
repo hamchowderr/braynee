@@ -15,6 +15,9 @@ const path = require('path');
 const os = require('os');
 
 const reindex = require(path.join(__dirname, '..', 'hooks', 'lib', 'qmd-reindex.js'));
+const log = require(path.join(__dirname, '..', 'hooks', 'lib', 'hook-logger.js'));
+
+const LOG_NAME = 'qmd-embed';
 
 function envInt(name, fallback) {
   const n = Number(process.env[name]);
@@ -57,11 +60,32 @@ function findQmdJs() {
 function main() {
   // Single-flight: bail immediately if a reindex (update or another embed)
   // already holds the lock.
-  if (!reindex.acquireLock('embed')) process.exit(0);
+  if (!reindex.acquireLock('embed')) {
+    log.debug(LOG_NAME, 'skipped: another reindex holds the lock');
+    process.exit(0);
+  }
 
   try {
     const qmdJs = findQmdJs();
-    if (!qmdJs) process.exit(0); // qmd not installed — nothing to do
+    if (!qmdJs) {
+      log.debug(LOG_NAME, 'skipped: qmd CLI not installed');
+      process.exit(0);
+    }
+
+    // scheduleEmbed spawns us on every Stop. When it was inside the time
+    // throttle it sets CHECK_BACKLOG=1, meaning "only embed if the backlog is
+    // big enough to justify jumping the queue". Evaluating that needs a
+    // `qmd status`, which is far too slow for a Stop hook but perfectly fine
+    // here — we're detached and nothing is waiting on us.
+    if (process.env.BRAYNEE_QMD_EMBED_CHECK_BACKLOG === '1') {
+      const pending = reindex.pendingEmbedCount(process.env.BRAYNEE_QMD_WRAPPER || null);
+      const threshold = reindex.embedPendingThreshold();
+      if (pending == null || pending < threshold) {
+        log.debug(LOG_NAME, `skipped: throttled (pending=${pending}, threshold=${threshold})`);
+        process.exit(0);
+      }
+      log.info(LOG_NAME, `backlog escape hatch: pending=${pending} >= ${threshold}, embedding now`);
+    }
 
     const startedAt = Date.now();
     const res = spawnSync(
@@ -89,12 +113,22 @@ function main() {
     // index as never-embedded forever — so the stamp froze for weeks while
     // every session re-ran a doomed embed from scratch.
     const elapsed = Date.now() - startedAt;
-    if (res.status === 0 || elapsed >= PROGRESS_MS) {
+    const stamped = res.status === 0 || elapsed >= PROGRESS_MS;
+    if (stamped) {
       try { writeFileSync(reindex.STAMP_FILE, String(Date.now()), 'utf8'); }
       catch { /* non-fatal */ }
     }
-  } catch {
-    /* best-effort */
+    // Log every outcome. The runner used to be completely silent, so an embed
+    // that never ran for weeks was invisible — the only signal was a stamp
+    // file nobody looks at. Note qmd self-aborts at its own ~30 min session
+    // cap with a non-zero status, so a non-zero exit is normal on a big
+    // backlog and does NOT mean the run did no work.
+    log.info(
+      LOG_NAME,
+      `embed finished: exit=${res.status} elapsed=${Math.round(elapsed / 1000)}s stamped=${stamped}`,
+    );
+  } catch (e) {
+    log.debug(LOG_NAME, `embed errored: ${e && e.message}`);
   } finally {
     reindex.releaseLock();
   }

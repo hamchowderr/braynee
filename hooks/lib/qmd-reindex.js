@@ -79,13 +79,23 @@ function embedPendingThreshold() {
 // Best-effort read of the pending-embedding backlog from `qmd status`.
 // Returns the count, or null if it can't be determined (caller fails open
 // to the plain time throttle so a status hiccup never forces an embed).
-function pendingEmbedCount(qmdWrapper) {
+//
+// NEVER call this from a Stop hook. `qmd status` counts documents and vectors
+// across the whole index and gets slow as the index grows — measured 46s on a
+// 1.4 GB index. It used to run inline in scheduleEmbed() with a 10s timeout,
+// which meant it ALWAYS timed out on a large index: the escape hatch below
+// could never fire (defeating cp-5aq a second time) and every throttled Stop
+// paid a 10s stall for an answer it never got. It now runs only inside the
+// detached runner, which can afford to wait.
+const PENDING_COUNT_TIMEOUT_MS = 5 * 60 * 1000;
+
+function pendingEmbedCount(qmdWrapper, timeoutMs = PENDING_COUNT_TIMEOUT_MS) {
   if (!qmdWrapper) return null;
   try {
     const out = execSync(`"${process.execPath}" "${qmdWrapper}" status`, {
       encoding: 'utf8',
       stdio: ['pipe', 'pipe', 'ignore'],
-      timeout: 10000,
+      timeout: timeoutMs,
       windowsHide: true,
     });
     const m = out.match(/Pending:\s*(\d+)/i);
@@ -204,23 +214,28 @@ function lastEmbedTs() {
 function scheduleEmbed(qmdWrapper) {
   const since = Date.now() - lastEmbedTs();
   const interval = embedIntervalMs();
-  if (since < interval) {
-    const pending = pendingEmbedCount(qmdWrapper);
-    const threshold = embedPendingThreshold();
-    if (pending == null || pending < threshold) {
-      return { scheduled: false, reason: 'throttled', sinceMs: since, pending };
-    }
-    // pending >= threshold → bypass the time throttle and embed now.
-  }
+  const throttled = since < interval;
+
+  // Always spawn the detached runner; never decide here. Inside the throttle
+  // window we hand it BRAYNEE_QMD_EMBED_CHECK_BACKLOG=1 and it evaluates the
+  // pending-count escape hatch itself, where a slow `qmd status` costs nobody
+  // anything. Spawning a node process that usually exits in milliseconds is
+  // far cheaper on the Stop path than the inline check it replaces, which
+  // blocked for its full 10s timeout on any non-trivial index.
   const runner = path.join(__dirname, '..', '..', 'scripts', 'qmd-embed-runner.js');
   try {
     const child = spawn(process.execPath, [runner], {
       detached: true,
       stdio: 'ignore',
       windowsHide: true,
+      env: {
+        ...process.env,
+        BRAYNEE_QMD_EMBED_CHECK_BACKLOG: throttled ? '1' : '0',
+        BRAYNEE_QMD_WRAPPER: qmdWrapper || '',
+      },
     });
     child.unref();
-    return { scheduled: true };
+    return { scheduled: true, mode: throttled ? 'backlog-check' : 'due', sinceMs: since };
   } catch (e) {
     return { scheduled: false, reason: 'spawn-failed', error: e.message };
   }
@@ -232,6 +247,8 @@ module.exports = {
   // exported for the detached runner + tests
   acquireLock,
   releaseLock,
+  pendingEmbedCount,
+  embedPendingThreshold,
   LOCK_FILE,
   STAMP_FILE,
 };
