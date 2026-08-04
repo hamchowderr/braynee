@@ -1,0 +1,9 @@
+{
+  "plugins": [
+    {
+      "id": "braynee",
+      "name": "Braynee",
+      "entry": "mastracode/src/index.ts"
+    }
+  ]
+}
