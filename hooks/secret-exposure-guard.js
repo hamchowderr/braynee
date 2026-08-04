@@ -17,6 +17,7 @@
 
 const path = require('path');
 const log = require(path.join(__dirname, 'lib', 'hook-logger.js'));
+const payload = require(path.join(__dirname, 'lib', 'hook-payload.js'));
 
 const HOOK = 'secret-exposure-guard';
 const ALLOW_READS = process.env.BRAYNEE_ALLOW_SECRET_READS === '1';
@@ -87,8 +88,8 @@ process.stdin.setEncoding('utf8');
 process.stdin.on('data', c => { input += c; });
 process.stdin.on('end', () => {
   try {
-    const data = JSON.parse(input);
-    const ti = data.tool_input || {};
+    // Host-neutral view of the tool input (cp-3o3g.3).
+    const ti = payload.parse(input).toolInput;
 
     // ---- Bash: value-printing secrets command ----
     if (typeof ti.command === 'string' && ti.command) {

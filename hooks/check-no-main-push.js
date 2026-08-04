@@ -17,6 +17,7 @@ const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const log = require(path.join(__dirname, 'lib', 'hook-logger.js'));
+const payload = require(path.join(__dirname, 'lib', 'hook-payload.js'));
 
 // cp-lj73.2: commandSegments (the cp-fznk compound-command fix) and repoAllows
 // (the cp-ar0c reachable-opt-out fix) moved to lib/git-command.js when the
@@ -38,9 +39,11 @@ process.stdin.setEncoding('utf8');
 process.stdin.on('data', c => { input += c; });
 process.stdin.on('end', () => {
   try {
-    const data = JSON.parse(input);
-    const command = data.tool_input?.command || '';
-    const cwd = data.cwd || process.cwd();
+    // Host-neutral view — the shell tool is `Bash` on Claude Code and
+    // `execute_command` on Mastra Code, but the payload reads the same (cp-3o3g.3).
+    const p = payload.parse(input);
+    const command = p.toolInput.command || '';
+    const cwd = p.cwd;
 
     // Resolved per invocation, not at module load: the opt-out is per-repo and
     // `cwd` is only known once the payload is parsed.

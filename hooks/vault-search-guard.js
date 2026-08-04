@@ -33,6 +33,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const log = require(path.join(__dirname, 'lib', 'hook-logger.js'));
+const payload = require(path.join(__dirname, 'lib', 'hook-payload.js'));
 const { getVaultRoot } = require(path.join(__dirname, '..', 'scripts', 'lib', 'vault-root.js'));
 
 const HOOK = 'vault-search-guard';
@@ -244,10 +245,12 @@ process.stdin.on('data', (c) => { input += c; });
 process.stdin.on('end', () => {
   try {
     if (ALLOW) process.exit(0);
-    const data = JSON.parse(input || '{}');
-    const tool = data.tool_name || '';
-    const ti = data.tool_input || {};
-    const cwd = data.cwd || process.cwd();
+    // Host-neutral view: `tool` is the canonical name regardless of whether the
+    // host called it Grep or search_content (cp-3o3g.3).
+    const p = payload.parse(input);
+    const tool = p.tool;
+    const ti = p.toolInput;
+    const cwd = p.cwd;
 
     const vaultRoot = getVaultRoot();
     // Fail-open if there is no real vault on disk (nothing to protect).
