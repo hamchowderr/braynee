@@ -2315,6 +2315,43 @@ results.beadsdr = { ok: 0, fail: 0, errors: [] };
 }
 log(`  ${results.beadsdr.ok} passed | ${results.beadsdr.fail} failed`);
 
+// ── Cross-host hook protocol (cp-3o3g.9) ─────────────────────────────────────
+// braynee's hooks run under more than one host. Two protocol rules keep them
+// portable, and breaking either fails SILENTLY — no error, no warning, the hook
+// simply stops denying or its text is dropped. So they are asserted, not assumed.
+log('\n=== Cross-host hook protocol ===');
+results.hostproto = { ok: 0, fail: 0, errors: [] };
+function assertProto(label, cond, detail) {
+  if (cond) { results.hostproto.ok++; log(`  OK: ${label}`); }
+  else { results.hostproto.fail++; results.hostproto.errors.push({ test: label, detail }); log(`  FAIL: ${label}${detail ? ' — ' + detail : ''}`); }
+}
+{
+  const hookFiles = listFiles(path.join(PLUGIN_ROOT, 'hooks'), ['.js'])
+    .filter(f => !f.endsWith('.test.js'));
+
+  // Rule 1: deny with exit 2 + stderr. Both hosts honour it. Claude Code also
+  // accepts a permissionDecision object, but Mastra Code blocks ONLY on exit 2
+  // and discards JSON it cannot use — a hook denying that way would block on one
+  // host and quietly permit on the other.
+  const jsonDeny = hookFiles.filter(f => /permissionDecision/.test(fs.readFileSync(f, 'utf8')));
+  assertProto('no hook denies via the Claude-Code-only permissionDecision object',
+    jsonDeny.length === 0, jsonDeny.map(f => path.basename(f)).join(', '));
+
+  // Rule 2: a denial must say why. exit 2 with no stderr gives the user a bare
+  // block with no reason on either host.
+  const silentDeny = hookFiles.filter(f => {
+    const src = fs.readFileSync(f, 'utf8');
+    return /process\.exit\(2\)/.test(src) && !/stderr\.write|payload\.block|payload\.deny/.test(src);
+  });
+  assertProto('every denying hook writes a reason to stderr',
+    silentDeny.length === 0, silentDeny.map(f => path.basename(f)).join(', '));
+
+  // Rule 3: the shared payload module is what encodes those rules.
+  const lib = path.join(PLUGIN_ROOT, 'hooks', 'lib', 'hook-payload.js');
+  assertProto('the host-neutral payload module ships', fs.existsSync(lib));
+}
+log(`  ${results.hostproto.ok} passed | ${results.hostproto.fail} failed`);
+
 // ── Mastra Code generated commands (cp-3o3g.7) ───────────────────────────────
 // commands/braynee/*.md are generated from agents/*.md. If someone adds, renames
 // or removes an agent without regenerating, Mastra Code silently offers a stale
