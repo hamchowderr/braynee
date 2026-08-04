@@ -393,6 +393,8 @@ Output ONLY the markdown body (no YAML frontmatter — that is added separately)
 
 ## References
 - **Files:** specific `path/to/file.ts` references with line numbers if mentioned
+- **Commits:** every git SHA that appears, with its message (e.g. `9f402ce` — wire shadcn registry). If none, `_(none)_`.
+- **Beads:** every beads issue ID that appears (e.g. `skate-gis`, `cp-qoya`), each marked closed / opened / referenced. If none, `_(none)_`.
 - **Related:** [[wikilinks]] to projects, clients, PRDs, related notes if mentioned
 
 RULES:
@@ -400,6 +402,7 @@ RULES:
 2. Never invent content. If a section is legitimately empty, mark it `_(none — [why])_`.
 3. Total length: 150-300 words. Density beats verbosity.
 4. The TL;DR must include the project name and the operative noun (what was worked on) — this is the primary search anchor.
+5. MANDATORY — capture every git commit SHA and every beads issue ID that appears, verbatim, in the References section. These are the only durable links from this summary back to the code history and the task tracker, and the raw transcript is NOT kept in the vault, so an ID omitted here is lost from the vault permanently. Copy them exactly; never paraphrase, abbreviate, or invent one.
 5. You are summarizing a COMPLETED, PAST transcript. You are NOT in that session and cannot act. Do NOT continue the work, run searches, read files, or offer to help. Do NOT emit tool calls or any `<function_calls>` / `<invoke ...>` / `antml:` syntax. Do NOT ask the user anything. Your ENTIRE output is the static markdown summary beginning with `## TL;DR` — nothing before it, nothing after `## References`."""
 
 
@@ -437,6 +440,14 @@ def _distillation_problem(text: str) -> str | None:
             return f"agentic leak {m!r}"
     if "## TL;DR" not in text or "## Outcome" not in text:
         return "missing required sections"
+    # The raw transcript is NOT retained in the vault, so these two lines are
+    # the only durable links from a summary back to the code history and the
+    # task tracker. A summary that drops them silently loses that trail, so
+    # treat their absence as a failed distillation and retry rather than
+    # writing a note that can never be traced back. `_(none)_` is a valid
+    # value — the requirement is that the model answered, not that IDs exist.
+    if "**Commits:**" not in text or "**Beads:**" not in text:
+        return "missing Commits/Beads references"
     return None
 
 
