@@ -150,10 +150,16 @@ const onDisk = fs.existsSync(OUT_DIR)
 const stale = onDisk.filter(f => !expected.has(f));
 const changed = [];
 
+// Compare with line endings normalised. core.autocrlf checks these files out as
+// CRLF on Windows while the generator writes LF, so a raw comparison reports
+// every file as stale on a fresh clone and fails the self-test for anyone on
+// Windows — even though nothing is actually out of date.
+const sameContent = (a, b) => a !== null && a.replace(/\r\n/g, '\n') === b.replace(/\r\n/g, '\n');
+
 for (const [file, content] of expected) {
   const target = path.join(OUT_DIR, file);
   const current = fs.existsSync(target) ? fs.readFileSync(target, 'utf8') : null;
-  if (current !== content) {
+  if (!sameContent(current, content)) {
     changed.push(file);
     if (!CHECK) fs.writeFileSync(target, content);
   }
