@@ -1,12 +1,16 @@
 // session-export-qmd.js
-// Hook: Stop — Exports current session's JSONL conversation to clean markdown
-// and updates QMD index so past conversations are searchable.
+// Hook: Stop — keeps the vault's search index current at the end of a session
+// and schedules the distillation of this session into a structured note.
 //
 // Flow:
 // 1. Find current session JSONL from ~/.claude/projects/{encoded-cwd}/
-// 2. Parse: extract user messages + assistant text (skip tool_use, system, snapshots)
-// 3. Write clean markdown to vault: 2. Areas/Sessions/Transcripts/{date}-{slug}.md
-// 4. Run `qmd update -c vault` to re-index
+// 2. Parse it far enough to confirm this was a real session worth acting on
+// 3. Run `qmd update -c vault` to re-index, and schedule embed + summary
+//
+// It does NOT write the raw transcript into the vault — see the note at the
+// write site. The vault holds the distilled summary; the raw conversation
+// stays at its source in ~/.claude/projects. The name is kept for continuity
+// with existing hook wiring.
 //
 // This runs after session-auto-close.js so the session note is already written.
 
@@ -22,7 +26,6 @@ const HOOK = 'session-export-qmd';
 const { getVaultRoot } = require(path.join(__dirname, '..', 'scripts', 'lib', 'vault-root.js'));
 const { resolveProjectLink } = require(path.join(__dirname, 'lib', 'project-resolver.js'));
 const VAULT_DIR = getVaultRoot();
-const TRANSCRIPTS_DIR = path.join(VAULT_DIR, '2. Areas', 'Sessions', 'Transcripts');
 const CLAUDE_PROJECTS_DIR = path.join(os.homedir(), '.claude', 'projects');
 // Use braynee's bundled qmd-wrapper (cross-platform) — handles qmd discovery internally.
 const QMD_WRAPPER = path.join(__dirname, '..', 'scripts', 'qmd-wrapper.mjs');
@@ -208,32 +211,29 @@ process.stdin.on('end', () => {
       process.exit(0);
     }
 
-    // Build markdown
-    const { content, date, slug } = buildMarkdown(messages, meta);
-
-    // Ensure transcripts directory exists
-    if (!fs.existsSync(TRANSCRIPTS_DIR)) {
-      fs.mkdirSync(TRANSCRIPTS_DIR, { recursive: true });
-    }
-
-    // Filename includes session ID prefix to prevent same-day same-slug
-    // collisions across different sessions (the old `${date}-${slug}.md`
-    // pattern caused every default-slug session to clobber the previous one
-    // because slug defaults to "session" when entry.slug is unset).
+    // Raw transcripts are deliberately NOT written to the vault.
+    //
+    // They duplicated ~/.claude/projects/*.jsonl verbatim while accounting for
+    // ~79% of the vault's markdown (82 MB across 2.6k files vs 7.6 MB of
+    // distilled notes). Worse, they outranked the distilled per-project
+    // summaries in search — a vector query for "mastra agent deployment"
+    // returned three raw transcripts above the actual curated note — and they
+    // made up essentially the entire embedding backlog.
+    //
+    // Nothing downstream depends on a vault copy: the summary pipeline
+    // (skills/session-backfill) reads the raw .jsonl straight from
+    // ~/.claude/projects, and braynee:recap does its temporal scans there too.
+    // The vault keeps the distilled summary; the raw conversation stays at its
+    // source. This is the vault's own rule — it is the thinking layer, not a
+    // transcript archive.
+    const { date, slug } = buildMarkdown(messages, meta);
     const sidPrefix = (meta.sessionId || '').slice(0, 8) || 'nosid000';
-    const filename = `${date}-${slug}-${sidPrefix}.md`;
-    const filepath = path.join(TRANSCRIPTS_DIR, filename);
-
-    // Same-session re-Stop (compact, resume, multi-turn): overwrite the file
-    // since session ID is now in the filename, this only ever matches the
-    // SAME session — never a different session's transcript.
-    fs.writeFileSync(filepath, content, 'utf8');
+    const sessionLabel = `${date}-${slug}-${sidPrefix}`;
 
     // Reindex QMD (cheap BM25 now; embed throttled + detached).
     const rx = updateQmdIndex();
 
-    log.info(HOOK, `exported ${filename} (${messages.length} msgs); qmd update=${rx.kw.ran ? 'ok' : rx.kw.reason}, embed=${rx.em.scheduled ? 'scheduled' : rx.em.reason}, summary=${rx.sm.scheduled ? 'scheduled' : rx.sm.reason}`);
-    process.stderr.write(`Session exported: ${filename} (${messages.length} messages)\n`);
+    log.info(HOOK, `session ${sessionLabel} (${messages.length} msgs, transcript not vaulted); qmd update=${rx.kw.ran ? 'ok' : rx.kw.reason}, embed=${rx.em.scheduled ? 'scheduled' : rx.em.reason}, summary=${rx.sm.scheduled ? 'scheduled' : rx.sm.reason}`);
     process.exit(0);
   } catch (e) {
     log.error(HOOK, `crash: ${e.message}`);
