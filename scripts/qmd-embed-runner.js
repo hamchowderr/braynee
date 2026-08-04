@@ -65,11 +65,15 @@ function main() {
     process.exit(0);
   }
 
+  // NOTE: every early exit below must `return`, never process.exit(). We hold
+  // the lock from here on, and process.exit() skips `finally` — so exiting
+  // directly leaks the lockfile and every later reindex has to wait out the
+  // 30-min staleness window (or match a dead PID) before it can proceed.
   try {
     const qmdJs = findQmdJs();
     if (!qmdJs) {
       log.debug(LOG_NAME, 'skipped: qmd CLI not installed');
-      process.exit(0);
+      return;
     }
 
     // scheduleEmbed spawns us on every Stop. When it was inside the time
@@ -82,7 +86,7 @@ function main() {
       const threshold = reindex.embedPendingThreshold();
       if (pending == null || pending < threshold) {
         log.debug(LOG_NAME, `skipped: throttled (pending=${pending}, threshold=${threshold})`);
-        process.exit(0);
+        return;
       }
       log.info(LOG_NAME, `backlog escape hatch: pending=${pending} >= ${threshold}, embedding now`);
     }
