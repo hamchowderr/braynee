@@ -10,7 +10,9 @@
 // hook at all, so it consumes the same generator as plugin `instructions` instead.
 
 const path = require('path');
+const log = require(path.join(__dirname, 'lib', 'hook-logger.js'));
 
+const HOOK = 'memory-reminder';
 const BRAYNEE_ROOT = path.join(__dirname, '..');
 
 (async () => {
@@ -21,8 +23,13 @@ const BRAYNEE_ROOT = path.join(__dirname, '..');
       ).href
     );
     process.stdout.write(vaultInstructions({ brayneeRoot: BRAYNEE_ROOT }));
-  } catch {
-    // Never break the user's turn over a reminder — emit nothing and exit clean.
+  } catch (err) {
+    // Never break the user's turn over a reminder — but never swallow silently
+    // either. Losing this reminder means the agent stops being told the vault is
+    // searchable, which degrades quietly and is very hard to notice. The most
+    // likely cause is scripts/lib/vault-instructions.mjs not being deployed
+    // alongside hooks/ (it is a newer dependency of this hook).
+    log.error(HOOK, `vault instructions unavailable, reminder not injected: ${err && err.message}`);
   }
   process.exit(0);
 })();
