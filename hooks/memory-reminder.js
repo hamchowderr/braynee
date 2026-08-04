@@ -11,6 +11,7 @@
 
 const path = require('path');
 const log = require(path.join(__dirname, 'lib', 'hook-logger.js'));
+const payload = require(path.join(__dirname, 'lib', 'hook-payload.js'));
 
 const HOOK = 'memory-reminder';
 const BRAYNEE_ROOT = path.join(__dirname, '..');
@@ -22,7 +23,9 @@ const BRAYNEE_ROOT = path.join(__dirname, '..');
         path.join(BRAYNEE_ROOT, 'scripts', 'lib', 'vault-instructions.mjs'),
       ).href
     );
-    process.stdout.write(vaultInstructions({ brayneeRoot: BRAYNEE_ROOT }));
+    // Host-aware: plain stdout on Claude Code, additionalContext JSON on Mastra
+    // Code, which discards anything else (cp-3o3g.3).
+    payload.emitContext(vaultInstructions({ brayneeRoot: BRAYNEE_ROOT }));
   } catch (err) {
     // Never break the user's turn over a reminder — but never swallow silently
     // either. Losing this reminder means the agent stops being told the vault is
