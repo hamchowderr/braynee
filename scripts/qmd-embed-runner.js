@@ -10,7 +10,7 @@
 // the next scheduled run catches up).
 
 const { execSync, spawnSync } = require('child_process');
-const { existsSync, writeFileSync } = require('fs');
+const { existsSync, writeFileSync, readFileSync } = require('fs');
 const path = require('path');
 const os = require('os');
 
@@ -26,12 +26,49 @@ function envInt(name, fallback) {
 
 // `qmd embed` is RAM-bound, not CPU-bound: it loads an embedding model, a
 // reranker and a query-expansion GGUF via llama.cpp. Uncapped it pulls the
-// whole pending backlog into memory at once — measured ~5 GB resident, enough
-// to exhaust a 16 GB box and thrash. Capping docs/MB per batch holds it near
-// ~1.2 GB with no throughput loss, since cost scales with the backlog either
-// way. Without these caps users end up disabling the embed hook entirely.
+// whole pending backlog into memory at once — enough to exhaust a 16 GB box
+// and thrash. Capping docs/MB per batch bounds that, with no throughput loss
+// since cost scales with the backlog either way.
+//
+// These caps bound the TEXT held per batch, NOT the model footprint. Measured
+// on a 3.9k-doc backlog: ~0.5-1.3 GB on small notes, but ~3.5 GB once it
+// reached large (>1 MB) documents. Do not read these as a memory ceiling —
+// that is what the free-memory guard below is for.
 const MAX_DOCS_PER_BATCH = envInt('BRAYNEE_QMD_EMBED_MAX_DOCS', 48);
 const MAX_BATCH_MB = envInt('BRAYNEE_QMD_EMBED_MAX_MB', 6);
+
+const GB = 1024 * 1024 * 1024;
+
+// Free-memory guard. Starting a ~3.5 GB embed on a machine that is already
+// out of memory pushes the whole box into swap — the embed thrashes (one doc
+// per 30 min was observed) AND the user's foreground work crawls. braynee is
+// what spawns this process, so bounding it is braynee's job.
+//
+// Derived from total RAM so it adapts to any machine with zero configuration:
+// want ~25% of total free, floored at 1.5 GB (a small box still needs real
+// headroom) and capped at 3 GB (a 64 GB box should not demand 16 GB).
+function minFreeBytes() {
+  return Math.min(Math.max(os.totalmem() * 0.25, 1.5 * GB), 3 * GB);
+}
+
+// A deferral must NEVER become a silent off-switch. An embed that quietly
+// stops running is precisely the failure that let this index drift for five
+// weeks while every session reported success. So low memory can only ever
+// postpone a run, never cancel it: after this many consecutive deferrals we
+// start anyway and let the OS arbitrate.
+const MAX_CONSECUTIVE_DEFERRALS = 3;
+const DEFER_FILE = path.join(path.dirname(reindex.STAMP_FILE), '.braynee-qmd-embed-defers');
+
+function readDeferrals() {
+  try { return Number(readFileSync(DEFER_FILE, 'utf8').trim()) || 0; }
+  catch { return 0; }
+}
+
+function writeDeferrals(n) {
+  try { writeFileSync(DEFER_FILE, String(n), 'utf8'); } catch { /* non-fatal */ }
+}
+
+const gb = (bytes) => (bytes / GB).toFixed(1);
 
 // Ceiling for one detached embed. Generous because it runs detached and holds
 // only the reindex lock — nothing waits on it. A backlog of a few thousand
@@ -90,6 +127,28 @@ function main() {
       }
       log.info(LOG_NAME, `backlog escape hatch: pending=${pending} >= ${threshold}, embedding now`);
     }
+
+    // Free-memory guard — postpone (never cancel) when the box has no room.
+    const free = os.freemem();
+    const minFree = minFreeBytes();
+    if (free < minFree) {
+      const deferrals = readDeferrals();
+      if (deferrals < MAX_CONSECUTIVE_DEFERRALS) {
+        writeDeferrals(deferrals + 1);
+        log.info(
+          LOG_NAME,
+          `deferred: ${gb(free)}GB free < ${gb(minFree)}GB needed ` +
+          `(${deferrals + 1}/${MAX_CONSECUTIVE_DEFERRALS} — runs anyway after that)`,
+        );
+        return;
+      }
+      log.warn(
+        LOG_NAME,
+        `low memory (${gb(free)}GB free < ${gb(minFree)}GB) but hit ` +
+        `${MAX_CONSECUTIVE_DEFERRALS} deferrals — embedding anyway rather than stalling`,
+      );
+    }
+    writeDeferrals(0);
 
     const startedAt = Date.now();
     const res = spawnSync(
