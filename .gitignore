@@ -30,6 +30,12 @@
 # WSL, which is exactly the cross-platform check that catches this class.
 .claude/settings.local.json
 
+# Node modules. braynee itself ships no npm deps, but Mastra Code's local plugin
+# install links the `mastracode` package into <pluginRoot>/node_modules so the
+# adapter entry can resolve `mastracode/plugin` (see mastracode/README.md). That
+# link is per-machine runtime state and must never be committed — cp-3o3g.2.
+node_modules/
+
 # Python bytecode (skill scripts)
 __pycache__/
 *.pyc

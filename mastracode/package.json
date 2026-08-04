@@ -1,0 +1,17 @@
+{
+  "name": "braynee-mastracode",
+  "private": true,
+  "type": "module",
+  "description": "Mastra Code adapter for braynee. The Claude Code surface lives at the repo root; both read the same skills/ and scripts/.",
+  "exports": "./src/index.ts",
+  "peerDependencies": {
+    "mastracode": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.9.3"
+  },
+  "scripts": {
+    "check": "tsc --noEmit"
+  }
+}
