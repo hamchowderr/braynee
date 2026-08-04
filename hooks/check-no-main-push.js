@@ -85,12 +85,12 @@ process.stdin.on('end', () => {
         if (fs.existsSync(path.join(cwd, '.beads'))) {
           // cp-psc/HD-4.3: PreToolUse exit-0 stdout is NOT added to context;
           // use the documented additionalContext channel, factual phrasing.
-          process.stdout.write(JSON.stringify({
-            hookSpecificOutput: {
-              hookEventName: 'PreToolUse',
-              additionalContext: 'This repo uses beads; running `bd preflight --check` before opening a PR catches stale or orphaned issues.',
-            },
-          }));
+          // Passing the event keeps that envelope on Claude Code while emitting
+          // the flat shape Mastra Code reads (cp-3o3g.9).
+          payload.emitContext(
+            'This repo uses beads; running `bd preflight --check` before opening a PR catches stale or orphaned issues.',
+            'PreToolUse',
+          );
         }
       } catch { /* the beads preflight hint is advisory; never delay a push for it */ }
       process.exit(0);

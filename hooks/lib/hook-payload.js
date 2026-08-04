@@ -115,18 +115,30 @@ async function read() {
 /**
  * Emit text intended for the model's context, in whatever shape this host reads.
  *
- * Caveat worth knowing: as of mastracode 0.32.4 the TUI never reads a hook's
- * additionalContext, so on that host this is currently inert. Emitting the right
- * shape anyway costs nothing and starts working the moment they wire it up —
- * and emitting plain text there would be silently dropped, which is worse.
+ * `event` matters on Claude Code and is not optional in practice. Claude Code
+ * injects plain stdout for UserPromptSubmit, but for PreToolUse (and the other
+ * tool events) an exit-0 hook's plain stdout is NOT added to context — that
+ * requires the hookSpecificOutput channel. Passing the wrong shape loses the
+ * text with no error. Mastra Code wants a flat {additionalContext} for every
+ * event and ignores the Claude Code envelope entirely.
+ *
+ * Caveat: as of mastracode 0.32.4 the TUI never reads a hook's additionalContext,
+ * so on that host this is currently inert. Emitting the right shape anyway costs
+ * nothing and starts working the moment they wire it up — whereas emitting the
+ * wrong shape is silently dropped, which is worse.
  */
-function emitContext(text) {
-  if (!text) return;
-  if (host() === 'mastra-code') {
-    process.stdout.write(JSON.stringify({ additionalContext: String(text) }));
-    return;
+function contextPayload(text, event, hostName = host()) {
+  const value = String(text);
+  if (hostName === 'mastra-code') return JSON.stringify({ additionalContext: value });
+  if (event && event !== 'UserPromptSubmit') {
+    return JSON.stringify({ hookSpecificOutput: { hookEventName: event, additionalContext: value } });
   }
-  process.stdout.write(String(text));
+  return value;
+}
+
+function emitContext(text, event) {
+  if (!text) return;
+  process.stdout.write(contextPayload(text, event));
 }
 
 /**
@@ -179,6 +191,7 @@ module.exports = {
   read,
   readStdin,
   emitContext,
+  contextPayload,
   block,
   deny,
   denyPayload,

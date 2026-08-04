@@ -182,6 +182,29 @@ test('empty context writes nothing on either host', () => {
   withMastraHost(() => assert.strictEqual(captureStdout(() => P.emitContext('')), ''));
 });
 
+// ── context channel per event ────────────────────────────────────────────────
+
+test('Claude Code UserPromptSubmit context is plain stdout', () => {
+  assert.strictEqual(P.contextPayload('hi', 'UserPromptSubmit', 'claude-code'), 'hi');
+  assert.strictEqual(P.contextPayload('hi', undefined, 'claude-code'), 'hi');
+});
+
+test('Claude Code PreToolUse context needs the hookSpecificOutput envelope', () => {
+  // Plain stdout from an exit-0 PreToolUse hook is NOT added to context on
+  // Claude Code, so emitting it plainly would lose the text with no error.
+  const parsed = JSON.parse(P.contextPayload('hi', 'PreToolUse', 'claude-code'));
+  assert.strictEqual(parsed.hookSpecificOutput.hookEventName, 'PreToolUse');
+  assert.strictEqual(parsed.hookSpecificOutput.additionalContext, 'hi');
+});
+
+test('Mastra Code context is flat additionalContext for every event', () => {
+  for (const ev of ['UserPromptSubmit', 'PreToolUse', 'PostToolUse', undefined]) {
+    const parsed = JSON.parse(P.contextPayload('hi', ev, 'mastra-code'));
+    assert.strictEqual(parsed.additionalContext, 'hi');
+    assert.strictEqual(parsed.hookSpecificOutput, undefined, 'must not nest the Claude Code envelope');
+  }
+});
+
 // ── denial protocol ──────────────────────────────────────────────────────────
 
 test('Claude Code denial uses the permissionDecision object on stdout', () => {
