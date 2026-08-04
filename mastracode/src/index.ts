@@ -62,6 +62,23 @@ function hostGapInstructions(): string {
   );
 }
 
+/**
+ * Where braynee lives on disk, stated so the model can act on it.
+ *
+ * The generated /braynee:* commands tell a subagent to read its playbook from
+ * `agents/<name>.md`, which only works if something says where that is. Claude
+ * Code expands ${CLAUDE_PLUGIN_ROOT} for this; Mastra Code has no such token, so
+ * the path is resolved here at load time and stated plainly.
+ */
+function locationInstructions(pluginDir: string): string {
+  const root = brayneeRootFrom(pluginDir);
+  return (
+    `braynee is installed at "${root}". Its agent playbooks are in ` +
+    `"${path.join(root, 'agents')}" — the /braynee:* commands delegate to a subagent and ` +
+    'expect it to read the matching playbook from there before doing anything.'
+  );
+}
+
 export default defineMastraCodePlugin({
   id: 'braynee',
   name: 'Braynee',
@@ -74,7 +91,11 @@ export default defineMastraCodePlugin({
   // instructions. Same generator the Claude Code UserPromptSubmit hook uses, so
   // the two hosts stay byte-identical.
   instructions: ctx =>
-    [vaultInstructions({ brayneeRoot: brayneeRootFrom(ctx.pluginDir) }), hostGapInstructions()]
+    [
+      vaultInstructions({ brayneeRoot: brayneeRootFrom(ctx.pluginDir) }),
+      hostGapInstructions(),
+      locationInstructions(ctx.pluginDir),
+    ]
       .filter(Boolean)
       .join('\n\n'),
 });

@@ -2315,6 +2315,38 @@ results.beadsdr = { ok: 0, fail: 0, errors: [] };
 }
 log(`  ${results.beadsdr.ok} passed | ${results.beadsdr.fail} failed`);
 
+// ── Mastra Code generated commands (cp-3o3g.7) ───────────────────────────────
+// commands/braynee/*.md are generated from agents/*.md. If someone adds, renames
+// or removes an agent without regenerating, Mastra Code silently offers a stale
+// or missing /braynee:* entry point — nothing errors, the command is just wrong.
+log('\n=== Mastra Code commands ===');
+results.mccommands = { ok: 0, fail: 0, errors: [] };
+function assertMcCmd(label, cond, detail) {
+  if (cond) { results.mccommands.ok++; log(`  OK: ${label}`); }
+  else { results.mccommands.fail++; results.mccommands.errors.push({ test: label, detail }); log(`  FAIL: ${label}${detail ? ' — ' + detail : ''}`); }
+}
+{
+  const gen = path.join(PLUGIN_ROOT, 'scripts', 'gen-mastracode-commands.mjs');
+  assertMcCmd('the command generator ships', fs.existsSync(gen));
+  if (fs.existsSync(gen)) {
+    const r = spawnSync(process.execPath, [gen, '--check'], { encoding: 'utf8', timeout: 30_000 });
+    assertMcCmd('commands/braynee is in sync with agents/', r.status === 0,
+      (r.stdout || r.stderr || '').trim().split('\n')[0]);
+  }
+  const cmdDir = path.join(PLUGIN_ROOT, 'commands', 'braynee');
+  const cmds = fs.existsSync(cmdDir) ? fs.readdirSync(cmdDir).filter(f => f.endsWith('.md')) : [];
+  const agents = listFiles(path.join(PLUGIN_ROOT, 'agents'), ['.md']).length;
+  assertMcCmd('one command per agent', cmds.length === agents, `${cmds.length} commands vs ${agents} agents`);
+  // The built-in subagent tool rejects anything outside its fixed enum, so a
+  // typo here fails at the schema rather than doing the wrong thing quietly.
+  const badType = cmds.filter(f => {
+    const m = fs.readFileSync(path.join(cmdDir, f), 'utf8').match(/agentType`: `"([a-z]+)"/);
+    return !m || !['explore', 'plan', 'execute'].includes(m[1]);
+  });
+  assertMcCmd('every command targets a valid built-in subagent type', badType.length === 0, badType.join(', '));
+}
+log(`  ${results.mccommands.ok} passed | ${results.mccommands.fail} failed`);
+
 // ── Summary ──────────────────────────────────────────────────────────────────
 const totalOk = Object.values(results).reduce((s, r) => s + r.ok, 0);
 const totalFail = Object.values(results).reduce((s, r) => s + r.fail, 0);
