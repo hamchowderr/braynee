@@ -269,6 +269,13 @@ def resolve_project_folder(sessions_dir: Path, kebab: str) -> Path:
 
 
 # ── JSONL filtering ───────────────────────────────────────────────────────
+# Opening lines of the two user messages this script sends to `claude -p` (see
+# distill_via_cli: the normal prompt, and the retry nudge when the first reply
+# fails validation). Shared so the filtering below can never drift from the
+# prompts it is meant to recognize.
+DISTILL_PROMPT_PREFIX = "Session transcript:"
+DISTILL_RETRY_PREFIX = "You previously responded with tool calls"
+
 NOISE_PREFIXES = (
     "<local-command",
     "<command-name",
@@ -276,6 +283,14 @@ NOISE_PREFIXES = (
     "<system-reminder",
     "Caveat:",
     "[Request interrupted",
+    # Our OWN distillation prompt. Every `claude -p` call is recorded by CC as a
+    # user message, and those land in two places: standalone sessions under
+    # whatever cwd the sweep ran from, AND injected into real interactive
+    # sessions open in that cwd at the time. Left in, they get re-distilled and
+    # compound: one transcript had accumulated 492 copies of the prompt by
+    # 2026-08-05, and the summary ends up describing the summarizer, not the work.
+    DISTILL_PROMPT_PREFIX,
+    DISTILL_RETRY_PREFIX,
 )
 
 _TOOLCALL_RE = re.compile(
@@ -301,9 +316,14 @@ def _strip_toolcall_syntax(text: str) -> str:
     return re.sub(r"\n{3,}", "\n\n", cleaned).strip()
 
 
-def filter_jsonl(jsonl_path: Path) -> str:
-    """Read a CC .jsonl and return user/assistant text only, no tool noise."""
-    out: list[str] = []
+def iter_turns(jsonl_path: Path):
+    """Yield (role, text) for each real conversation turn, tool noise removed.
+
+    Roles are read from the JSONL's own message type, never inferred from the
+    rendered text — a distilled summary can quote "USER:"/"ASST:" markers in its
+    body, so callers that need to know whether a *human* spoke must consult the
+    role here rather than pattern-match filter_jsonl's output.
+    """
     try:
         for line in jsonl_path.read_text(encoding="utf-8", errors="ignore").splitlines():
             if not line.strip():
@@ -323,7 +343,7 @@ def filter_jsonl(jsonl_path: Path) -> str:
                         continue
                     text = _strip_toolcall_syntax(content.strip())
                     if text:
-                        out.append("USER: " + text[:2000])
+                        yield "user", text[:2000]
                 elif isinstance(content, list):
                     for blk in content:
                         if isinstance(blk, dict) and blk.get("type") == "text":
@@ -331,7 +351,7 @@ def filter_jsonl(jsonl_path: Path) -> str:
                             if text and not any(text.startswith(p) for p in NOISE_PREFIXES):
                                 text = _strip_toolcall_syntax(text)
                                 if text:
-                                    out.append("USER: " + text[:2000])
+                                    yield "user", text[:2000]
 
             elif t == "assistant":
                 if isinstance(content, list):
@@ -339,11 +359,50 @@ def filter_jsonl(jsonl_path: Path) -> str:
                         if isinstance(blk, dict) and blk.get("type") == "text":
                             text = _strip_toolcall_syntax((blk.get("text") or "").strip())
                             if text:
-                                out.append("ASST: " + text[:2000])
+                                yield "assistant", text[:2000]
     except Exception as e:
         sys.stderr.write(f"  filter error on {jsonl_path.name}: {e}\n")
 
-    return "\n\n".join(out)
+
+def filter_jsonl(jsonl_path: Path) -> str:
+    """Read a CC .jsonl and return user/assistant text only, no tool noise."""
+    label = {"user": "USER: ", "assistant": "ASST: "}
+    return "\n\n".join(label[role] + text for role, text in iter_turns(jsonl_path))
+
+
+def has_human_turn(jsonl_path: Path) -> bool:
+    """True if any genuine user message survived noise filtering."""
+    return any(role == "user" for role, _ in iter_turns(jsonl_path))
+
+
+def is_backfill_artifact(jsonl_path: Path) -> bool:
+    """True if this session is NOTHING BUT our own `claude -p` distillation calls.
+
+    Every distillation is recorded by CC as a session of its own, which the next
+    scan then treats as fresh backlog — so each run manufactured more work than
+    it cleared and the backlog never converged (913 pending, ~111 real, observed
+    2026-08-05).
+
+    The test: NOISE_PREFIXES already strips the distiller's prompts, so if no
+    user turn survives and the raw file carries one of those prompts, the
+    session was purely our own exhaust.
+
+    Both halves are load-bearing. In an artifact the only user turn IS the
+    prompt, and what remains is the assistant's summary — substantial prose, so
+    a length check reads it as real work. Conversely a sweep spawned from a
+    project's cwd pollutes the *real* interactive session open there; those
+    carry distiller prompts AND genuine user turns, and must still be distilled
+    from the cleaned text. Judging on raw text alone (e.g. "starts with the
+    prompt") discarded 138 genuine foreman sessions in testing.
+
+    Detection is CONTENT-based rather than a folder blocklist because artifacts
+    scatter across whichever cwd the sweep ran from, and real project folders
+    are MIXED — foreman held 138 polluted-but-real sessions among 188.
+    """
+    if has_human_turn(jsonl_path):
+        return False  # a human actually said something — real session
+    raw = _safe_read(jsonl_path)
+    return DISTILL_PROMPT_PREFIX in raw or DISTILL_RETRY_PREFIX in raw
 
 
 # ── Classification ────────────────────────────────────────────────────────
@@ -474,7 +533,7 @@ def distill_via_cli(filtered: str, model: str | None = None) -> str:
       - user message via stdin (avoids the Windows ~32KB cmdline cap)
     """
     payload = filtered[:MAX_INPUT_CHARS]
-    base_msg = f"Session transcript:\n\n{payload}"
+    base_msg = f"{DISTILL_PROMPT_PREFIX}\n\n{payload}"
     env = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"}
 
     # System prompt to a temp file — keeps it off the cmdline (length limits).
@@ -502,7 +561,7 @@ def distill_via_cli(filtered: str, model: str | None = None) -> str:
         last_problem = "no output"
         for attempt in range(2):
             user_msg = base_msg if attempt == 0 else (
-                "You previously responded with tool calls or by continuing the "
+                DISTILL_RETRY_PREFIX + " or by continuing the "
                 "session. That is wrong. Re-read the rules: output ONLY the "
                 "static markdown summary starting at `## TL;DR`. No tool calls, "
                 "no offers to help, no questions.\n\n" + base_msg
@@ -737,6 +796,8 @@ def backfill_one(
         upgrade_target = existing  # a stub (with session_id) — overwrite in place
 
     filtered = filter_jsonl(jsonl_path)
+    if is_backfill_artifact(jsonl_path):
+        return f"SKIP (backfill artifact): {jsonl_path.name}"
     if len(filtered) < MIN_FILTERED_CHARS:
         return f"SKIP (trivial, {len(filtered)} chars): {jsonl_path.name}"
 
@@ -909,7 +970,8 @@ def main() -> int:
         return 1
 
     stats = {"created": 0, "upgraded": 0, "exists": 0, "trivial": 0, "would_create": 0,
-             "would_upgrade": 0, "distill_invalid": 0, "gc_deleted": 0, "gc_would_delete": 0, "errors": 0}
+             "would_upgrade": 0, "distill_invalid": 0, "artifact": 0,
+             "gc_deleted": 0, "gc_would_delete": 0, "errors": 0}
 
     # Build the session_id -> note index ONCE (spans all folders). A full
     # backfill resolves thousands of sessions; a per-session rglob would be
@@ -954,6 +1016,8 @@ def main() -> int:
                     stats["exists"] += 1
                 elif msg.startswith("SKIP (distill invalid"):
                     stats["distill_invalid"] += 1
+                elif msg.startswith("SKIP (backfill artifact"):
+                    stats["artifact"] += 1
                 elif msg.startswith("SKIP"):
                     stats["trivial"] += 1
                 elif msg.startswith("WOULD UPGRADE"):
