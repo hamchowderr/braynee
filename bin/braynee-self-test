@@ -348,6 +348,10 @@ log('\n=== 7. Unit tests ===');
 const testFiles = [
   ...listFiles(path.join(PLUGIN_ROOT, 'hooks'), ['.test.js', '.test.mjs']),
   ...listFiles(path.join(PLUGIN_ROOT, 'hooks', 'lib'), ['.test.js', '.test.mjs']),
+  // cp-pu4q: scripts/ itself was not scanned, only scripts/lib/ — so a test
+  // sitting next to the script it covers was collected by nobody and ran only
+  // when someone remembered to invoke it by hand.
+  ...listFiles(path.join(PLUGIN_ROOT, 'scripts'), ['.test.js', '.test.mjs']),
   ...listFiles(path.join(PLUGIN_ROOT, 'scripts', 'lib'), ['.test.js', '.test.mjs']),
 ];
 if (testFiles.length === 0) {
