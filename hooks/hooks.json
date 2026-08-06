@@ -153,7 +153,7 @@
     ],
     "PreToolUse": [
       {
-        "matcher": "Bash",
+        "matcher": "Bash|PowerShell",
         "hooks": [
           {
             "type": "command",
@@ -188,7 +188,7 @@
         ]
       },
       {
-        "matcher": "Bash|Write",
+        "matcher": "Bash|Write|PowerShell",
         "hooks": [
           {
             "type": "command",
@@ -199,7 +199,7 @@
         ]
       },
       {
-        "matcher": "Glob|Grep|Bash",
+        "matcher": "Glob|Grep|Bash|PowerShell",
         "hooks": [
           {
             "type": "command",
@@ -390,7 +390,7 @@
         ]
       },
       {
-        "matcher": "Write|Edit|Bash",
+        "matcher": "Write|Edit|Bash|PowerShell",
         "hooks": [
           {
             "type": "command",
@@ -408,7 +408,7 @@
         ]
       },
       {
-        "matcher": "Bash",
+        "matcher": "Bash|PowerShell",
         "hooks": [
           {
             "type": "command",
@@ -420,7 +420,7 @@
         ]
       },
       {
-        "matcher": "Bash",
+        "matcher": "Bash|PowerShell",
         "hooks": [
           {
             "type": "command",
@@ -432,7 +432,7 @@
         ]
       },
       {
-        "matcher": "Bash",
+        "matcher": "Bash|PowerShell",
         "hooks": [
           {
             "type": "command",
@@ -444,7 +444,7 @@
         ]
       },
       {
-        "matcher": "Bash",
+        "matcher": "Bash|PowerShell",
         "hooks": [
           {
             "type": "command",
@@ -455,7 +455,7 @@
         ]
       },
       {
-        "matcher": "Bash",
+        "matcher": "Bash|PowerShell",
         "hooks": [
           {
             "type": "command",
@@ -467,7 +467,7 @@
         ]
       },
       {
-        "matcher": "Bash",
+        "matcher": "Bash|PowerShell",
         "hooks": [
           {
             "type": "command",
@@ -479,7 +479,7 @@
         ]
       },
       {
-        "matcher": "Bash",
+        "matcher": "Bash|PowerShell",
         "hooks": [
           {
             "type": "command",
