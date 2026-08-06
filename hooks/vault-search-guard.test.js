@@ -143,6 +143,54 @@ try {
   ok('allowed: Glob tool pointed at a code path while cwd = vault',
      run(tool('Glob', { pattern: '**/*.js', path: path.join(REPO, 'src') }, VAULT), REPO).code === 0);
 
+  // ── PowerShell tool + PowerShell-native verbs (cp-1fdn / cp-4q4h) ──────────
+  //
+  // PowerShell is the default shell on Windows. The guard was gated on the Bash
+  // tool AND on POSIX command names, so both the tool and its native cmdlets
+  // walked straight past it.
+  {
+    const ps = (command, cwd) => ({ tool_name: 'PowerShell', tool_input: { command }, cwd });
+
+    // The POSIX tools are on PATH under PowerShell and read the same files.
+    ok('blocked: grep naming a vault path, from the PowerShell tool',
+       run(ps(`grep -rn "x" "${VAULT}/2. Areas"`, REPO), REPO).code === 2);
+    ok('allowed: a code-repo grep from the PowerShell tool',
+       run(ps('grep -rn "foo" src/', REPO), REPO).code === 0);
+
+    // Native cmdlets, named arguments.
+    const blocked = [
+      `Select-String -Path "${VAULT}/2. Areas/*.md" -Pattern "todo"`,
+      `Select-String -Pattern "todo" -Path "${VAULT}/notes.md"`,
+      `sls -Path "${VAULT}/notes.md" -Pattern "x"`,
+      `Get-ChildItem -Path "${VAULT}" -Recurse -Filter "*.md"`,
+      `gci "${VAULT}" -Recurse`,
+    ];
+    for (const c of blocked) {
+      ok(`blocked: PowerShell-native vault search — ${c.slice(0, 52)}`,
+         run(ps(c, REPO), REPO).code === 2);
+    }
+
+    // False positives are what erode a guard, so pin them down explicitly.
+    const allowed = [
+      'Select-String -Path "./src/*.ts" -Pattern "TODO"',   // code repo
+      'gci -Recurse -Filter "*.ts"',                        // no path → follows a code cwd
+      `Get-ChildItem "${VAULT}"`,                           // a listing, not a search
+      `gci "${VAULT}" | Measure-Object`,                    // still just a listing
+    ];
+    for (const c of allowed) {
+      ok(`allowed: not a vault content search — ${c.slice(0, 52)}`,
+         run(ps(c, REPO), REPO).code === 0);
+    }
+
+    // -Path must not be swallowed as a value flag the way find's `-path` is.
+    ok('blocked: -LiteralPath into the vault',
+       run(ps(`Select-String -LiteralPath "${VAULT}/notes.md" -Pattern "x"`, REPO), REPO).code === 2);
+
+    // A no-path search while the cwd IS the vault still trips the cwd rule.
+    ok('blocked: recursive gci with no path while cwd is the vault',
+       run(ps('gci -Recurse -Filter "*.md"', VAULT), REPO).code === 2);
+  }
+
   // ── never throws: malformed input fails open ───────────────────────────────
   {
     const r = spawnSync(process.execPath, [HOOK], {
