@@ -350,8 +350,15 @@ function ensureMtnTask(issueId, title, priority, projectSlug) {
   // the old notes holding the filenames, and two repos can legitimately share a
   // task title. Neither is a reason to skip the mirror, so disambiguate with the
   // id — which is what makes the note unique anyway — and try once more.
-  if (!findTasknoteForIssueId(issueId)) {
-    safeTitle = sanitizeTitle(`${title} (${issueId})`);
+  // The suffix is a bare counter, NOT the issue id. mtn parses natural-language
+  // DURATIONS out of the title, so an id ending in digits + a time unit is eaten:
+  // `brokerboard-46h` lost "46h" (46 hours) and `brokerboard-08s` lost "08s" (8
+  // seconds), both leaving a useless "(brokerboard-)" that collides all over
+  // again. A counter cannot be read as a duration, and the id is already carried
+  // by the `#<id>` tag — which is what findTasknoteForIssueId matches on, so
+  // nothing depends on the id being in the filename.
+  for (let n = 2; n <= 9 && !findTasknoteForIssueId(issueId); n++) {
+    safeTitle = `${sanitizeTitle(title)} (${n})`;
     log.debug(LOG_NAME, `title collision for ${issueId}; retrying as ${safeTitle}`);
     mtnCreate(safeTitle);
     invalidateCache();
