@@ -331,13 +331,31 @@ function completeMtnTaskByIssueId(issueId) {
 // Returns the sanitized title (the mtn-resolvable name).
 function ensureMtnTask(issueId, title, priority, projectSlug) {
   if (findTasknoteForIssueId(issueId)) return sanitizeTitle(title);
-  const safeTitle = sanitizeTitle(title);
-  const mtnText = `${safeTitle} +${projectSlug} [${priority}] #task #${issueId}`;
-  run(`mtn create ${JSON.stringify(mtnText)}`);
+  let safeTitle = sanitizeTitle(title);
+  const mtnCreate = (t) =>
+    run(`mtn create ${JSON.stringify(`${t} +${projectSlug} [${priority}] #task #${issueId}`)}`);
+  mtnCreate(safeTitle);
   // We just added a note, so the mtime stamp is not a reliable freshness signal
   // (same-tick creates leave it unchanged). Drop the cache so the lookup below
   // actually sees the new file.
   invalidateCache();
+
+  // cp-lqki: mtn keys notes by FILENAME, and refuses when one already exists —
+  // "Failed to create task: File already exists: .../<title> [].md". This module
+  // dedupes by issue id, so a title that is already taken by a DIFFERENT issue
+  // left the current one permanently unmirrored, and run() discarded the error
+  // so it surfaced only as a bare "failed" count.
+  //
+  // Two ways it happens, both real: a repo whose bd prefix was renamed still has
+  // the old notes holding the filenames, and two repos can legitimately share a
+  // task title. Neither is a reason to skip the mirror, so disambiguate with the
+  // id — which is what makes the note unique anyway — and try once more.
+  if (!findTasknoteForIssueId(issueId)) {
+    safeTitle = sanitizeTitle(`${title} (${issueId})`);
+    log.debug(LOG_NAME, `title collision for ${issueId}; retrying as ${safeTitle}`);
+    mtnCreate(safeTitle);
+    invalidateCache();
+  }
   // Post-create cleanup of the note mtn just wrote (best-effort):
   //  - repoint the project from mtn's non-resolving `[[projects/<slug>]]` to the
   //    real vault note so the task isn't a graph orphan.
