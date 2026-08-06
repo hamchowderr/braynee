@@ -267,11 +267,19 @@ process.stdin.on('end', () => {
       process.exit(0);
     }
 
-    // ── Bash grep/find/rg targeting the vault ────────────────────────────
-    if (tool === 'Bash' && typeof ti.command === 'string' && ti.command) {
+    // ── Shell grep/find/rg targeting the vault ───────────────────────────
+    //
+    // PowerShell is the default shell on Windows (CLAUDE_CODE_USE_POWERSHELL_TOOL),
+    // and grep/rg/find are all on PATH there via the Git tooling — so a vault
+    // search issued from the PowerShell tool reaches the same binaries and must
+    // hit the same guard. Gating this branch on 'Bash' alone left that open
+    // (cp-1fdn). PowerShell-NATIVE search verbs (Select-String, Get-ChildItem
+    // -Recurse) still need their own patterns in blockReasonForBash — tracked
+    // separately; this branch only covers the POSIX-named tools.
+    if ((tool === 'Bash' || tool === 'PowerShell') && typeof ti.command === 'string' && ti.command) {
       const reason = blockReasonForBash(ti.command, vaultRoot, cwd);
       if (reason) {
-        log.warn(HOOK, `blocked Bash search of vault: ${ti.command.slice(0, 80)}`);
+        log.warn(HOOK, `blocked ${tool} search of vault: ${ti.command.slice(0, 80)}`);
         process.stderr.write(denyMessage(reason.what, null, reason.certain));
         process.exit(2);
       }

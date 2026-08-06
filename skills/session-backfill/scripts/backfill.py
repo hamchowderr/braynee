@@ -321,8 +321,8 @@ def session_cwd(jsonl_path: Path) -> Path | None:
 
     Read from the transcript, never inferred from the CC folder name — that
     name encodes the path with `-` for every separator, so it cannot be decoded
-    back reliably (a real folder like `myrp-build` is indistinguishable from a
-    nested `myrp/build`).
+    back reliably (a real folder like `my-app` is indistinguishable from a
+    nested `my/app`).
     """
     try:
         for line in jsonl_path.read_text(encoding="utf-8", errors="ignore").splitlines():
@@ -463,11 +463,11 @@ def is_backfill_artifact(jsonl_path: Path) -> bool:
     project's cwd pollutes the *real* interactive session open there; those
     carry distiller prompts AND genuine user turns, and must still be distilled
     from the cleaned text. Judging on raw text alone (e.g. "starts with the
-    prompt") discarded 138 genuine foreman sessions in testing.
+    prompt") discarded 138 genuine sessions from one project in testing.
 
     Detection is CONTENT-based rather than a folder blocklist because artifacts
     scatter across whichever cwd the sweep ran from, and real project folders
-    are MIXED — foreman held 138 polluted-but-real sessions among 188.
+    are MIXED — that same project held 138 polluted-but-real sessions among 188.
     """
     if has_human_turn(jsonl_path):
         return False  # a human actually said something — real session
