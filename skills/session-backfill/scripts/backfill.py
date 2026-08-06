@@ -316,6 +316,53 @@ def _strip_toolcall_syntax(text: str) -> str:
     return re.sub(r"\n{3,}", "\n\n", cleaned).strip()
 
 
+def session_cwd(jsonl_path: Path) -> Path | None:
+    """The working directory Claude Code recorded for this session.
+
+    Read from the transcript, never inferred from the CC folder name — that
+    name encodes the path with `-` for every separator, so it cannot be decoded
+    back reliably (a real folder like `myrp-build` is indistinguishable from a
+    nested `myrp/build`).
+    """
+    try:
+        for line in jsonl_path.read_text(encoding="utf-8", errors="ignore").splitlines():
+            try:
+                rec = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(rec, dict) and rec.get("cwd"):
+                return Path(rec["cwd"])
+    except Exception:
+        pass
+    return None
+
+
+def is_scratch_session(jsonl_path: Path) -> bool:
+    """True if this session ran in a throwaway directory.
+
+    Sessions started from the OS temp dir are not project work — they are
+    sandboxes, scratch checkouts, and tooling that the OS itself will delete.
+    Summarising them buried the vault under hundreds of notes about nothing
+    (one temp bucket reached 1,260 sessions).
+
+    Asking the OS where temp lives keeps this self-maintaining: a hand-written
+    list of folder names would need a new entry for every future sandbox, and
+    would misfire on real projects whose names merely contain "temp"
+    (alchemist-template, chatgpt-app-templates).
+
+    Deliberately NOT keyed on "is it a git repo" — several real projects here
+    are not repos (fivem-studio, mastra-lab) and would be lost.
+    """
+    cwd = session_cwd(jsonl_path)
+    if cwd is None:
+        return False                       # unknown — treat as real, never drop blind
+    try:
+        tmp = Path(tempfile.gettempdir()).resolve()
+        return tmp == cwd.resolve() or tmp in cwd.resolve().parents
+    except Exception:
+        return False
+
+
 def iter_turns(jsonl_path: Path):
     """Yield (role, text) for each real conversation turn, tool noise removed.
 
@@ -796,6 +843,8 @@ def backfill_one(
         upgrade_target = existing  # a stub (with session_id) — overwrite in place
 
     filtered = filter_jsonl(jsonl_path)
+    if is_scratch_session(jsonl_path):
+        return f"SKIP (scratch dir): {jsonl_path.name}"
     if is_backfill_artifact(jsonl_path):
         return f"SKIP (backfill artifact): {jsonl_path.name}"
     if len(filtered) < MIN_FILTERED_CHARS:
@@ -971,7 +1020,7 @@ def main() -> int:
 
     stats = {"created": 0, "upgraded": 0, "exists": 0, "trivial": 0, "would_create": 0,
              "would_upgrade": 0, "distill_invalid": 0, "artifact": 0,
-             "gc_deleted": 0, "gc_would_delete": 0, "errors": 0}
+             "scratch": 0, "gc_deleted": 0, "gc_would_delete": 0, "errors": 0}
 
     # Build the session_id -> note index ONCE (spans all folders). A full
     # backfill resolves thousands of sessions; a per-session rglob would be
@@ -1018,6 +1067,8 @@ def main() -> int:
                     stats["distill_invalid"] += 1
                 elif msg.startswith("SKIP (backfill artifact"):
                     stats["artifact"] += 1
+                elif msg.startswith("SKIP (scratch dir"):
+                    stats["scratch"] += 1
                 elif msg.startswith("SKIP"):
                     stats["trivial"] += 1
                 elif msg.startswith("WOULD UPGRADE"):
