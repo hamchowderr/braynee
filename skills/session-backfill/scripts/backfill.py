@@ -130,6 +130,54 @@ def load_overrides() -> dict[str, str]:
 
 OVERRIDES = load_overrides()
 
+
+def load_ignores() -> list[str]:
+    """Patterns for CC directories that are NOT projects and should never be
+    distilled — scratch dirs, sandboxes, or a root the user does not want a
+    session history for.
+
+    Without this, `--all` (which the Stop-hook sweep runs on every session)
+    walks every folder in ~/.claude/projects and manufactures notes for
+    throwaway working directories. Cleaning those up by hand is a treadmill;
+    the fix belongs at the source.
+    """
+    if not MAP_FILE.exists():
+        return []
+    try:
+        data = json.loads(MAP_FILE.read_text(encoding="utf-8"))
+        return [str(x) for x in data.get("_ignore", [])]
+    except Exception:
+        return []
+
+
+IGNORES = load_ignores()
+
+
+def is_ignored(cc_dir_name: str) -> bool:
+    """True if this CC directory is on the ignore list.
+
+    Matches the derived project slug exactly, or the pattern's `-`-separated
+    segments as a contiguous run inside the folder name — so "hook-sandbox"
+    catches every randomly-suffixed sandbox at once.
+
+    Matching is per SEGMENT, never a bare substring: a plain `"temp" in name`
+    test also swallows `alchemist-template` and `chatgpt-app-templates`, which
+    are real projects.
+    """
+    if not IGNORES:
+        return False
+    segs = [s for s in cc_dir_name.lower().split("-") if s]
+    kebab = cc_dir_to_kebab(cc_dir_name).lower()
+    for p in IGNORES:
+        pl = p.lower()
+        if pl == kebab:
+            return True
+        pseg = [s for s in pl.split("-") if s]
+        n = len(pseg)
+        if n and any(segs[i:i + n] == pseg for i in range(len(segs) - n + 1)):
+            return True
+    return False
+
 # Common parent-directory tokens. When a CC folder encodes
 # .../<parent>/<project>, the project is the segment AFTER the last of
 # these. This is a heuristic only — overrides win, and a wrong guess just
@@ -868,6 +916,11 @@ def iter_target_dirs(project: str | None, all_flag: bool) -> list[Path]:
     --project matches generically: a directory qualifies if its derived
     project slug equals the requested name, or if its CC folder name ends
     with the requested token. No hardcoded prefixes or per-user aliases.
+
+    The `_ignore` list in project_map.json filters `--all` only. An explicit
+    --project still works on an ignored directory: the list exists to keep the
+    automatic sweep out of scratch dirs, not to make them unreachable when the
+    user deliberately asks for one.
     """
     if not CC_PROJECTS.is_dir():
         return []
@@ -885,7 +938,11 @@ def iter_target_dirs(project: str | None, all_flag: bool) -> list[Path]:
         ]
         return matched
     if all_flag:
-        return all_dirs
+        kept = [d for d in all_dirs if not is_ignored(d.name)]
+        skipped = len(all_dirs) - len(kept)
+        if skipped:
+            print(f"  ignoring {skipped} non-project dir(s) per _ignore", flush=True)
+        return kept
     return []
 
 
