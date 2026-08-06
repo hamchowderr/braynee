@@ -73,9 +73,23 @@ function isInsideVault(p, vaultRoot) {
   return rp === rv || rp.startsWith(rv + '/');
 }
 
-const SEARCH_TOOL = /\b(grep|egrep|fgrep|rg|ripgrep|find)\b/i;
-const SEARCH_CMD = /^(sudo\s+)?(grep|egrep|fgrep|rg|ripgrep|find)$/i;
-const GREP_FAMILY = /^(grep|egrep|fgrep|rg|ripgrep)$/i;
+// cp-4q4h: PowerShell is the default shell on Windows, and its NATIVE search
+// verbs read the same files as grep/find. Only cmdlet names that cannot also be
+// a POSIX command are listed — `ls` and `dir` are PowerShell aliases for
+// Get-ChildItem, but blocking those would fire on every ordinary Bash `ls`, and
+// a plain listing is not a content search anyway. Get-ChildItem is treated as a
+// search only with -Recurse (see below); Select-String always is.
+const SEARCH_TOOL = /\b(grep|egrep|fgrep|rg|ripgrep|find|Select-String|sls|Get-ChildItem|gci)\b/i;
+const SEARCH_CMD = /^(sudo\s+)?(grep|egrep|fgrep|rg|ripgrep|find|Select-String|sls|Get-ChildItem|gci)$/i;
+// Pattern-first commands. Select-String's first positional is -Pattern, exactly
+// like grep's; Get-ChildItem's first positional is -Path, exactly like find's.
+const GREP_FAMILY = /^(grep|egrep|fgrep|rg|ripgrep|Select-String|sls)$/i;
+const PS_LIST = /^(Get-ChildItem|gci)$/i;
+const PS_RECURSE = /^-(Recurse|r)$/i;
+// The token after these IS the path, so it must reach isPathLike.
+const PS_PATH_FLAG = /^-(Path|LiteralPath|FilePath)$/i;
+// The token after these is a pattern/glob, never a path — skip it.
+const PS_VALUE_FLAG = /^-(Pattern|Filter|Include|Exclude|Depth|Context|Encoding)$/i;
 
 // Lowercased, forward-slashed command TEXT. Deliberately NOT path.resolve() —
 // resolving a whole command string as if it were a path prepends the hook
@@ -140,6 +154,9 @@ function searchPathArgs(cmd, cwd) {
     if (/^sudo$/i.test(toks[i])) i++;
     const cmdName = toks[i];
     if (!cmdName || !SEARCH_CMD.test(cmdName)) continue;
+    // A non-recursive Get-ChildItem is a directory listing, not a search. Only
+    // -Recurse makes it the `find` equivalent this guard is meant to catch.
+    if (PS_LIST.test(cmdName) && !toks.some((t) => PS_RECURSE.test(t))) continue;
     sawSearch = true;
     const isGrep = GREP_FAMILY.test(cmdName);
     i++;
@@ -151,6 +168,12 @@ function searchPathArgs(cmd, cwd) {
         // An -e/-f style flag supplies the pattern, so the first bare token after
         // it is a path, not the pattern.
         if (/^(-e|--regexp|-f|--file)$/.test(t)) patternTaken = true;
+        // PowerShell names its arguments. -Path/-LiteralPath must NOT be skipped
+        // as a value flag: the token after them is the path this guard exists to
+        // inspect. Checked before VALUE_FLAGS because that set already holds
+        // find's lowercase `-path`, and PowerShell flags are case-insensitive.
+        if (PS_PATH_FLAG.test(t)) { patternTaken = true; continue; }
+        if (PS_VALUE_FLAG.test(t)) { patternTaken = true; i++; continue; }
         if (VALUE_FLAGS.has(t)) i++;
         continue;
       }
