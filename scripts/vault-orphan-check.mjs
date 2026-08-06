@@ -92,9 +92,23 @@ function claimedNames(vault) {
     const fm = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text);
     if (!fm) continue;
     // Handles both `aliases: [A, B]` and the block form with `- A` entries.
-    const block = /^(?:aliases|alias):[ \t]*(.*)$([\s\S]*?)(?=^\S|\Z)/m.exec(fm[1]);
-    if (!block) continue;
-    const inline = block[1].trim();
+    //
+    // cp-pu4q: this was a single regex ending in `(?=^\S|\Z)`. JavaScript has no
+    // `\Z` escape — that is Perl/Python for end-of-string — so it matched a
+    // LITERAL capital Z, and failed two ways, both silently:
+    //   1. an alias containing a Z (`- Zillow`) stopped the lazy [\s\S]*? dead,
+    //      leaving nothing for the per-line regex to collect;
+    //   2. with no Z and no following top-level key, the lookahead never
+    //      satisfied, the match failed, and the file was skipped entirely.
+    // The second case covers every alias block written LAST in the frontmatter,
+    // which is exactly where Obsidian's processFrontMatter appends them — so the
+    // documented remedy for an orphan ("add the old name as an alias") could
+    // never work. A line walk has no lookahead to get wrong.
+    const lines = fm[1].split(/\r?\n/);
+    let i = lines.findIndex((l) => /^(?:aliases|alias):/.test(l));
+    if (i === -1) continue;
+
+    const inline = lines[i].replace(/^(?:aliases|alias):[ \t]*/, '').trim();
     if (inline.startsWith('[')) {
       for (const part of inline.replace(/^\[|\]$/g, '').split(',')) {
         const v = part.trim().replace(/^['"]|['"]$/g, '');
@@ -103,9 +117,14 @@ function claimedNames(vault) {
     } else if (inline) {
       names.add(inline.replace(/^['"]|['"]$/g, ''));
     }
-    for (const line of (block[2] || '').split('\n')) {
-      const m = /^[ \t]*-[ \t]+(.+?)[ \t]*$/.exec(line);
+
+    // Block form: consume `- entry` lines until the next top-level key. Running
+    // off the end of the array is a normal exit, not a failure.
+    for (i++; i < lines.length; i++) {
+      if (/^\S/.test(lines[i])) break; // next top-level frontmatter key
+      const m = /^[ \t]*-[ \t]+(.+?)[ \t]*$/.exec(lines[i]);
       if (m) names.add(m[1].replace(/^['"]|['"]$/g, ''));
+      else if (lines[i].trim()) break; // indented, but not a list entry
     }
   }
   return names;
@@ -211,9 +230,15 @@ function main() {
 
   // Drop deletions whose name a surviving note still answers to — a rename, a
   // move, or a consolidation that took the alias. Those links still resolve.
-  const claimed = claimedNames(vault);
+  //
+  // cp-pu4q: compared case-SENSITIVELY, so a case-only rename was reported as a
+  // broken link even though Obsidian resolves [[wikilinks]] case-insensitively.
+  // Live example: "Dreaming ROOM AI.md" was flagged with 4 referrers while
+  // "Dreaming Room AI/Dreaming Room AI.md" existed and resolved fine. Match the
+  // resolver: fold case on both sides.
+  const claimed = new Set([...claimedNames(vault)].map((n) => n.toLowerCase()));
   missing = missing.filter(
-    (m) => !claimed.has(path.basename(m.path).replace(/\.md$/i, ''))
+    (m) => !claimed.has(path.basename(m.path).replace(/\.md$/i, '').toLowerCase())
   );
   if (missing.length === 0) return;
 
@@ -236,9 +261,22 @@ function main() {
   console.log(lines.join('\n'));
 }
 
-try {
-  main();
-} catch {
-  // A startup advisory must never break session start.
+// cp-pu4q: only run when executed directly. `claimedNames` is exported so its
+// frontmatter parsing can be unit-tested, and an unguarded main() + exit(0) at
+// module scope would scan the real vault and kill the importing test process.
+// `import.meta.main` is not available on the Node versions braynee supports, so
+// compare argv[1] to this module's own path.
+const invokedDirectly =
+  !!process.argv[1] &&
+  path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url));
+
+if (invokedDirectly) {
+  try {
+    main();
+  } catch {
+    // A startup advisory must never break session start.
+  }
+  process.exit(0);
 }
-process.exit(0);
+
+export { claimedNames };
