@@ -363,6 +363,29 @@ def is_scratch_session(jsonl_path: Path) -> bool:
         return False
 
 
+def is_vault_session(jsonl_path: Path, vault: Path) -> bool:
+    """True if this session ran inside the vault itself.
+
+    Working in the vault is note-keeping, not project work, and the live
+    SessionStart hook already refuses to open a session note for it — it tells
+    the user "a session note will be created when you start work on a
+    recognized project" (hooks/session-auto-track.js, vault mode).
+
+    This script never got that rule, so a historical backfill manufactured the
+    very notes the hook declines to write: 509 vault-root sessions, plus 239
+    more from `1. Projects`. Matching the hook makes the two agree instead of
+    one quietly undoing the other.
+    """
+    cwd = session_cwd(jsonl_path)
+    if cwd is None or vault is None:
+        return False
+    try:
+        c, v = cwd.resolve(), vault.resolve()
+        return c == v or v in c.parents
+    except Exception:
+        return False
+
+
 def iter_turns(jsonl_path: Path):
     """Yield (role, text) for each real conversation turn, tool noise removed.
 
@@ -845,6 +868,8 @@ def backfill_one(
     filtered = filter_jsonl(jsonl_path)
     if is_scratch_session(jsonl_path):
         return f"SKIP (scratch dir): {jsonl_path.name}"
+    if is_vault_session(jsonl_path, vault):
+        return f"SKIP (vault session): {jsonl_path.name}"
     if is_backfill_artifact(jsonl_path):
         return f"SKIP (backfill artifact): {jsonl_path.name}"
     if len(filtered) < MIN_FILTERED_CHARS:
@@ -1020,7 +1045,7 @@ def main() -> int:
 
     stats = {"created": 0, "upgraded": 0, "exists": 0, "trivial": 0, "would_create": 0,
              "would_upgrade": 0, "distill_invalid": 0, "artifact": 0,
-             "scratch": 0, "gc_deleted": 0, "gc_would_delete": 0, "errors": 0}
+             "scratch": 0, "vault_session": 0, "gc_deleted": 0, "gc_would_delete": 0, "errors": 0}
 
     # Build the session_id -> note index ONCE (spans all folders). A full
     # backfill resolves thousands of sessions; a per-session rglob would be
@@ -1069,6 +1094,8 @@ def main() -> int:
                     stats["artifact"] += 1
                 elif msg.startswith("SKIP (scratch dir"):
                     stats["scratch"] += 1
+                elif msg.startswith("SKIP (vault session"):
+                    stats["vault_session"] += 1
                 elif msg.startswith("SKIP"):
                     stats["trivial"] += 1
                 elif msg.startswith("WOULD UPGRADE"):
