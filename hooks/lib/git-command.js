@@ -37,10 +37,63 @@ const { execSync } = require('child_process');
  * NOTE for message-reading callers: this splits on newlines, so a heredoc body
  * is torn apart. Detect the command from the segments, but read its MESSAGE
  * from the raw command string (see commit-format.js/extractCommitMessage).
+ *
+ * Splitting is QUOTE-AWARE. It used to be a plain `.split(/&&|\|\||[;\n|]/)`,
+ * which cut on separators inside quoted strings — so a perfectly valid
+ *
+ *   gh pr create --title "fix(x): do a; then b"
+ *   git commit -m "fix: handle a|b"
+ *
+ * was truncated mid-quote, leaving the segment with an unbalanced quote. The
+ * downstream flagValue() then could not match its `"[^"]*"` alternative, fell
+ * through to `[^\s]+`, and reported the title as the fragment `"fix(x):` —
+ * blocking a correctly-formatted title and telling the author it was malformed.
+ * A guard that rejects valid input is worse than one that misses: people turn
+ * it off. Any commit subject or PR title containing `;` or `|` hit this.
  */
+function splitOnUnquotedSeparators(command) {
+  const out = [];
+  let buf = '';
+  let quote = null; // "'" or '"' while inside a quoted run
+  const s = String(command);
+
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+
+    // Inside double quotes a backslash escapes the next char (including a quote).
+    // Inside single quotes POSIX gives backslash no special meaning.
+    if (quote === '"' && c === '\\' && i + 1 < s.length) {
+      buf += c + s[i + 1];
+      i++;
+      continue;
+    }
+
+    if (quote) {
+      buf += c;
+      if (c === quote) quote = null;
+      continue;
+    }
+
+    if (c === '"' || c === "'") {
+      quote = c;
+      buf += c;
+      continue;
+    }
+
+    // Separators, but only out here where the shell would actually see them.
+    if (c === '&' && s[i + 1] === '&') { out.push(buf); buf = ''; i++; continue; }
+    if (c === '|' && s[i + 1] === '|') { out.push(buf); buf = ''; i++; continue; }
+    if (c === ';' || c === '\n' || c === '|') { out.push(buf); buf = ''; continue; }
+
+    buf += c;
+  }
+
+  out.push(buf);
+  return out;
+}
+
 function commandSegments(command) {
-  return String(command)
-    .split(/&&|\|\||[;\n|]/)
+  return splitOnUnquotedSeparators(command)
     .map((s) => s.trim())
     // Strip leading `VAR=value` env assignments so `FOO=1 git commit` is still
     // seen as a git commit. This form previously bypassed the guard entirely,

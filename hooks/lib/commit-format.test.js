@@ -72,16 +72,27 @@ eq('an editor commit is null',
   eq('heredoc subject survives', msg.split('\n')[0], 'feat(hooks): add the format guard');
   ok('heredoc body survives', /body line two \| with pipes/i.test(msg), msg);
 
-  // Why commitMessageFor exists at all: a segment-only read truncates this to
-  // `"$(cat`, which is not Conventional form — so the guard would BLOCK a
-  // perfectly good commit. Assert the wrong answer really is wrong.
+  // This block used to assert the OPPOSITE: that a segment-only read truncated
+  // this to `"$(cat` and would therefore have blocked a valid commit. That was a
+  // characterization test of a real flaw — commandSegments split on `;`, `|` and
+  // newlines without regard for quoting, so it cut straight through this body
+  // ("Body line one; body line two | with pipes.").
+  //
+  // commandSegments is now quote-aware, so the `"$(cat …)"` argument survives
+  // intact and the segment-only read gets the right answer. The old assertions
+  // are removed rather than kept green by weakening them: they described the bug,
+  // and the bug is gone.
+  //
+  // commitMessageFor is still the correct call for message-reading callers — an
+  // UNQUOTED heredoc body is still torn apart by newline splitting (covered
+  // below), so this asserts it stays correct in the quoted case too.
   const firstSeg = commandSegments(cmd).find((s) => /^git\s+commit\b/.test(s));
   ok('the commit is still DETECTED from the segments',
     !!firstSeg, 'heredoc commit must still be seen as a git commit');
-  eq('a segment-only read truncates the heredoc subject',
-    extractCommitMessage(firstSeg), '"$(cat');
-  ok('...and that truncation WOULD have blocked a valid commit',
-    checkSubject(extractCommitMessage(firstSeg)).errors.length > 0);
+  eq('a quoted heredoc now survives a segment-only read',
+    extractCommitMessage(firstSeg).split('\n')[0], 'feat(hooks): add the format guard');
+  ok('...and that subject is accepted, not blocked',
+    checkSubject(extractCommitMessage(firstSeg).split('\n')[0]).errors.length === 0);
   eq('commitMessageFor recovers the real subject',
     commitMessageFor(cmd, firstSeg).split('\n')[0], 'feat(hooks): add the format guard');
 }
@@ -213,6 +224,51 @@ eq('--title= form', flagValue('gh pr create --title="fix: y"', ['--title', '-t']
 eq('-t short form', flagValue('gh pr create -t \'chore: z\'', ['--title', '-t']), 'chore: z');
 eq('an absent flag is null', flagValue('gh pr create --fill', ['--title', '-t']), null);
 eq('--base is read', flagValue('gh pr create --base develop -t "feat: x"', ['--base', '-B']), 'develop');
+
+// ── separators INSIDE quotes must not split a segment (regression) ───────────
+// The splitter used to be `.split(/&&|\|\||[;\n|]/)`, which cut through quoted
+// strings. A valid `--title "fix(x): do a; then b"` was truncated to an
+// unbalanced `--title "fix(x): do a`, flagValue's `"[^"]*"` then failed to
+// match, it fell through to `[^\s]+`, and the guard reported the fragment
+// `"fix(x):` as a malformed title — blocking correct input. Observed in the
+// wild 2026-08-26: every attempt to open a PR whose title contained a semicolon
+// was rejected, whatever the quoting style.
+{
+  const titleFrom = (cmd) => {
+    const seg = commandSegments(cmd).find((s) => /^gh\s+pr\s+create\b/i.test(s));
+    return seg ? flagValue(seg, ['--title', '-t']) : null;
+  };
+  const msgFrom = (cmd) => {
+    const seg = commandSegments(cmd).find((s) => /^git\s+commit\b/i.test(s));
+    return seg ? flagValue(seg, ['-m', '--message']) : null;
+  };
+
+  eq('PR title keeps a semicolon',
+    titleFrom('gh pr create --base main --title "fix(mcp): read version; document path"'),
+    'fix(mcp): read version; document path');
+  eq('PR title keeps a pipe',
+    titleFrom('gh pr create --title "fix(x): handle a|b"'), 'fix(x): handle a|b');
+  eq('single-quoted title keeps a semicolon',
+    titleFrom("gh pr create --title 'fix(x): a; b'"), 'fix(x): a; b');
+  eq('commit subject keeps a semicolon',
+    msgFrom('git commit -m "fix: do a; then b"'), 'fix: do a; then b');
+  eq('commit subject keeps a literal &&',
+    msgFrom('git commit -m "fix: a && b"'), 'fix: a && b');
+  eq('escaped quotes inside a title survive',
+    titleFrom('gh pr create --title "fix(x): say \\"hi\\"; go"'), 'fix(x): say \\"hi\\"; go');
+
+  // …while separators the shell WOULD act on still split.
+  eq('a real && still splits',
+    commandSegments('cd /x && gh pr create --title "fix(a): b"').length, 2);
+  eq('a real ; still splits',
+    commandSegments('cd /x; git commit -m "feat: y"').length, 2);
+  eq('a real | still splits',
+    commandSegments('cat f | git commit -m "feat: y"').length, 2);
+  ok('an env-var prefix is still stripped (cp-ar0c)',
+    commandSegments('FOO=1 git commit -m "feat: y"').some((s) => /^git\s+commit\b/.test(s)));
+  ok('a quoted git command is still not mistaken for a real one',
+    !commandSegments('echo "git commit -m \'oops\'"').some((s) => /^git\s+commit\b/.test(s)));
+}
 
 // ── report ───────────────────────────────────────────────────────────────────
 if (fail) {

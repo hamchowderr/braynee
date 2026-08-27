@@ -42,7 +42,13 @@ const MESSAGE_ELSEWHERE =
  */
 function flagValue(command, names) {
   const alts = names.map((n) => n.replace(/[-]/g, '\\-')).join('|');
-  const re = new RegExp(`(?:^|\\s)(?:${alts})(?:=|\\s+)('[^']*'|"[^"]*"|[^\\s]+)`);
+  // The double-quoted alternative must tolerate an ESCAPED quote inside the
+  // value. With a plain `"[^"]*"`, a title like `feat(x): say \"hi\" now` matched
+  // only up to the first \", and the truncated fragment was then reported as a
+  // malformed subject — blocking valid input, which is how a guard earns being
+  // switched off. Single quotes need no equivalent: POSIX gives backslash no
+  // special meaning inside them, so `'` always ends the run.
+  const re = new RegExp(`(?:^|\\s)(?:${alts})(?:=|\\s+)('[^']*'|"(?:[^"\\\\]|\\\\.)*"|[^\\s]+)`);
   const m = re.exec(String(command));
   if (!m) return null;
   return unquote(m[1]);
