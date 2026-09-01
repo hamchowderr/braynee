@@ -323,6 +323,124 @@ try {
     ok('with HOME unset, an absolute vault path is still blocked',
        noHome(bash(`grep -rn "x" "${VAULT}/2. Areas"`, REPO)) === 2);
   }
+  // Everything below runs in the PRODUCTION environment: Claude Code is a
+  // Windows process that sets USERPROFILE and not HOME, while this suite is
+  // spawned from a Bash-tool child that inherits Git Bash's HOME. That gap is
+  // how cp-sm8n hid behind a green suite, so these cases delete HOME the way
+  // cp-sm8n's own block does.
+  const prod = (payload) => {
+    const env = { ...process.env, BRAYNEE_VAULT: VAULT, BRAYNEE_ALLOW_VAULT_GREP: '' };
+    delete env.HOME;
+    return spawnSync(process.execPath, [HOOK], {
+      input: JSON.stringify(payload), encoding: 'utf8', windowsHide: true, cwd: REPO, env,
+    }).status;
+  };
+  // Forward-slashed so a command string never carries a Windows backslash.
+  const V = VAULT.split(path.sep).join('/');
+  const R = REPO.split(path.sep).join('/');
+
+  // ── cp-25t9: shell token classes the guard has to judge ────────────────────
+  //
+  // A sweep of the token shapes an ordinary command can contain — subshells,
+  // backticks, globs, `&`, `&&`, process substitution, `--`, `find -exec`,
+  // separators appearing inside a quoted PATTERN, a case-differing vault path,
+  // `~user`, a trailing comment. The guard tokenizes without a shell, so each of
+  // these is a place it can mis-read an argument in either direction. All but
+  // one already behaved correctly; they are pinned here as the regression floor
+  // for any future change to the tokenizer or the argument walk.
+  {
+    // [name, command, cwd, expected exit code]
+    const classes = [
+      ['subshell producing a repo path',      `grep -rn "x" "$(pwd)/src"`,                 REPO,  0],
+      ['subshell around a vault path',        `grep -rn "x" "$(echo ${V})/2. Areas"`,      REPO,  2],
+      ['backtick command substitution',       'grep -rn "x" `pwd`/src',                    REPO,  0],
+      ['relative glob',                       'grep -rn "x" src/*.md',                     REPO,  0],
+      ['glob rooted in the vault',            `grep -rn "x" "${V}"/*.md`,                  REPO,  2],
+      ['globstar',                            'rg "x" **/*.js',                            REPO,  0],
+      ['backgrounded with &',                 'grep -rn "x" ./src &',                      REPO,  0],
+      ['&& chain whose second half is vault', `grep -rn "x" ./src && grep -rn "y" "${V}"`, REPO,  2],
+      ['process substitution',                'grep -f <(echo pat) ./src/notes.md',        REPO,  0],
+      ['env-var prefix, repo target',         'LC_ALL=C grep -rn "x" ./src',               REPO,  0],
+      ['env-var prefix, vault target',        `LC_ALL=C grep -rn "x" "${V}"`,              REPO,  2],
+      ['-- end of options',                   'grep -rn -- "-x-" ./src',                   REPO,  0],
+      ['find -exec over the vault',           `find "${V}" -name "*.md" -exec cat {} +`,   REPO,  2],
+      ['find piped into xargs',               `find "${V}" -name "*.md" | xargs cat`,      REPO,  2],
+      ['semicolon inside the pattern',        'grep -rn "a;b" ./src',                      REPO,  0],
+      ['pipe inside the pattern',             'grep -rn "a|b" ./src',                      REPO,  0],
+      ['vault path in a different case',      `grep -rn "x" "${V.toUpperCase()}"`,         REPO,  2],
+      ['~user, which cannot be expanded',     'grep -rn "x" ~root/foo',                    REPO,  0],
+      ['trailing # comment naming the vault', 'grep -rn "x" ./src # look in vault later',  REPO,  0],
+      ['vault path with a trailing slash',    `grep -rn "x" "${V}/"`,                      REPO,  2],
+      ['.. escaping into the vault',          `grep -rn "x" "${R}/../../Obsidian Vault"`,  REPO,  2],
+      ['no path argument, vault cwd',         'rg "x"',                                    VAULT, 2],
+      ['no path argument, repo cwd',          'rg "x"',                                    REPO,  0],
+      ['stdout filter from a vault cwd',      'cat foo | grep -v x',                       VAULT, 0],
+    ];
+    for (const [name, command, cwd, expected] of classes) {
+      ok(`token class ${expected === 2 ? 'blocked' : 'allowed'}: ${name}`,
+         prod(bash(command, cwd)) === expected);
+    }
+  }
+
+  // ── cp-25t9: the search binary is not always the first token ───────────────
+  //
+  // searchPathArgs read toks[0] plus one hardcoded `sudo` hop, so any token in
+  // front of the binary made the whole segment invisible and the vault search
+  // ran unguarded — nine of the thirteen shapes below. Assignments and
+  // transparent wrappers are now skipped and the token is basenamed.
+  //
+  // The repo-targeted twin of every shape is asserted alongside it, because the
+  // failure that matters here is the opposite one: a wrapper skip that starts
+  // blocking legitimate work.
+  {
+    const wrapped = [
+      ['env-var prefix',            `LC_ALL=C grep -rn "x"`],
+      ['two env-var prefixes',      `A=1 B=2 grep -rn "x"`],
+      ['env(1) wrapper',            `env grep -rn "x"`],
+      ['command builtin',           `command grep -rn "x"`],
+      ['absolute binary path',      `/usr/bin/grep -rn "x"`],
+      ['Windows binary path',       `"C:/Program Files/Git/usr/bin/grep.exe" -rn "x"`],
+      ['time prefix',               `time grep -rn "x"`],
+      ['nice prefix',               `nice grep -rn "x"`],
+      ['nohup prefix',              `nohup grep -rn "x"`],
+      ['stdbuf prefix',             `stdbuf grep -rn "x"`],
+      ['sudo prefix',               `sudo grep -rn "x"`],
+      ['assignment then wrapper',   `LC_ALL=C env /usr/bin/grep -rn "x"`],
+      ['backslash-escaped binary',  `\\grep -rn "x"`],
+      ['leading spaces',            `   grep -rn "x"`],
+      ['leading newline',           `\ngrep -rn "x"`],
+      ['no prefix at all',          `grep -rn "x"`],
+    ];
+    for (const [name, prefix] of wrapped) {
+      ok(`blocked past the prefix: ${name}`, prod(bash(`${prefix} "${V}"`, REPO)) === 2);
+      ok(`no false positive on the repo twin: ${name}`,
+         prod(bash(`${prefix} ./src`, REPO)) === 0);
+      // A wrapped search of an explicit code path, issued while the cwd is the
+      // vault — the shape the cwd rule would swallow if the prefix skip made the
+      // path argument unreachable.
+      ok(`no false positive from a vault cwd: ${name}`,
+         prod(bash(`${prefix} "${R}/src"`, VAULT)) === 0);
+    }
+
+    // Wrapper FLAGS are not skipped, on purpose: `command -v grep` reads no
+    // files, and skipping the flag would parse it as a no-path search and block
+    // it on every vault cwd.
+    ok('allowed: `command -v grep` is a PATH lookup, not a search',
+       prod(bash('command -v grep', VAULT)) === 0);
+    ok('allowed: bare `env` piped into a grep filter, vault cwd',
+       prod(bash('env | grep -v PATH', VAULT)) === 0);
+
+    // Known limitations, pinned so the boundary is visible rather than implied.
+    // These assert what the guard does NOT catch; a change that starts catching
+    // one should delete its line, not "fix" it.
+    ok('known limitation (allowed): xargs feeds the path over stdin',
+       prod(bash(`echo "${V}" | xargs grep -rn "x"`, REPO)) === 0);
+    ok('known limitation (allowed): bash -c hides the search in a quoted argument',
+       prod(bash(`bash -c 'grep -rn "x" "${V}"'`, REPO)) === 0);
+    ok('known limitation (allowed): a wrapper carrying its own flags',
+       prod(bash(`nice -n 10 grep -rn "x" "${V}"`, REPO)) === 0);
+  }
+
   // ── never throws: malformed input fails open ───────────────────────────────
   {
     const r = spawnSync(process.execPath, [HOOK], {

@@ -80,7 +80,10 @@ function isInsideVault(p, vaultRoot) {
 // a plain listing is not a content search anyway. Get-ChildItem is treated as a
 // search only with -Recurse (see below); Select-String always is.
 const SEARCH_TOOL = /\b(grep|egrep|fgrep|rg|ripgrep|find|Select-String|sls|Get-ChildItem|gci)\b/i;
-const SEARCH_CMD = /^(sudo\s+)?(grep|egrep|fgrep|rg|ripgrep|find|Select-String|sls|Get-ChildItem|gci)$/i;
+// Matched against ONE token that has been through baseCmd(), so the old
+// `(sudo\s+)?` alternative is gone: tokens never contain whitespace, so it could
+// not fire, and sudo is now one of the transparent prefixes below.
+const SEARCH_CMD = /^(grep|egrep|fgrep|rg|ripgrep|find|Select-String|sls|Get-ChildItem|gci)$/i;
 // Pattern-first commands. Select-String's first positional is -Pattern, exactly
 // like grep's; Get-ChildItem's first positional is -Path, exactly like find's.
 const GREP_FAMILY = /^(grep|egrep|fgrep|rg|ripgrep|Select-String|sls)$/i;
@@ -217,6 +220,48 @@ function stripRedirections(toks) {
   return out;
 }
 
+// cp-25t9: the search binary is not always token 0. This function used to read
+// toks[0] (plus one hardcoded `sudo` hop), so ANY token in front of the binary
+// made the entire segment invisible to the guard and the vault search ran
+// unguarded. Nine of thirteen audited shapes leaked, including `LC_ALL=C grep
+// -rn x <vault>` — an ordinary thing to type, not an evasion. Introduced by
+// cp-0oqe, which correctly required command position but modelled "command
+// position" as "first token".
+//
+// Two prefix classes are skipped, and only these two:
+//   • NAME=VALUE assignments, repeatable — `LC_ALL=C`, `A=1 B=2`
+//   • wrappers that exec their argument unchanged — sudo, env, command, time,
+//     nice, nohup, stdbuf
+// The token is then basenamed, so `/usr/bin/grep` and
+// `C:\Program Files\Git\usr\bin\grep.exe` are both `grep`.
+//
+// Their FLAGS are deliberately NOT skipped, which leaves `nice -n 10 grep
+// <vault>` and `stdbuf -oL grep <vault>` uncaught. Skipping a leading `-flag`
+// after a wrapper would make `command -v grep` — a PATH lookup that reads no
+// files at all — parse as a no-path search and get blocked on every vault cwd.
+// This guard is an assistive guardrail steering searches to QMD, not a security
+// boundary: a missed shape costs a wrong-tree search, a false positive blocks
+// real work. The narrow set is the trade that ranking implies.
+//
+// Out of scope, stated rather than implied:
+//   • `xargs` — the path arrives over stdin, so there is no token to inspect.
+//     Adding xargs as a wrapper would not help: the segment is piped, so it has
+//     no path argument and no cwd rule to trip.
+//   • `bash -c '<command>'` — the search lives inside a quoted argument.
+//     Rule (a)'s raw-text containment does NOT rescue it: rule (a) is gated on
+//     sawFsSearch, and no search command is in command position, so the literal
+//     vault path in the text is never even consulted.
+// Both need a real shell parser. Guessing at quoted content is how a guard
+// starts blocking things it does not understand.
+const ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
+const WRAPPER = /^(sudo|env|command|time|nice|nohup|stdbuf)$/i;
+
+// Directory and Windows executable extension stripped: what a shell would exec.
+function baseCmd(tok) {
+  const base = String(tok).split(/[\\/]/).pop();
+  return base.replace(/\.(exe|com|cmd|bat|ps1)$/i, '');
+}
+
 // Path arguments of every search command in the pipeline. Returns
 // { paths, sawSearch, noPathSearch } — noPathSearch means a search command ran
 // with no path argument at all, i.e. it searches the cwd.
@@ -234,8 +279,8 @@ function searchPathArgs(cmd, cwd) {
     const toks = stripRedirections(tokenize(segment.trim()));
     if (!toks.length) continue;
     let i = 0;
-    if (/^sudo$/i.test(toks[i])) i++;
-    const cmdName = toks[i];
+    while (i < toks.length && (ASSIGNMENT.test(toks[i]) || WRAPPER.test(baseCmd(toks[i])))) i++;
+    const cmdName = i < toks.length ? baseCmd(toks[i]) : '';
     if (!cmdName || !SEARCH_CMD.test(cmdName)) continue;
     // A non-recursive Get-ChildItem is a directory listing, not a search. Only
     // -Recurse makes it the `find` equivalent this guard is meant to catch.
