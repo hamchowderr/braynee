@@ -270,6 +270,68 @@ eq('--base is read', flagValue('gh pr create --base develop -t "feat: x"', ['--b
     !commandSegments('echo "git commit -m \'oops\'"').some((s) => /^git\s+commit\b/.test(s)));
 }
 
+// ── cp-e0td: one command, two heredocs ──────────────────────────────────────
+// extractCommitMessage takes the FIRST heredoc it finds, and commitMessageFor
+// handed it the whole raw command. A command that writes a file BEFORE
+// committing therefore had the script's body read as its commit message: a
+// valid commit was blocked and told its subject was `const fs = require('fs');`
+// — text the author never wrote and cannot find in the rejected command.
+{
+  const twoHeredocs = (subject, prefix = '') => [
+    "cat > patch.js <<'EOF'",
+    "const fs = require('fs');",
+    "fs.writeFileSync('x', 'y');",
+    'EOF',
+    `git add -A && ${prefix}git commit -F- <<'EOF'`,
+    subject,
+    '',
+    'Body of the real commit message.',
+    'EOF',
+  ].join('\n');
+  const segOf = (cmd) => commandSegments(cmd).find((s) => /^git\s+commit\b/i.test(s));
+  const subjectOf = (cmd) => commitMessageFor(cmd, segOf(cmd)).split('\n')[0];
+
+  // `-F-` reads the message from stdin, so it IS on this command line. `-F <file>`
+  // is not, and must keep being skipped — the whole fix hangs on telling them apart.
+  ok('`-F-` is judgeable, unlike `-F msg.txt`',
+    !messageIsElsewhere("git commit -F- <<'EOF'") && messageIsElsewhere('git commit -F msg.txt'));
+
+  const valid = twoHeredocs('chore(beads): stop the reimport clobber');
+  eq('a whole-command read takes the FIRST heredoc (the bug)',
+    extractCommitMessage(valid).split('\n')[0], "const fs = require('fs');");
+  ok('...and that body WOULD have blocked a valid commit',
+    checkSubject("const fs = require('fs');").errors.length > 0);
+  eq('commitMessageFor binds the body to the git commit that introduced it',
+    subjectOf(valid), 'chore(beads): stop the reimport clobber');
+  ok('so the valid two-heredoc commit is NOT blocked',
+    checkSubject(subjectOf(valid)).errors.length === 0);
+  ok('the rest of the right heredoc survives as the body',
+    /Body of the real commit message/.test(commitMessageFor(valid, segOf(valid))));
+
+  // The other direction: binding to the right heredoc must not stop the guard
+  // reading a bad subject, and the rejection must quote THAT subject.
+  const invalid = twoHeredocs('added the thing');
+  eq('an invalid git-commit heredoc is still the message that gets judged',
+    subjectOf(invalid), 'added the thing');
+  ok('...and is still blocked', checkSubject(subjectOf(invalid)).errors.length > 0);
+  {
+    const said = checkSubject(subjectOf(invalid)).errors.join(' ');
+    ok('the rejection quotes the commit subject', /added the thing/.test(said), said);
+    ok('the rejection does NOT quote the other heredoc', !/require\('fs'\)/.test(said), said);
+  }
+
+  // commandSegments strips a leading NAME=value, so the segment is no longer
+  // verbatim at that offset — the anchor has to survive it.
+  const prefixed = twoHeredocs('fix(x): keep the anchor', 'LC_ALL=C ');
+  eq('an assignment-prefixed commit still anchors on its own heredoc',
+    subjectOf(prefixed), 'fix(x): keep the anchor');
+
+  // Three heredocs, the commit's in the middle: "first" and "last" are both wrong.
+  const middle = twoHeredocs('feat(x): the middle heredoc') + "\ncat > after.txt <<'EOF'\ntrailing data\nEOF";
+  eq('a later heredoc does not become the message either',
+    subjectOf(middle), 'feat(x): the middle heredoc');
+}
+
 // ── report ───────────────────────────────────────────────────────────────────
 if (fail) {
   console.error(`commit-format.test.js: ${pass} passed, ${fail} FAILED`);

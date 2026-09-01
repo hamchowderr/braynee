@@ -128,11 +128,35 @@ const HEREDOC_OPENER = /<<-?\s*['"]?[A-Za-z_][A-Za-z0-9_]*/;
  * So: read the SEGMENT, which is correctly scoped to this one command — and
  * fall back to the raw command only when the segment carries a heredoc opener,
  * i.e. only when we can see that splitting is what tore the message apart.
+ *
+ * cp-e0td: that fallback read the raw command from character 0, and
+ * extractCommitMessage takes the FIRST heredoc it finds. One command may carry
+ * two — writing a file, then committing:
+ *
+ *     cat > patch.js <<'EOF'
+ *     const fs = require('fs');
+ *     EOF
+ *     git add -A && git commit -F- <<'EOF'
+ *     chore(beads): a perfectly valid subject
+ *     EOF
+ *
+ * The script's body was read as the commit message, so a valid commit was
+ * blocked and told its subject was `const fs = require('fs');` — text the author
+ * never wrote as a message and cannot find in the rejected command.
+ *
+ * The body is bound to its introducing command by slicing the raw string at
+ * where the segment starts: a heredoc belonging to an EARLIER command is then
+ * behind the cursor and cannot be picked up. commandSegments() only trims and
+ * strips a leading NAME=value prefix, so the segment is a verbatim substring of
+ * the raw command; indexOf failing at all means something upstream rewrote it,
+ * and the old whole-command read is the right thing to fall back to.
  */
 function commitMessageFor(rawCommand, commitSegment) {
+  const raw = String(rawCommand || '');
   const seg = String(commitSegment || '');
   if (HEREDOC_OPENER.test(seg)) {
-    const fromRaw = extractCommitMessage(rawCommand);
+    const at = raw.indexOf(seg);
+    const fromRaw = extractCommitMessage(at === -1 ? raw : raw.slice(at));
     if (fromRaw) return fromRaw;
   }
   return extractCommitMessage(seg || rawCommand);
