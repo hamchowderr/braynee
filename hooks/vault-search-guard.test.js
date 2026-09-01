@@ -278,6 +278,51 @@ try {
     ok('blocked: no path argument at all, vault cwd, redirection present',
        run(bash('rg "concept" 2>/dev/null', VAULT), REPO).code === 2);
   }
+
+  // ── cp-sm8n: the hook process does not have the shell's environment ────────
+  //
+  // This hook is a child of Claude Code — a Windows process — not of the Git
+  // Bash shell that will run the command. Git Bash exports HOME; Claude Code
+  // does not. So `$HOME/...` reached expandVars() unresolvable, the token was
+  // dropped, and rule (c) blocked a search of the user's own home from a vault
+  // cwd — meaning cp-mx34's headline case never actually worked in production.
+  //
+  // The cp-mx34 cases above could not catch it: they spawn the hook from a
+  // Bash-tool child that INHERITS Git Bash's HOME, and they also set HOME
+  // explicitly. HOME was therefore always present under test and always absent
+  // in production. These cases DELETE it, which is what production looks like.
+  {
+    const noHome = (payload) => {
+      const env = { ...process.env, BRAYNEE_VAULT: VAULT, BRAYNEE_ALLOW_VAULT_GREP: '' };
+      delete env.HOME;   // exactly what Claude Code hands the hook
+      return spawnSync(process.execPath, [HOOK], {
+        input: JSON.stringify(payload),
+        encoding: 'utf8', windowsHide: true, cwd: REPO, env,
+      }).status;
+    };
+
+    // os.homedir() still resolves without HOME (it reads USERPROFILE on Windows),
+    // and the real home is outside this sandbox vault — so these must be allowed.
+    ok('allowed with HOME unset: $HOME search from a vault cwd',
+       noHome(bash('find "$HOME/.claude" -maxdepth 1 -name "*.json"', VAULT)) === 0);
+    ok('allowed with HOME unset: the exact reported command, redirection included',
+       noHome(bash('find "$HOME/.claude" -maxdepth 1 -name "*.json" 2>/dev/null', VAULT)) === 0);
+    ok('allowed with HOME unset: ${HOME} brace form',
+       noHome(bash('grep -rn "x" "${HOME}/.claude"', VAULT)) === 0);
+    ok('allowed with HOME unset: ~ still expands',
+       noHome(bash('grep -rn "x" ~/.claude', VAULT)) === 0);
+
+    // A variable that is genuinely unknown keeps the old behaviour: unresolvable,
+    // token ignored, rule (c) decides on the cwd.
+    ok('with HOME unset, an unknown variable still falls through to rule (c)',
+       noHome(bash('grep -rn "x" "$VSG_STILL_UNSET/foo"', VAULT)) === 2);
+    ok('with HOME unset, an unknown variable from a code-repo cwd is allowed',
+       noHome(bash('grep -rn "x" "$VSG_STILL_UNSET/foo"', REPO)) === 0);
+
+    // The vault is still protected when the search really does target it.
+    ok('with HOME unset, an absolute vault path is still blocked',
+       noHome(bash(`grep -rn "x" "${VAULT}/2. Areas"`, REPO)) === 2);
+  }
   // ── never throws: malformed input fails open ───────────────────────────────
   {
     const r = spawnSync(process.execPath, [HOOK], {

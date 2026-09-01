@@ -148,8 +148,19 @@ function expandVars(tok) {
   let unresolved = false;
   const env = (name) => {
     const v = process.env[name] ?? process.env[name.toUpperCase()];
-    if (v === undefined || v === '') { unresolved = true; return ''; }
-    return v;
+    if (v !== undefined && v !== '') return v;
+    // cp-sm8n: this hook is a child of Claude Code — a Windows process — not of
+    // the shell that will run the command. Git Bash exports HOME; Claude Code
+    // does not. So `$HOME/...` arrived unresolvable, the token was dropped, and
+    // rule (c) blocked a search of the user's own home directory from a vault
+    // cwd. os.homedir() is what the shell would have substituted anyway.
+    //
+    // Every test missed this because the suite spawns the hook from a Bash-tool
+    // child, which INHERITS Git Bash's HOME — so HOME was always set under test
+    // and never set in production. The cp-sm8n cases delete it explicitly.
+    if (/^(HOME|USERPROFILE)$/i.test(name)) return os.homedir();
+    unresolved = true;
+    return '';
   };
   // Leading ~ only. ~user names another account's home, which we cannot resolve.
   if (s === '~' || s.startsWith('~/') || s.startsWith('~\\')) {
