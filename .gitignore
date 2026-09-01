@@ -15,6 +15,11 @@
 .beads/dolt-backup.json
 .beads/dolt-backup-state.json
 
+# Stale bd gate lock written at the repo root by bd itself (per-machine
+# runtime, empty file). Same reason as the two above: left untracked it blocks
+# `claude plugin tag`, which refuses to tag with uncommitted changes present.
+.beads.gate.lock
+
 # Beads issues.jsonl is a disposable export (never the DB), kept fresh on disk
 # via export.auto=true for braynee's server-free read-hooks. Untracked here (root,
 # not .beads/.gitignore which bd doctor --fix rewrites) so git never conflicts on
