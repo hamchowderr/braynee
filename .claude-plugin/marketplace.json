@@ -10,7 +10,7 @@
       "name": "braynee",
       "source": "./",
       "description": "Braynee turns Claude Code into your second brain — setup wizard, PARA vault scaffolding, company knowledge base, project detection, all-time usage insights, and daily workflow skills. Requires Claude Code ≥ 2.1.128; ≥ 2.1.214 recommended, where a hook exiting 2 blocks reliably and a hook timeout is not misreported as a user rejection.",
-      "version": "2.1.23",
+      "version": "2.1.24",
       "author": {
         "name": "Otaku Solutions"
       },
