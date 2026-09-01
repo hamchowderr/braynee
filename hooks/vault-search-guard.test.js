@@ -243,6 +243,41 @@ try {
     ok('unset variable from a code-repo cwd is allowed',
        withHome(bash('grep -rn "x" "$VSG_UNSET/foo"', REPO)) === 0);
   }
+
+  // ── cp-6t9f: a redirection is shell syntax, not a path argument ────────────
+  //
+  // `2>/dev/null` contains a slash, so isPathLike() took it for a path and
+  // resolving it against a vault cwd landed "inside the vault" — blocking a
+  // command whose actual search target was elsewhere. Masked until cp-mx34
+  // shipped, because the $HOME token in the same command was blocked first.
+  //
+  // The search target is written absolutely here on purpose: a RELATIVE target
+  // from a vault cwd is a genuine vault search and must stay blocked, so it
+  // would not isolate the redirection.
+  {
+    const redirOutside = [
+      `find "${REPO}" -name "*.json" 2>/dev/null`,
+      `grep -rn "x" "${REPO}/src" 2>/dev/null`,
+      `grep -rn "x" "${REPO}/src" >out.txt 2>&1`,
+      `grep -rn "x" "${REPO}/src" > out.txt`,
+      `rg "x" "${REPO}/src" 2> /dev/null`,
+    ];
+    for (const c of redirOutside) {
+      ok(`allowed: redirection is not a path argument — ${c.slice(-34)}`,
+         run(bash(c, VAULT), REPO).code === 0);
+    }
+    // The same shapes with an ordinary relative target, from a code-repo cwd.
+    ok('allowed: relative search in a code repo with a redirection',
+       run(bash('grep -rn "x" src/ 2>/dev/null', REPO), REPO).code === 0);
+
+    // A redirection must not become a way to smuggle a vault search past the guard.
+    ok('blocked: a vault path argument alongside a redirection',
+       run(bash(`grep -rn "x" "${VAULT}/2. Areas" 2>/dev/null`, REPO), REPO).code === 2);
+    ok('blocked: relative target from a vault cwd, redirection present',
+       run(bash('grep -rn "x" src/ 2>/dev/null', VAULT), REPO).code === 2);
+    ok('blocked: no path argument at all, vault cwd, redirection present',
+       run(bash('rg "concept" 2>/dev/null', VAULT), REPO).code === 2);
+  }
   // ── never throws: malformed input fails open ───────────────────────────────
   {
     const r = spawnSync(process.execPath, [HOOK], {
