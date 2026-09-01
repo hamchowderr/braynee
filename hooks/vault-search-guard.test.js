@@ -191,6 +191,58 @@ try {
        run(ps('gci -Recurse -Filter "*.md"', VAULT), REPO).code === 2);
   }
 
+
+  // ── cp-mx34: a path TOKEN is not a path yet ────────────────────────────────
+  //
+  // The shell has not expanded the command when a PreToolUse hook runs, so
+  // path.resolve(cwd, '$HOME/.claude') from a vault cwd produced
+  // '<vault>/$HOME/.claude' and blocked a search of the REAL home directory —
+  // from a vault cwd, every path written with a shell variable or `~` read as a
+  // vault path. In the other direction "$HOME/Obsidian Vault" walked straight
+  // past rule (a), whose raw-text check never sees the expanded form. So both
+  // directions are pinned here.
+  {
+    // A home under the sandbox keeps these independent of wherever the machine
+    // running the tests actually keeps its home directory.
+    const FAKEHOME = path.join(sandbox, 'home');
+    fs.mkdirSync(path.join(FAKEHOME, 'code'), { recursive: true });
+
+    // os.homedir() reads USERPROFILE on Windows and HOME elsewhere; set both so
+    // the `~` case behaves identically on every CI platform.
+    const withHome = (payload) => spawnSync(process.execPath, [HOOK], {
+      input: JSON.stringify(payload),
+      encoding: 'utf8', windowsHide: true, cwd: REPO,
+      env: {
+        ...process.env,
+        BRAYNEE_VAULT: VAULT, BRAYNEE_ALLOW_VAULT_GREP: '',
+        HOME: FAKEHOME, USERPROFILE: FAKEHOME,
+      },
+    }).status;
+
+    // Every variable form, pointed OUTSIDE the vault, from a vault cwd.
+    const outside = [
+      bash('find "$HOME/.claude" -iname "CHANGELOG*"', VAULT),
+      bash('grep -rn "x" "${HOME}/code"', VAULT),
+      bash('grep -rn "x" "%USERPROFILE%/code"', VAULT),
+      bash('grep -rn "x" ~/code', VAULT),
+      { tool_name: 'PowerShell', tool_input: { command: 'gci -Path "$env:USERPROFILE/code" -Recurse' }, cwd: VAULT },
+    ];
+    for (const p of outside) {
+      ok(`allowed: variable path outside the vault, vault cwd — ${p.tool_input.command.slice(0, 44)}`,
+         withHome(p) === 0);
+    }
+
+    // Expanding must not become a bypass: the same syntax pointed INTO the vault.
+    ok('blocked: a variable that expands into the vault',
+       withHome(bash('grep -rn "x" "$HOME/../Obsidian Vault/2. Areas"', REPO)) === 2);
+
+    // An unset variable is unresolvable, so the token is ignored rather than
+    // resolved literally. Rule (c) then decides on the cwd alone.
+    ok('unset variable is not read as a vault path, but a vault cwd still blocks',
+       withHome(bash('grep -rn "x" "$VSG_UNSET/foo"', VAULT)) === 2);
+    ok('unset variable from a code-repo cwd is allowed',
+       withHome(bash('grep -rn "x" "$VSG_UNSET/foo"', REPO)) === 0);
+  }
   // ── never throws: malformed input fails open ───────────────────────────────
   {
     const r = spawnSync(process.execPath, [HOOK], {

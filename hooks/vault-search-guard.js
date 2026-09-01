@@ -126,12 +126,52 @@ function tokenize(segment) {
   return out;
 }
 
+// cp-mx34: a path TOKEN is not a path yet — the shell has not expanded it when
+// this hook runs. `$HOME/.claude` contains a slash, so isPathLike accepted it,
+// and path.resolve(cwd, '$HOME/.claude') with the vault as cwd produced
+// '<vault>/$HOME/.claude' — "inside the vault". From a vault cwd that made EVERY
+// path written with a shell variable or `~` read as a vault path, wherever it
+// actually pointed: `find "$HOME/.claude" -iname 'CHANGELOG*'` was blocked while
+// looking outside the vault entirely.
+//
+// Expanding beats merely skipping such tokens: a skip would let
+// `grep -r x "$HOME/Obsidian Vault"` through, because rule (a)'s raw-text
+// containment does not match the unexpanded string either.
+//
+// A variable absent from the environment yields null. The caller then ignores the
+// token instead of resolving it literally, so an unresolvable path falls through
+// to rule (c), which still blocks it when the cwd is the vault.
+// Same defect family as cp-ccsh.8: resolving text that is not yet a real path.
+function expandVars(tok) {
+  if (!tok) return tok;
+  let s = String(tok);
+  let unresolved = false;
+  const env = (name) => {
+    const v = process.env[name] ?? process.env[name.toUpperCase()];
+    if (v === undefined || v === '') { unresolved = true; return ''; }
+    return v;
+  };
+  // Leading ~ only. ~user names another account's home, which we cannot resolve.
+  if (s === '~' || s.startsWith('~/') || s.startsWith('~\\')) {
+    s = os.homedir() + s.slice(1);
+  }
+  // $env: must be tried before $VAR, or the $VAR pattern eats the bare `$env`.
+  s = s
+    .replace(/\$env:([A-Za-z_][A-Za-z0-9_]*)/gi, (_, n) => env(n))   // PowerShell
+    .replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (_, n) => env(n))    // ${VAR}
+    .replace(/\$([A-Za-z_][A-Za-z0-9_]*)/g, (_, n) => env(n))        // $VAR
+    .replace(/%([A-Za-z_][A-Za-z0-9_]*)%/g, (_, n) => env(n));       // cmd %VAR%
+  return unresolved ? null : s;
+}
+
 // A token worth resolving as a filesystem path.
 function isPathLike(tok, cwd) {
   if (!tok) return false;
-  if (tok === '.' || tok === '..') return true;
-  if (/[\\/]/.test(tok)) return true;
-  try { return fs.existsSync(path.resolve(cwd, tok)); } catch { return false; }
+  const t = expandVars(tok);
+  if (t === null) return false;   // unresolvable variable — not a path we can judge
+  if (t === '.' || t === '..') return true;
+  if (/[\\/]/.test(t)) return true;
+  try { return fs.existsSync(path.resolve(cwd, t)); } catch { return false; }
 }
 
 // Path arguments of every search command in the pipeline. Returns
@@ -223,8 +263,12 @@ function blockReasonForBash(cmd, vaultRoot, cwd) {
   // against the event cwd, so `../../Obsidian Vault/...` from a code repo is
   // caught, and `./src` or `.` from a code repo is not.
   for (const p of paths) {
+    // cp-mx34: expand before resolving. `paths` keeps the RAW token so the deny
+    // message quotes what was actually typed.
+    const expanded = expandVars(p);
+    if (expanded === null) continue;   // cannot tell where it points; (c) still guards a vault cwd
     let resolved;
-    try { resolved = path.resolve(cwd, p); } catch { continue; }
+    try { resolved = path.resolve(cwd, expanded); } catch { continue; }
     if (isInsideVault(resolved, vaultRoot)) {
       return { what: `a grep/find whose path argument "${p}" resolves inside the vault`, certain: true };
     }
