@@ -441,6 +441,144 @@ try {
        prod(bash(`nice -n 10 grep -rn "x" "${V}"`, REPO)) === 0);
   }
 
+  // ── cp-n03f: rule (a) judges path ARGUMENTS, not raw command text ──────────
+  //
+  // (a) blocked whenever the vault root appeared ANYWHERE in the command text
+  // while a search ran in command position, so a command that merely MENTIONED a
+  // vault path was blocked for searching somewhere else — a heredoc writing a
+  // fixture whose body quotes vault paths, a grep over one known deck file. The
+  // workaround each time was to assemble the vault root at runtime so the literal
+  // never appears in the text, which teaches routing AROUND the guard as a
+  // reflex; that behavioural cost is what these cases are really protecting.
+  //
+  // Both directions are pinned: what must now pass, and every genuine vault
+  // search that must still not.
+  {
+    const DECK = `${V}/2. Areas/Deck.md`;
+    fs.writeFileSync(path.join(VAULT, '2. Areas', 'Deck.md'), '## Slide one\nslide text\n');
+
+    // 1. Authoring: a vault path in file CONTENT, or as a PATTERN, is not a target.
+    const authoring = [
+      ['heredoc writing a probe script',
+       `cat > probe.js <<'EOF'\nconst VAULT = "${V}";\nconst hit = lines.find((l) => l.includes(VAULT));\nEOF`],
+      ['heredoc whose body carries a whole grep command',
+       `cat > probe.sh <<'EOF'\nset -e; grep -rn "x" "${V}/2. Areas"\nEOF`],
+      ['heredoc piped into tee',
+       `cat <<'EOF' | tee cases.txt\nblocked: find "${V}" -name "*.md"\nEOF`],
+      ['indented <<- heredoc',
+       `cat > t.md <<-EOF\n\tgrep -rn "x" "${V}"\n\tEOF`],
+      ['unterminated heredoc: the rest of the string is body',
+       `cat > t.md <<'EOF'\ngrep -rn "x" "${V}"`],
+      ['the vault path as a grep PATTERN over a code repo',
+       `grep -rn "${V}" ./src`],
+      ['the vault path as an rg pattern with an explicit repo path',
+       `rg "${V}" "${R}/src"`],
+      ['a find -name value shaped like a vault path',
+       `find ./src -name "${V}/x"`],
+    ];
+    for (const [name, command] of authoring) {
+      ok(`allowed: naming a vault path is not searching it — ${name}`,
+         prod(bash(command, REPO)) === 0);
+    }
+
+    // 2. A precise read of ONE known file. The harm this guard prevents is a
+    // search whose target is IMPLIED and can silently follow the wrong tree; an
+    // explicit existing file cannot, and QMD cannot answer "which lines of THIS
+    // file match" at all — so blocking it left no compliant way to do the work.
+    const precise = [
+      ['grep -n over one known deck file', `grep -n "^## " "${DECK}"`],
+      ['grep -rn over the same file: recursion over a file is a no-op', `grep -rn "slide" "${DECK}"`],
+      ['rg over one known file', `rg "slide" "${DECK}"`],
+      ['sed is not a search command at all', `sed -n '1,40p' "${DECK}"`],
+      ['node reading one known file, .find( and all', `node -e "const l=read('${DECK}'); l.find(x=>x)"`],
+      ['a wrapper in front of a precise read', `LC_ALL=C grep -n "x" "${DECK}"`],
+      ['a precise read issued from a vault cwd', `grep -n "x" "${DECK}"`, VAULT],
+    ];
+    for (const [name, command, cwd] of precise) {
+      ok(`allowed: precise read of one known file — ${name}`, prod(bash(command, cwd || REPO)) === 0);
+    }
+
+    // …and the carve-out must not become the way in. Anything whose target is
+    // implied rather than named — a directory, a glob, a path that is not there —
+    // is still a search.
+    const stillBlocked = [
+      ['a directory inside the vault', `grep -rn "x" "${V}/2. Areas"`],
+      ['a file that does not exist', `grep -n "x" "${V}/2. Areas/Missing.md"`],
+      ['a glob inside the vault', `grep -n "x" "${V}/2. Areas/"*.md`],
+      ['one known file AND a vault directory', `grep -rn "x" "${DECK}" "${V}/1. Projects"`],
+      ['the vault root itself', `rg "x" "${V}"`],
+      ['the vault path as a pattern, no path argument, vault cwd', `rg "${V}"`, VAULT],
+    ];
+    for (const [name, command, cwd] of stillBlocked) {
+      ok(`blocked: still a vault search — ${name}`, prod(bash(command, cwd || REPO)) === 2);
+    }
+
+    // 3. cd moves what a later segment searches. Containment over the whole
+    // command text used to catch `cd <vault> && grep .` incidentally; with (a)
+    // reading arguments, the cwd has to be tracked or that shape walks past.
+    ok('blocked: cd into the vault, then search "."',
+       prod(bash(`cd "${V}" && grep -rn "x" .`, REPO)) === 2);
+    ok('blocked: cd into the vault, then a no-path search',
+       prod(bash(`cd "${V}" && rg "x"`, REPO)) === 2);
+    ok('blocked: cd into the vault with a ; separator',
+       prod(bash(`cd "${V}"; find . -name "*.md"`, REPO)) === 2);
+    ok('blocked: cd relative from a code repo into the vault',
+       prod(bash(`cd "${R}/.." && grep -rn "x" "../Obsidian Vault"`, REPO)) === 2);
+    // The other direction — this hook blocked its own author for exactly this.
+    ok('allowed: cd into a code repo, then search ".", from a vault cwd',
+       prod(bash(`cd "${R}" && grep -rn "x" .`, VAULT)) === 0);
+    ok('allowed: cd into a code repo, then a no-path search, from a vault cwd',
+       prod(bash(`cd "${R}" && rg "x"`, VAULT)) === 0);
+    ok('allowed: cd into a repo subdirectory, then search "..", from a vault cwd',
+       prod(bash(`cd "${R}/src" && grep -rn "x" ..`, VAULT)) === 0);
+    // `cd -` is not knowable from one command, so the cwd is left as it was:
+    // allowed from a repo cwd, still blocked from a vault one.
+    ok('allowed: `cd -` leaves a code-repo cwd alone',
+       prod(bash('cd - && grep -rn "x" ./src', REPO)) === 0);
+    ok('blocked: `cd -` from a vault cwd still trips the cwd rule',
+       prod(bash('cd - && rg "x"', VAULT)) === 2);
+    ok('allowed: bare `cd` goes home, which is not the vault',
+       prod(bash('cd && rg "x"', VAULT)) === 0);
+
+    // 4. A variable that expands INTO the vault is still caught, under
+    // production conditions (HOME unset — cp-sm8n).
+    const withVar = (payload, vars) => {
+      const env = { ...process.env, BRAYNEE_VAULT: VAULT, BRAYNEE_ALLOW_VAULT_GREP: '', ...vars };
+      delete env.HOME;
+      return spawnSync(process.execPath, [HOOK], {
+        input: JSON.stringify(payload), encoding: 'utf8', windowsHide: true, cwd: REPO, env,
+      }).status;
+    };
+    ok('blocked: a variable expanding into the vault',
+       withVar(bash('grep -rn "x" "$VSG_VAULT/2. Areas"', REPO), { VSG_VAULT: V }) === 2);
+    ok('blocked: the same variable in ${...} form',
+       withVar(bash('grep -rn "x" "${VSG_VAULT}"', REPO), { VSG_VAULT: V }) === 2);
+    ok('blocked: a variable expanding into the vault behind a wrapper',
+       withVar(bash('LC_ALL=C rg "x" "$VSG_VAULT"', REPO), { VSG_VAULT: V }) === 2);
+    ok('blocked: a variable expanding into the vault after a cd',
+       withVar(bash('cd "$VSG_VAULT" && rg "x"', REPO), { VSG_VAULT: V }) === 2);
+    ok('allowed: the same variable pointed at a code repo, vault cwd',
+       withVar(bash('grep -rn "x" "$VSG_VAULT/src"', VAULT), { VSG_VAULT: R }) === 0);
+
+    // 5. `bash -c`, decided: OUT OF SCOPE, unchanged. Folding (a) into (b) gave
+    // up nothing here — (a) already required a search command in command
+    // position, and `bash` is not one, so the vault path in the text was never
+    // consulted. Pinned so the boundary stays visible; a change that starts
+    // catching these should delete these lines rather than "fix" them.
+    ok('known limitation (allowed): bash -c hides the search in a quoted argument',
+       prod(bash(`bash -c 'grep -rn "x" "${V}"'`, REPO)) === 0);
+    ok('known limitation (allowed): sh -c is the same shape',
+       prod(bash(`sh -c 'rg "x" "${V}"'`, REPO)) === 0);
+    ok('blocked: bash -c does not launder a search beside it in command position',
+       prod(bash(`bash -c 'echo hi' && grep -rn "x" "${V}"`, REPO)) === 2);
+
+    // A newline is not a segment separator, so a command on the NEXT line is
+    // invisible whether or not a heredoc precedes it. Unchanged by the stripper —
+    // pinned here because dropping heredoc bodies makes it look adjacent.
+    ok('known limitation (allowed): a search on the next line of a multi-line command',
+       prod(bash(`echo hi\ngrep -rn "x" "${V}"`, REPO)) === 0);
+  }
+
   // ── never throws: malformed input fails open ───────────────────────────────
   {
     const r = spawnSync(process.execPath, [HOOK], {

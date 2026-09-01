@@ -11,11 +11,12 @@
 // Scope (deliberately conservative — never break code work):
 //   • Glob / Grep TOOLS — DENY when the effective search root (tool_input.path, else the
 //     event cwd) resolves INSIDE the Obsidian vault. A path pointing at a code repo passes.
-//   • Bash — DENY a grep/egrep/fgrep/rg/ripgrep/find command that (a) names the vault root
-//     outright, (b) has a path argument that RESOLVES inside the vault (relative arguments
-//     are resolved against the EVENT cwd, so `../../Obsidian Vault/x` from a code repo is
-//     caught and `./src` is not), or (c) has no path argument at all while the cwd is inside
-//     the vault. A pure stdout filter like `qmd … | grep -v x` is never touched.
+//   • Bash — DENY a grep/egrep/fgrep/rg/ripgrep/find command with a PATH ARGUMENT that
+//     (a) names the vault root in its raw text or (b) RESOLVES inside the vault (relative
+//     arguments are resolved against the EVENT cwd, so `../../Obsidian Vault/x` from a code
+//     repo is caught and `./src` is not), or (c) that has no path argument at all while the
+//     cwd is inside the vault. A pure stdout filter like `qmd … | grep -v x` is never
+//     touched, and neither is a precise read of ONE known file (cp-n03f).
 //
 // cp-ccsh.8: (a) used to compare path.resolve(command) against the vault root. Resolving a
 // command STRING as a path prepends the hook PROCESS's cwd, so whenever the hook ran from
@@ -23,6 +24,14 @@
 // and told the user it was "targeting a vault path". Relative path arguments were also never
 // resolved, so a relative path escaping INTO the vault went through. Both are fixed here, and
 // the deny message no longer claims "Code-repo searches are unaffected" unconditionally.
+//
+// cp-n03f: rule (a) went on to test raw-text containment against the WHOLE command, so a
+// command that merely MENTIONED the vault root while a search ran somewhere else was blocked
+// — writing a test file whose body quoted vault paths, or grepping one known deck file. Each
+// time the workaround was to assemble the vault path at runtime so the literal never appeared
+// in the command text, which teaches routing AROUND the guard as a reflex; that behavioural
+// cost, not the inconvenience, is why it is fixed. (a) now reads the same path ARGUMENTS as
+// (b) — see blockReasonForBash for the three changes that made that safe.
 //
 // Exit 2 = block (stderr reaches Claude), exit 0 = allow. Crash = fail-open (exit 0).
 // One-off override for a deliberate filesystem search of the vault: BRAYNEE_ALLOW_VAULT_GREP=1.
@@ -110,6 +119,26 @@ const VALUE_FLAGS = new Set([
   '--glob', '-g', '-m', '--max-count', '-A', '-B', '-C', '--context',
   '-t', '--type', '--max-depth', '-d', '--depth',
 ]);
+
+// cp-n03f: a heredoc body is DATA the shell hands to another program, not command
+// text. Writing a file whose CONTENT quotes vault paths — a test fixture, a probe
+// script, this hook's own test suite — is not a search of anything, but the body
+// travels in the same string as the command, so raw-text containment read it as
+// one. Dropping bodies before analysis is exact where guessing at quoted content
+// is not: the delimiter says where the data ends.
+//
+// An unterminated opener means the rest of the string IS body, so it is dropped
+// too. That errs toward allowing, which is the direction this guard must fail in
+// — and a command with an unterminated heredoc would not run as written anyway.
+//
+// `[^\n]*` after the delimiter: the rest of the OPENER line belongs to the
+// command, not the body — `cat <<'EOF' | tee f` and `cat <<'EOF' > f` are both
+// ordinary. The body starts at the newline and ends at the terminator line.
+const HEREDOC_BODY = /<<-?\s*(['"]?)([A-Za-z_][A-Za-z0-9_]*)\1[^\n]*\r?\n[\s\S]*?\r?\n[ \t]*\2(?=\s|$)/g;
+const HEREDOC_UNTERMINATED = /<<-?\s*(['"]?)([A-Za-z_][A-Za-z0-9_]*)\1[^\n]*\r?\n[\s\S]*$/;
+function stripHeredocBodies(cmd) {
+  return String(cmd).replace(HEREDOC_BODY, ' ').replace(HEREDOC_UNTERMINATED, ' ');
+}
 
 // Shell-ish tokenizer: splits on whitespace while honoring quotes, so a path with
 // spaces ("Obsidian Vault") survives as ONE token.
@@ -247,14 +276,16 @@ function stripRedirections(toks) {
 //   • `xargs` — the path arrives over stdin, so there is no token to inspect.
 //     Adding xargs as a wrapper would not help: the segment is piped, so it has
 //     no path argument and no cwd rule to trip.
-//   • `bash -c '<command>'` — the search lives inside a quoted argument.
-//     Rule (a)'s raw-text containment does NOT rescue it: rule (a) is gated on
-//     sawFsSearch, and no search command is in command position, so the literal
-//     vault path in the text is never even consulted.
+//   • `bash -c '<command>'` — the search lives inside a quoted argument. Rule
+//     (a) never rescued this, even while it read raw text: it required a search
+//     command in command position, and `bash` is not one, so the vault path in
+//     the text was never consulted (cp-n03f re-confirmed it and kept it out).
 // Both need a real shell parser. Guessing at quoted content is how a guard
 // starts blocking things it does not understand.
 const ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
 const WRAPPER = /^(sudo|env|command|time|nice|nohup|stdbuf)$/i;
+// The one command that changes where a LATER segment searches (cp-n03f).
+const CD = /^(cd|pushd)$/i;
 
 // Directory and Windows executable extension stripped: what a shell would exec.
 function baseCmd(tok) {
@@ -263,16 +294,27 @@ function baseCmd(tok) {
 }
 
 // Path arguments of every search command in the pipeline. Returns
-// { paths, sawSearch, noPathSearch } — noPathSearch means a search command ran
-// with no path argument at all, i.e. it searches the cwd.
+// { paths, sawSearch, noPathCwds } — each path carries the cwd it must be
+// resolved against, and noPathCwds holds one entry per search command that ran
+// with no path argument at all, i.e. one that searches its own cwd.
 function searchPathArgs(cmd, cwd) {
   const paths = [];
-  let sawSearch = false, sawFsSearch = false, noPathSearch = false;
+  const noPathCwds = [];
+  let sawSearch = false;
   // Keep the separators so a stdin-fed segment can be told from a fresh command.
   // A single `|` pipes stdin in; `||`, `&&` and `;` start a new command that
   // reads the filesystem. `qmd … | grep -v x` must stay untouched — it filters
   // stdout and never searches the vault.
   const parts = String(cmd).split(/(\|{1,2}|&&|;)/);
+  // cp-n03f: `cd <dir> && grep …` is the ordinary way to search another tree, and
+  // the old rule (a) caught the vault case only incidentally, by containment over
+  // the whole command text. With (a) reading path ARGUMENTS, the cwd a later
+  // segment actually searches has to be tracked or `cd <vault> && grep -rn x .`
+  // reads as a search of the EVENT cwd. It closes a false positive in the other
+  // direction too: `cd <repo> && grep -rn x .` issued while the event cwd is the
+  // vault, which is how this hook blocked its own author. Only cd/pushd are
+  // modelled; every other command leaves the cwd alone.
+  let effCwd = cwd;
   for (let s = 0; s < parts.length; s += 2) {
     const segment = parts[s];
     const piped = s > 0 && parts[s - 1] === '|';
@@ -281,6 +323,21 @@ function searchPathArgs(cmd, cwd) {
     let i = 0;
     while (i < toks.length && (ASSIGNMENT.test(toks[i]) || WRAPPER.test(baseCmd(toks[i])))) i++;
     const cmdName = i < toks.length ? baseCmd(toks[i]) : '';
+    if (CD.test(cmdName)) {
+      // cd's own options are -L/-P/-e/-@; a BARE `-` is not one of them, it is
+      // the target. Filtering every leading dash would read `cd -` as bare `cd`.
+      const target = toks.slice(i + 1).filter((t) => !/^-[LPe@]+$/.test(t))[0];
+      // Bare `cd` is $HOME. `cd -` is the previous directory, which is not
+      // knowable from one command, so the cwd is left exactly as it was.
+      if (target === undefined) effCwd = os.homedir();
+      else if (target !== '-') {
+        const expanded = expandVars(target);
+        if (expanded !== null) {
+          try { effCwd = path.resolve(effCwd, expanded); } catch { /* keep the old cwd */ }
+        }
+      }
+      continue;
+    }
     if (!cmdName || !SEARCH_CMD.test(cmdName)) continue;
     // A non-recursive Get-ChildItem is a directory listing, not a search. Only
     // -Recurse makes it the `find` equivalent this guard is meant to catch.
@@ -306,20 +363,41 @@ function searchPathArgs(cmd, cwd) {
         continue;
       }
       if (!patternTaken) { patternTaken = true; continue; } // this token is the pattern
-      if (isPathLike(t, cwd)) found.push(t);
+      if (isPathLike(t, effCwd)) found.push(t);
     }
-    if (found.length) paths.push(...found);
+    if (found.length) paths.push(...found.map((raw) => ({ raw, cwd: effCwd })));
     // A stdin-fed grep with no path reads the pipe, not the cwd — never a vault
-    // search, so it must not trip the cwd rule.
-    else if (!piped) noPathSearch = true;
-    // Does this segment actually READ THE FILESYSTEM? A piped grep with no path
-    // argument only filters stdout. cp-0oqe: `git -C <vault> log --diff-filter=D
-    // --name-only | grep x` was blocked despite being the one way to answer
-    // "what did this deleted note contain" — QMD indexes the working tree only,
-    // so it structurally cannot. Blocking it left no compliant path at all.
-    if (found.length || !piped) sawFsSearch = true;
+    // search, so it must not trip the cwd rule. cp-0oqe: `git -C <vault> log
+    // --diff-filter=D --name-only | grep x` was blocked despite being the one way
+    // to answer "what did this deleted note contain" — QMD indexes the working
+    // tree only, so it structurally cannot. Blocking it left no compliant path.
+    else if (!piped) noPathCwds.push(effCwd);
   }
-  return { paths, sawSearch, sawFsSearch, noPathSearch };
+  return { paths, sawSearch, noPathCwds };
+}
+
+// Does this argument point at one file that already exists? cp-n03f: a search
+// of a KNOWN single file is not what this guard exists to prevent. The harm it
+// steers away from is a search whose target is implied — a no-path or recursive
+// search follows the cwd and can silently read the wrong tree and report a false
+// "not found". An explicit file cannot do that: it either holds the answer or
+// grep says nothing. QMD has no equivalent (it answers over an index of notes,
+// not "which lines of THIS file match"), so blocking it leaves no compliant way
+// to do the work — the shape that teaches the override as a reflex.
+//
+// Recursion flags are deliberately not consulted: `-r` over a regular file
+// expands to that same file, so `grep -rn x <vault>/note.md` reads exactly what
+// `grep -n` reads. Directories, globs and paths that do not exist are all
+// blocked, so a mistyped file name fails toward blocking.
+function isKnownFile(p) {
+  try { return fs.statSync(p).isFile(); } catch { return false; }
+}
+
+// The path an argument actually points at, or null when that cannot be told.
+function resolveArg(base, raw) {
+  const expanded = expandVars(raw);
+  if (expanded === null) return null;   // unresolvable variable — (c) still guards a vault cwd
+  try { return path.resolve(base, expanded); } catch { return null; }
 }
 
 // Returns null (allow) or { what, certain } describing why it is blocked.
@@ -337,35 +415,53 @@ function blockReasonForBash(cmd, vaultRoot, cwd) {
   // The cost was behavioral: it taught the override as a reflex, which erodes the
   // guard for the cases that matter. A word boundary is not enough — `.find(`
   // has one. Command position is the discriminator.
-  const { paths, sawSearch, sawFsSearch, noPathSearch } = searchPathArgs(cmd, cwd);
+  // cp-n03f: rule (a) tested the vault root against the WHOLE command text. Even
+  // gated on a search in command position that blocked commands searching
+  // something else entirely — a heredoc writing a fixture whose body quotes vault
+  // paths, a `grep` over one known deck file. Three changes make (a) read the
+  // same path ARGUMENTS as (b), which is what the ticket's option 1 asks for:
+  //
+  //   • heredoc bodies are dropped, so file CONTENT is never command text;
+  //   • containment is tested per path argument, never against the pattern, so
+  //     `grep -rn "<vault>" ./src` — searching a code repo FOR the vault path —
+  //     stops being a vault search;
+  //   • the cwd of each segment is tracked through `cd`, because containment over
+  //     the whole command was what incidentally caught `cd <vault> && grep -rn x .`
+  //
+  // What that gives up: a vault path reachable ONLY as text, i.e. inside a nested
+  // quote. `bash -c 'grep -rn x "<vault>"'` is the case, and it was never covered
+  // — the old (a) was gated on a search in command position, and `bash` is not
+  // one, so the literal in the text was never consulted. It stays out of scope
+  // and stays pinned as a known-limitation test: guessing at quoted content is
+  // how a guard starts blocking things it does not understand.
+  const { paths, sawSearch, noPathCwds } = searchPathArgs(stripHeredocBodies(cmd), cwd);
   if (!sawSearch) return null; // only a `… | grep` stdout filter, or no search at all
 
-  // (a) A filesystem search whose command text names the vault root outright.
-  // Raw-text containment — see `text` above for why this must not go through
-  // path.resolve — but gated on an actual fs-reading search.
-  if (sawFsSearch && text(cmd).includes(text(vaultRoot))) {
-    return { what: 'a grep/find naming a vault path', certain: true };
-  }
-
-  // (b) A path argument RESOLVES into the vault. Relative arguments are resolved
-  // against the event cwd, so `../../Obsidian Vault/...` from a code repo is
-  // caught, and `./src` or `.` from a code repo is not.
-  for (const p of paths) {
+  // (a)+(b) A PATH ARGUMENT of that search points at the vault: its raw text
+  // names the vault root — text containment, because `$(echo <vault>)/x` reaches
+  // a search through a form no resolver can follow — or it RESOLVES there.
+  // Relative arguments resolve against the cwd of their own segment, so
+  // `../../Obsidian Vault/...` from a code repo is caught and `./src` is not.
+  for (const { raw, cwd: base } of paths) {
     // cp-mx34: expand before resolving. `paths` keeps the RAW token so the deny
     // message quotes what was actually typed.
-    const expanded = expandVars(p);
-    if (expanded === null) continue;   // cannot tell where it points; (c) still guards a vault cwd
-    let resolved;
-    try { resolved = path.resolve(cwd, expanded); } catch { continue; }
-    if (isInsideVault(resolved, vaultRoot)) {
-      return { what: `a grep/find whose path argument "${p}" resolves inside the vault`, certain: true };
+    const resolved = resolveArg(base, raw);
+    const namesVault = text(raw).includes(text(vaultRoot));
+    const inside = resolved !== null && isInsideVault(resolved, vaultRoot);
+    if (!namesVault && !inside) continue;
+    if (resolved !== null && isKnownFile(resolved)) continue;   // precise read of one known file
+    if (namesVault) {
+      return { what: `a grep/find naming a vault path in "${raw}"`, certain: true };
     }
+    return { what: `a grep/find whose path argument "${raw}" resolves inside the vault`, certain: true };
   }
 
   // (c) No path argument at all → the search follows the cwd. Block only when
   // that cwd is the vault; a code-repo cwd is left alone.
-  if (noPathSearch && isInsideVault(cwd, vaultRoot)) {
-    return { what: 'a grep/find with no path argument while the working directory is inside the vault', certain: false };
+  for (const base of noPathCwds) {
+    if (isInsideVault(base, vaultRoot)) {
+      return { what: 'a grep/find with no path argument while the working directory is inside the vault', certain: false };
+    }
   }
   return null;
 }
