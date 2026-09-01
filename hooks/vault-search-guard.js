@@ -174,6 +174,38 @@ function isPathLike(tok, cwd) {
   try { return fs.existsSync(path.resolve(cwd, t)); } catch { return false; }
 }
 
+// cp-6t9f: shell redirections are syntax, not path arguments. `2>/dev/null`
+// contains a slash, so isPathLike() accepted it, and resolving it against a
+// vault cwd landed "inside the vault" — blocking an ordinary command whose
+// search target was somewhere else entirely. Masked until cp-mx34 shipped,
+// because a $HOME token was tested first and blocked first.
+//
+// Stripped up front rather than inside the argument loop: a redirection may
+// legally precede the pattern (`grep 2>/dev/null pat file`), so removing them
+// first keeps the pattern/path positions correct.
+//
+// Known limitation: tokenize() has already dropped quotes, so a pattern that
+// looks exactly like a redirection (`grep "2>/dev/null" file`) is stripped too.
+// That loses a path argument and falls through to rule (c) — it blocks rather
+// than allows, which is the safe direction.
+const REDIR_BARE = /^\d*(>>?|<)&?\d*$/;      // > >> 2> < 2>&1
+const REDIR_ATTACHED = /^\d*(>>?|<)&?\S/;    // 2>/dev/null  >out.txt  <in.txt
+function stripRedirections(toks) {
+  const out = [];
+  for (let i = 0; i < toks.length; i++) {
+    const t = toks[i];
+    // Check BARE first: `2>&1` matches both patterns.
+    if (REDIR_BARE.test(t)) {
+      // `2>&1` names its target inline; a bare `>` or `2>` eats the next token.
+      if (!/&\d+$/.test(t)) i++;
+      continue;
+    }
+    if (REDIR_ATTACHED.test(t)) continue;
+    out.push(t);
+  }
+  return out;
+}
+
 // Path arguments of every search command in the pipeline. Returns
 // { paths, sawSearch, noPathSearch } — noPathSearch means a search command ran
 // with no path argument at all, i.e. it searches the cwd.
@@ -188,7 +220,7 @@ function searchPathArgs(cmd, cwd) {
   for (let s = 0; s < parts.length; s += 2) {
     const segment = parts[s];
     const piped = s > 0 && parts[s - 1] === '|';
-    const toks = tokenize(segment.trim());
+    const toks = stripRedirections(tokenize(segment.trim()));
     if (!toks.length) continue;
     let i = 0;
     if (/^sudo$/i.test(toks[i])) i++;
