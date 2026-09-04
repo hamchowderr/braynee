@@ -46,65 +46,83 @@ obsidian vault="My Vault" search query="test"
 
 ---
 
-## CRITICAL: CLI content parsing bugs
+## CRITICAL: the 4000-byte cliff
 
-The `obsidian` CLI argument parser has two known failure patterns that cause **silent exit code 127**:
+**The total command line must stay under 4000 bytes.** At 4001+ the CLI fails **silently and completely**:
 
-1. **`word:anything`** — a colon immediately after a word with no preceding space. Triggers on YAML frontmatter (`type: note`), property-like content, markdown link labels.
-2. **`[...]`** — square brackets anywhere in content. Triggers on YAML arrays (`tags: [a, b]`), markdown links, task checkboxes (`- [ ] task`).
+- exit code **0**
+- no stdout, no stderr
+- **zero bytes written**
+- and the IPC socket then dies, so every later CLI call hangs or returns `unable to find Obsidian`
 
-**Rule:** Any note with YAML frontmatter, markdown links, task lists, or structured data will fail with `obsidian create` / `obsidian append`. Use the `eval` path instead.
+The budget covers the whole command — command name, `path=`, flags **and** `content=`. Verified by binary search on Obsidian 1.13.7: 4000 bytes writes, 4001 does not; and content that wrote fine at a short path failed when only the path grew by 62 bytes.
+
+**Root cause:** the CLI's IPC layer calls `JSON.parse` on socket data without reassembling messages, so a payload split across pipe frames parses as a truncated fragment and throws. Upstream bug [forum 117325](https://forum.obsidian.md/t/cli-create-with-content-over-4-kb-crashes-the-main-process-with-a-json-parse-error/117325), filed Aug 2026, **open and unfixed as of 1.14.0**. There is **no stdin, no `-F`, and no `content=@file`** on any command — the [stdin request](https://forum.obsidian.md/t/support-stdin-pipe-for-obsidian-cli/112855) has had no staff response.
+
+**Content SHAPE does not matter.** Colons, `[[wikilinks]]`, `[md](links)`, `- [ ]` checkboxes, em-dashes, curly quotes and full YAML frontmatter all write correctly. *(An earlier version of this skill claimed a `word:colon` / `[...]` parser bug causing exit 127. That was tested and is **false** — the real axis is size, not shape.)*
 
 ---
 
-## Two-path decision
+## Two-path decision — split on SIZE
 
-### Path A — Simple content only (no frontmatter, no brackets, no `word:` patterns)
+### Path A — total command line comfortably under 4000 bytes
+
+Any characters are fine. Budget ~3500 bytes for content to leave room for the path and flags.
 
 ```bash
-# Create new file
 obsidian create path="Folder/Note.md" content="# Title\nParagraph text" silent
-
-# Overwrite existing file
 obsidian create path="Folder/Note.md" content="# Updated\nNew content" silent overwrite
-
-# Append to file
 obsidian append path="Folder/Note.md" content="\n## New Section\nMore content"
 ```
 
-### Path B — Complex content (frontmatter, brackets, structured markdown)
+### Path B — anything larger, or any content of unknown size ⭐ default
 
-Use `obsidian eval` with an async IIFE. This calls the Obsidian JavaScript API directly, bypassing the CLI parser entirely.
+**Never inline a real note into the command.** Stage it as a file and have the eval read it — the eval argument then stays a fixed ~200 characters no matter how big the note is.
 
-**Create a new file:**
 ```bash
-obsidian eval code="(async () => { await app.vault.create('Folder/Note.md', '---\ntype: note\ntags:\n  - example\n---\n\n# Title\n\nContent here.\n'); })()"
+# 1. Write the content with the Write tool (zero shell escaping), then stage it INSIDE the vault
+cp "/path/to/scratch/note.md" "$VAULT/_tmp.md"
+
+# 2. Read by VAULT-RELATIVE path (keeps `C:/` out of the argument) and write via the Vault API
+Obsidian.com eval code="(function(){ var t='Folder/Note.md'; app.vault.adapter.read('_tmp.md').then(function(c){ app.vault.create(t, c); }); return 'started'; })()"
+# => started    (returns immediately; the write lands a moment later)
+
+# 3. Clean up, then VERIFY BY CONTENT — not by exit code, not by byte count
+rm -f "$VAULT/_tmp.md"
+node -e "console.log(require('fs').readFileSync('<target>','utf8').includes('MARKER'))"
 ```
 
-**Overwrite an existing file:**
-```bash
-obsidian eval code="(async () => { const f = app.vault.getFileByPath('Folder/Note.md'); await app.vault.modify(f, '---\ntype: note\n---\n\n# Updated\n'); })()"
-```
+Swap `app.vault.create(t, c)` for `app.vault.modify(app.vault.getFileByPath(t), c)` to overwrite, or `app.vault.append(app.vault.getFileByPath(t), c)` to append.
 
-**Append to an existing file:**
-```bash
-obsidian eval code="(async () => { const f = app.vault.getFileByPath('Folder/Note.md'); const cur = await app.vault.read(f); await app.vault.modify(f, cur + '\n## Appended\n\nNew content.\n'); })()"
-```
+Verified writing **17,000 bytes** this way at a size where `create content=` fails silently.
 
-### Escaping inside `eval code="..."` (bash double-quoted string → JS single-quoted string)
+### Three rules for every `eval` body
 
-| Character in content | Write as in the bash command |
+1. **No `await`, ever.** `(async () => { … await … })()` **hangs the CLI** — it waits on the promise and never resolves. Start the work, return a plain string synchronously.
+2. **At most one `.then`.** A nested `.then` silently no-ops: returns `started`, writes nothing. If you think you need two, use the API that collapses them — `app.vault.append(file, data)` does read-modify-write internally.
+3. **Keep the argument ASCII.** Non-ASCII inline in the eval argument fails silently. Unicode inside the staged *content file* is fine.
+
+---
+
+## Exit codes are unreliable in both directions
+
+| Observed | Meaning |
 |---|---|
-| newline | `\n` |
-| tab | `\t` |
-| single quote `'` | `\'` |
-| double quote `"` | `\"` |
-| backslash `\` | `\\\\` |
+| exit 0, `Error:` on stdout | ordinary failure — file not found, unknown command |
+| **exit 0, no output at all** | **silent total failure** — the >4000-byte cliff |
+| exit 1, no output | the write may have **landed** |
+| exit 1, `unable to find Obsidian` | IPC socket is dead |
+| exit 124 under `timeout` | hung — socket wedged |
 
-Example — content with quotes and frontmatter:
-```bash
-obsidian eval code="(async () => { const f = app.vault.getFileByPath('Inbox/Note.md'); await app.vault.modify(f, '---\ntype: note\nstatus: active\ntags:\n  - example\n---\n\n# Title\n\nShe said \"hello\" and it\'s fine.\n'); })()"
-```
+**Verify actual state on disk. Never trust `$?` or output alone**, and never retry a non-idempotent mutation on the strength of an exit code.
+
+## Recovery when the CLI is wedged
+
+1. Check for an Obsidian window titled **`Error`** — dismiss it; the CLI recovers immediately.
+2. No dialog but still `unable to find Obsidian` — toggle Settings → General → **Command line interface** off and on.
+3. Last resort: restart Obsidian. **Ask the user first.**
+
+Diagnose in order: `eval code="1+1"` → a **sync** call like `app.vault.getFileByPath('…').path` → then the write.
 
 ---
 
