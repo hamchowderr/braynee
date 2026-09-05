@@ -52,6 +52,46 @@ def warn(label: str):
     print(f"  ✗  {label}")
 
 
+def report_qmd_index(status: str):
+    """Report what `qmd status` actually says about the index.
+
+    The check used to read the exit code and throw the output away, so it said
+    "installed" while the index quietly drifted. Every number below is one that
+    had to be dug out by hand at least once: a vault that stopped being indexed,
+    an embed backlog that never drained, and 26k orphaned vector chunks — half
+    the vector rows — that nothing ever reclaimed.
+    """
+    docs = re.search(r"Total:\s+(\d+)\s+files indexed", status)
+    vecs = re.search(r"Vectors:\s+(\d+)\s+embedded", status)
+    if docs and vecs:
+        print(f"  ·  qmd index: {int(docs.group(1)):,} documents, {int(vecs.group(1)):,} vectors")
+
+    # "Updated: 8m ago" / "3h ago" / "2d ago". Only days are worth a warning:
+    # the reindex runs on session Stop, so hours are normal between sessions.
+    updated = re.search(r"Updated:\s+(\d+)([smhd])\s+ago", status)
+    if updated:
+        amount, unit = int(updated.group(1)), updated.group(2)
+        if unit == "d":
+            warn(f"qmd index last updated {amount}d ago — the Stop-hook reindex may be failing")
+        else:
+            ok(f"qmd index updated {amount}{unit} ago")
+
+    # qmd omits the Pending line entirely at zero.
+    pending = re.search(r"Pending:\s+(\d+)\s+need embedding", status)
+    if pending:
+        n = int(pending.group(1))
+        # 200 is braynee's own backlog escape hatch (see hooks/lib/qmd-reindex.js).
+        (warn if n >= 200 else ok)(
+            f"qmd embeddings: {n:,} pending"
+            + (" — semantic search is missing recent notes; run `qmd embed`" if n >= 200 else "")
+        )
+
+    orphaned = re.search(r"Orphaned:\s+(\d+)\s+embedding chunks \((\d+)%\)", status)
+    if orphaned:
+        warn(f"qmd index: {int(orphaned.group(1)):,} orphaned vector chunks "
+             f"({orphaned.group(2)}% of rows) — run `qmd cleanup`")
+
+
 def run_version(cmd: list[str], timeout: int = 5) -> str | None:
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
@@ -108,14 +148,24 @@ def cmd_setup(args, vault: Path):
     if not qmd_wrapper.exists():
         warn(f"qmd — wrapper not found at {qmd_wrapper}")
     else:
-        r = subprocess.run(
-            ["node", str(qmd_wrapper), "status"],
-            capture_output=True, text=True, timeout=10
-        )
-        if r.returncode == 0:
-            ok("qmd — search engine (installed)")
+        # `qmd status` counts documents and vectors across the whole index and
+        # gets slower as it grows — 46s has been measured on a 1.4 GB index. The
+        # old 10s cap with no except raised TimeoutExpired and crashed the very
+        # command you run to find out the index is unhealthy.
+        status = None
+        try:
+            r = subprocess.run(
+                ["node", str(qmd_wrapper), "status"],
+                capture_output=True, text=True, timeout=120
+            )
+            status = r.stdout if r.returncode == 0 else None
+        except (subprocess.TimeoutExpired, OSError):
+            status = None
+        if status is None:
+            warn("qmd — status did not answer (index busy, or the CLI is broken)")
         else:
-            warn("qmd — wrapper exists but not responding")
+            ok("qmd — search engine (installed)")
+            report_qmd_index(status)
 
     # Ship-stage CLIs — needed only for the autonomous-ship engine (CI / deploy /
     # secrets / behavioral verify). OPTIONAL: a vault-only or local-only user doesn't
@@ -143,13 +193,25 @@ def cmd_setup(args, vault: Path):
             print(f"  ·  {label} — not installed · install: {hint}")
     print("  (Global CLIs above are invoked directly by agents; project-scoped tools run via the project's own runner — never guess the invocation.)")
 
-    hooks_dir = Path.home() / ".claude" / "hooks"
+    # Braynee ships its hooks INSIDE the plugin and registers them in the
+    # plugin's own hooks/hooks.json. The standalone install put copies in
+    # ~/.claude/hooks with entries in ~/.claude/settings.json. Either satisfies
+    # the check. Looking only at the legacy pair reported every plugin user's
+    # working hooks as missing — including the Stop hook that reindexes the
+    # vault — and a health report that cries wolf is one people stop reading.
+    plugin_hooks_dir = Path(__file__).resolve().parent.parent.parent.parent / "hooks"
+    plugin_hooks_json = plugin_hooks_dir / "hooks.json"
+    plugin_hooks_text = (
+        plugin_hooks_json.read_text(encoding="utf-8") if plugin_hooks_json.exists() else ""
+    )
+    legacy_hooks_dir = Path.home() / ".claude" / "hooks"
     for hook in ["vault-context-prime.js", "session-auto-track.js", "session-export-qmd.js", "statusline-state.js"]:
-        p = hooks_dir / hook
-        if p.exists():
-            ok(f"hook: {hook}")
+        if (plugin_hooks_dir / hook).exists() and hook in plugin_hooks_text:
+            ok(f"hook: {hook} (plugin)")
+        elif (legacy_hooks_dir / hook).exists():
+            ok(f"hook: {hook} (~/.claude/hooks)")
         else:
-            warn(f"hook: {hook} — missing at {p}")
+            warn(f"hook: {hook} — not registered in the plugin, and absent from {legacy_hooks_dir}")
 
     settings_path = Path.home() / ".claude" / "settings.json"
     if settings_path.exists():
@@ -164,8 +226,12 @@ def cmd_setup(args, vault: Path):
             ("session_tracking", "session-auto-track"),
             ("qmd_sync", "session-export-qmd"),
         ]:
-            if any(term in c for c in all_cmds):
-                ok(f"settings: {feature} hook registered")
+            # Registered in the plugin's hooks.json counts: that is where a
+            # plugin install declares them, and settings.json stays empty.
+            if term in plugin_hooks_text:
+                ok(f"settings: {feature} hook registered (plugin)")
+            elif any(term in c for c in all_cmds):
+                ok(f"settings: {feature} hook registered (settings.json)")
             else:
                 warn(f"settings: {feature} hook NOT registered")
     else:
