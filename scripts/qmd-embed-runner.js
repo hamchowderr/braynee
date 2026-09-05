@@ -76,6 +76,25 @@ const gb = (bytes) => (bytes / GB).toFixed(1);
 // never counted as progress (see PROGRESS_MS below).
 const EMBED_TIMEOUT_MS = envInt('BRAYNEE_QMD_EMBED_TIMEOUT_MS', 45 * 60 * 1000);
 
+// Window handed to qmd itself. qmd caps its own embed session (30 min by
+// default) and skips whatever is left, so a 45-min run stopped embedding at
+// 30. `--timeout <minutes>` (qmd >= 2.6.3) moves that cap; set it one minute
+// inside our ceiling so qmd ends the session and exits cleanly instead of
+// being SIGTERM'd mid-batch.
+const QMD_SESSION_MINUTES = Math.max(1, Math.floor(EMBED_TIMEOUT_MS / 60000) - 1);
+
+// Older qmd does not know the flag and would exit on an unknown option, so
+// only pass it when the installed CLI is new enough.
+function qmdSupportsTimeout(qmdJs) {
+  try {
+    const pkg = JSON.parse(readFileSync(path.join(qmdJs, '..', '..', '..', 'package.json'), 'utf8'));
+    const [maj, min, pat] = String(pkg.version).split('.').map(Number);
+    return maj > 2 || (maj === 2 && (min > 6 || (min === 6 && pat >= 3)));
+  } catch {
+    return false;
+  }
+}
+
 // A run that survived this long did real embedding work even if it was later
 // killed by the ceiling, so it counts as progress and advances the stamp.
 // Anything shorter is a genuine startup failure (qmd broken, models missing)
@@ -157,6 +176,7 @@ function main() {
         qmdJs, 'embed',
         '--max-docs-per-batch', String(MAX_DOCS_PER_BATCH),
         '--max-batch-mb', String(MAX_BATCH_MB),
+        ...(qmdSupportsTimeout(qmdJs) ? ['--timeout', String(QMD_SESSION_MINUTES)] : []),
       ],
       {
         stdio: 'ignore',
@@ -183,9 +203,9 @@ function main() {
     }
     // Log every outcome. The runner used to be completely silent, so an embed
     // that never ran for weeks was invisible — the only signal was a stamp
-    // file nobody looks at. Note qmd self-aborts at its own ~30 min session
-    // cap with a non-zero status, so a non-zero exit is normal on a big
-    // backlog and does NOT mean the run did no work.
+    // file nobody looks at. qmd's own session cap now matches our window (see
+    // QMD_SESSION_MINUTES), so a large backlog ends with a clean exit and a
+    // "Session expired" line rather than a surprise non-zero status.
     log.info(
       LOG_NAME,
       `embed finished: exit=${res.status} elapsed=${Math.round(elapsed / 1000)}s stamped=${stamped}`,
