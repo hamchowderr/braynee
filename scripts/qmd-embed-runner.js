@@ -76,6 +76,11 @@ const gb = (bytes) => (bytes / GB).toFixed(1);
 // never counted as progress (see PROGRESS_MS below).
 const EMBED_TIMEOUT_MS = envInt('BRAYNEE_QMD_EMBED_TIMEOUT_MS', 45 * 60 * 1000);
 
+// Ceiling for the weekly cleanup that follows the embed. It vacuums the SQLite
+// file, so it is I/O bound and finishes in seconds on an index this size; the
+// cap only exists so a wedged run cannot hold the reindex lock forever.
+const CLEANUP_TIMEOUT_MS = envInt('BRAYNEE_QMD_CLEANUP_TIMEOUT_MS', 10 * 60 * 1000);
+
 // Window handed to qmd itself. qmd caps its own embed session (30 min by
 // default) and skips whatever is left, so a 45-min run stopped embedding at
 // 30. `--timeout <minutes>` (qmd >= 2.6.3) moves that cap; set it one minute
@@ -210,6 +215,21 @@ function main() {
       LOG_NAME,
       `embed finished: exit=${res.status} elapsed=${Math.round(elapsed / 1000)}s stamped=${stamped}`,
     );
+
+    // Weekly `qmd cleanup`, riding along under the lock we already hold. Embeds
+    // orphan vector chunks as documents change and nothing reclaimed them: a
+    // real index reached 26k orphans — half its vector rows — before anyone ran
+    // this by hand. Failure is non-fatal and unstamped, so it retries next run.
+    if (reindex.cleanupDue()) {
+      const clean = spawnSync(process.execPath, [qmdJs, 'cleanup'], {
+        stdio: 'ignore',
+        timeout: CLEANUP_TIMEOUT_MS,
+        windowsHide: true,
+        env: { ...process.env, HOME: process.env.HOME || os.homedir() },
+      });
+      if (clean.status === 0) reindex.markCleanupRun();
+      log.info(LOG_NAME, `qmd cleanup: exit=${clean.status}`);
+    }
   } catch (e) {
     log.debug(LOG_NAME, `embed errored: ${e && e.message}`);
   } finally {
