@@ -18,27 +18,44 @@
 const path = require('path');
 const log = require(path.join(__dirname, 'lib', 'hook-logger.js'));
 const payload = require(path.join(__dirname, 'lib', 'hook-payload.js'));
+const shell = require(path.join(__dirname, 'lib', 'shell-parse.js'));
 
 const HOOK = 'secret-exposure-guard';
 const ALLOW_READS = process.env.BRAYNEE_ALLOW_SECRET_READS === '1';
 
 // --- Bash: commands that PRINT secret values to stdout (i.e. into the transcript) ---
-// Each entry: [regex, allow-regex?] — if allow-regex matches, the command is permitted.
+//
+// cp-ojk2: these used to be regexes run over the whole command string, so any
+// command whose ARGUMENTS happened to contain the words matched —
+// `qmd search "infisical secrets rule"` was refused, and so was the `bd create`
+// filing that very bug, because the report quotes the phrase. A guard that
+// blocks descriptions of itself is one people learn to route around.
+//
+// Matching is structural now: the tool must be in COMMAND POSITION (argv[0] of
+// some command in the pipeline, wrappers and NAME=VALUE prefixes skipped) and
+// its leading non-flag arguments must be the subcommand path. Quoted arguments
+// to another program are never command position, so they cannot match.
+//
+// Each entry: { cmd, seq, except?, allow?, label }.
+//   seq    — required subcommand path, e.g. ['secrets','get']
+//   except — subcommand at seq.length that makes it safe (a write, not a read)
+//   allow  — escape hatch tested against the raw command text
 const VALUE_PRINTING = [
   // Infisical: `secrets`/`secrets get`/`export` dump values; `run`/`set`/`init`/`login`/`scan` do not.
-  { re: /\binfisical\s+secrets\s+get\b/i, label: 'infisical secrets get' },
-  { re: /\binfisical\s+export\b/i, label: 'infisical export' },
+  { cmd: 'infisical', seq: ['secrets', 'get'], label: 'infisical secrets get' },
+  { cmd: 'infisical', seq: ['export'], label: 'infisical export' },
   // bare `infisical secrets` (list with values) — but allow the safe subcommands
-  { re: /\binfisical\s+secrets\b/i, allow: /\binfisical\s+secrets\s+(set|delete|folders)\b/i, label: 'infisical secrets (list)' },
+  { cmd: 'infisical', seq: ['secrets'], except: ['set', 'delete', 'folders'], label: 'infisical secrets (list)' },
   // Doppler
-  { re: /\bdoppler\s+secrets\s+(get|download)\b/i, label: 'doppler secrets get/download' },
-  { re: /\bdoppler\s+secrets\b/i, allow: /\bdoppler\s+secrets\s+(set|delete|upload)\b/i, label: 'doppler secrets (list)' },
+  { cmd: 'doppler', seq: ['secrets', 'get'], label: 'doppler secrets get/download' },
+  { cmd: 'doppler', seq: ['secrets', 'download'], label: 'doppler secrets get/download' },
+  { cmd: 'doppler', seq: ['secrets'], except: ['set', 'delete', 'upload'], label: 'doppler secrets (list)' },
   // HashiCorp Vault
-  { re: /\bvault\s+kv\s+get\b/i, label: 'vault kv get' },
-  { re: /\bvault\s+read\b/i, label: 'vault read' },
+  { cmd: 'vault', seq: ['kv', 'get'], label: 'vault kv get' },
+  { cmd: 'vault', seq: ['read'], label: 'vault read' },
   // 1Password
-  { re: /\bop\s+read\b/i, label: 'op read' },
-  { re: /\bop\s+item\s+get\b/i, allow: /--format\s*=?\s*json[^|]*\|\s*op\b/i, label: 'op item get' },
+  { cmd: 'op', seq: ['read'], label: 'op read' },
+  { cmd: 'op', seq: ['item', 'get'], allow: /--format\s*=?\s*json[^|]*\|\s*op\b/i, label: 'op item get' },
 ];
 
 // --- Write: patterns that suggest a REAL secret (not a placeholder) in a .env file ---
@@ -60,9 +77,19 @@ const PLACEHOLDER_PATTERNS = [
 ];
 
 function blockBash(command) {
-  for (const { re, allow, label } of VALUE_PRINTING) {
-    if (re.test(command) && !(allow && allow.test(command))) {
-      return label;
+  // Heredoc bodies are data, not commands. Without this the guard refuses the
+  // commit message and the bug report that describe it — which is how it got
+  // filed as cp-ojk2 in the first place.
+  const argvs = shell.commandsIn(shell.stripHeredocBodies(command));
+  for (const argv of argvs) {
+    const name = shell.baseCmd(argv[0]).toLowerCase();
+    const subs = shell.subcommands(argv).map((s) => s.toLowerCase());
+    for (const rule of VALUE_PRINTING) {
+      if (name !== rule.cmd) continue;
+      if (!rule.seq.every((want, k) => subs[k] === want)) continue;
+      if (rule.except && rule.except.includes(subs[rule.seq.length])) continue;
+      if (rule.allow && rule.allow.test(command)) continue;
+      return rule.label;
     }
   }
   return null;

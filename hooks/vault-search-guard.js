@@ -43,6 +43,10 @@ const os = require('os');
 const path = require('path');
 const log = require(path.join(__dirname, 'lib', 'hook-logger.js'));
 const payload = require(path.join(__dirname, 'lib', 'hook-payload.js'));
+// Quote-aware splitting/tokenizing is shared with secret-exposure-guard: both
+// guards were reading raw command text and blocking work over it (cp-ojk2).
+const { stripHeredocBodies, splitSegments, tokenize, baseCmd } =
+  require(path.join(__dirname, 'lib', 'shell-parse.js'));
 const { getVaultRoot } = require(path.join(__dirname, '..', 'scripts', 'lib', 'vault-root.js'));
 
 const HOOK = 'vault-search-guard';
@@ -98,7 +102,7 @@ const SEARCH_CMD = /^(grep|egrep|fgrep|rg|ripgrep|find|Select-String|sls|Get-Chi
 const GREP_FAMILY = /^(grep|egrep|fgrep|rg|ripgrep|Select-String|sls)$/i;
 const PS_LIST = /^(Get-ChildItem|gci)$/i;
 const PS_RECURSE = /^-(Recurse|r)$/i;
-// The token after these IS the path, so it must reach isPathLike.
+// The token after these IS the path, so it must reach classifyPath.
 const PS_PATH_FLAG = /^-(Path|LiteralPath|FilePath)$/i;
 // The token after these is a pattern/glob, never a path — skip it.
 const PS_VALUE_FLAG = /^-(Pattern|Filter|Include|Exclude|Depth|Context|Encoding)$/i;
@@ -120,46 +124,13 @@ const VALUE_FLAGS = new Set([
   '-t', '--type', '--max-depth', '-d', '--depth',
 ]);
 
-// cp-n03f: a heredoc body is DATA the shell hands to another program, not command
-// text. Writing a file whose CONTENT quotes vault paths — a test fixture, a probe
-// script, this hook's own test suite — is not a search of anything, but the body
-// travels in the same string as the command, so raw-text containment read it as
-// one. Dropping bodies before analysis is exact where guessing at quoted content
-// is not: the delimiter says where the data ends.
-//
-// An unterminated opener means the rest of the string IS body, so it is dropped
-// too. That errs toward allowing, which is the direction this guard must fail in
-// — and a command with an unterminated heredoc would not run as written anyway.
-//
-// `[^\n]*` after the delimiter: the rest of the OPENER line belongs to the
-// command, not the body — `cat <<'EOF' | tee f` and `cat <<'EOF' > f` are both
-// ordinary. The body starts at the newline and ends at the terminator line.
-const HEREDOC_BODY = /<<-?\s*(['"]?)([A-Za-z_][A-Za-z0-9_]*)\1[^\n]*\r?\n[\s\S]*?\r?\n[ \t]*\2(?=\s|$)/g;
-const HEREDOC_UNTERMINATED = /<<-?\s*(['"]?)([A-Za-z_][A-Za-z0-9_]*)\1[^\n]*\r?\n[\s\S]*$/;
-function stripHeredocBodies(cmd) {
-  return String(cmd).replace(HEREDOC_BODY, ' ').replace(HEREDOC_UNTERMINATED, ' ');
-}
-
-// Shell-ish tokenizer: splits on whitespace while honoring quotes, so a path with
-// spaces ("Obsidian Vault") survives as ONE token.
-function tokenize(segment) {
-  const out = [];
-  let cur = '', quote = null, had = false;
-  for (const c of String(segment)) {
-    if (quote) {
-      if (c === quote) quote = null; else cur += c;
-      continue;
-    }
-    if (c === '"' || c === "'") { quote = c; had = true; continue; }
-    if (/\s/.test(c)) { if (cur || had) { out.push(cur); cur = ''; had = false; } continue; }
-    cur += c;
-  }
-  if (cur || had) out.push(cur);
-  return out;
-}
+// cp-n03f: a heredoc body is DATA, not command text — writing a file whose
+// CONTENT quotes vault paths is not a search. Shared with secret-exposure-guard
+// since cp-ojk2, which hit the identical false positive from the other side.
+// Rationale and the known limitation live in hooks/lib/shell-parse.js.
 
 // cp-mx34: a path TOKEN is not a path yet — the shell has not expanded it when
-// this hook runs. `$HOME/.claude` contains a slash, so isPathLike accepted it,
+// this hook runs. `$HOME/.claude` contains a slash, so it read as a path,
 // and path.resolve(cwd, '$HOME/.claude') with the vault as cwd produced
 // '<vault>/$HOME/.claude' — "inside the vault". From a vault cwd that made EVERY
 // path written with a shell variable or `~` read as a vault path, wherever it
@@ -174,11 +145,19 @@ function tokenize(segment) {
 // token instead of resolving it literally, so an unresolvable path falls through
 // to rule (c), which still blocks it when the cwd is the vault.
 // Same defect family as cp-ccsh.8: resolving text that is not yet a real path.
-function expandVars(tok) {
+//
+// cp-ojk2: `vars` carries NAME=VALUE assignments read out of the command itself
+// — `P=/c/tools; grep -rn x "$P/CHANGELOG.md"` is one command, and the variable
+// it defines is knowable without running anything. Before, $P was unresolvable,
+// the token was dropped, and rule (c) blocked a search of /c/tools from a vault
+// cwd. Command-local assignments are consulted before the environment, which is
+// the order the shell itself uses.
+function expandVars(tok, vars) {
   if (!tok) return tok;
   let s = String(tok);
   let unresolved = false;
   const env = (name) => {
+    if (vars && Object.prototype.hasOwnProperty.call(vars, name)) return vars[name];
     const v = process.env[name] ?? process.env[name.toUpperCase()];
     if (v !== undefined && v !== '') return v;
     // cp-sm8n: this hook is a child of Claude Code — a Windows process — not of
@@ -207,18 +186,26 @@ function expandVars(tok) {
   return unresolved ? null : s;
 }
 
-// A token worth resolving as a filesystem path.
-function isPathLike(tok, cwd) {
-  if (!tok) return false;
-  const t = expandVars(tok);
-  if (t === null) return false;   // unresolvable variable — not a path we can judge
-  if (t === '.' || t === '..') return true;
-  if (/[\\/]/.test(t)) return true;
-  try { return fs.existsSync(path.resolve(cwd, t)); } catch { return false; }
+// Classify a token in path position: 'path' (judge it), 'unknown' (a path was
+// given but cannot be resolved), or 'no' (not a path argument at all).
+//
+// cp-ojk2: 'unknown' used to collapse into 'no', which inverted the meaning of
+// rule (c). A search whose path argument is an unexpandable variable HAS a path
+// argument — it simply is not this hook's to resolve — so treating it as "no
+// path given" blocked a search that was probably pointed somewhere else
+// entirely. Reporting it separately lets the caller decline to judge instead of
+// assuming the worst.
+function classifyPath(tok, cwd, vars) {
+  if (!tok) return 'no';
+  const t = expandVars(tok, vars);
+  if (t === null) return 'unknown';   // unresolvable variable — a path we cannot judge
+  if (t === '.' || t === '..') return 'path';
+  if (/[\\/]/.test(t)) return 'path';
+  try { return fs.existsSync(path.resolve(cwd, t)) ? 'path' : 'no'; } catch { return 'no'; }
 }
 
 // cp-6t9f: shell redirections are syntax, not path arguments. `2>/dev/null`
-// contains a slash, so isPathLike() accepted it, and resolving it against a
+// contains a slash, so it read as a path, and resolving it against a
 // vault cwd landed "inside the vault" — blocking an ordinary command whose
 // search target was somewhere else entirely. Masked until cp-mx34 shipped,
 // because a $HOME token was tested first and blocked first.
@@ -287,25 +274,28 @@ const WRAPPER = /^(sudo|env|command|time|nice|nohup|stdbuf)$/i;
 // The one command that changes where a LATER segment searches (cp-n03f).
 const CD = /^(cd|pushd)$/i;
 
-// Directory and Windows executable extension stripped: what a shell would exec.
-function baseCmd(tok) {
-  const base = String(tok).split(/[\\/]/).pop();
-  return base.replace(/\.(exe|com|cmd|bat|ps1)$/i, '');
-}
-
+// cp-ojk2: segments come from the shared quote-aware splitter now. Splitting on
+// /(\|{1,2}|&&|;)/ ignored quoting, so a separator INSIDE the pattern tore the
+// command apart mid-argument: `grep -n -B3 -A3 "a\|b" <path>` split at the
+// alternation, leaving a first segment with no path argument, and rule (c)
+// blocked a search whose path was sitting in the piece that got cut off.
+//
 // Path arguments of every search command in the pipeline. Returns
 // { paths, sawSearch, noPathCwds } — each path carries the cwd it must be
-// resolved against, and noPathCwds holds one entry per search command that ran
-// with no path argument at all, i.e. one that searches its own cwd.
+// resolved against and its resolved form, and noPathCwds holds one entry per
+// search command that ran with no path argument at all, i.e. one that searches
+// its own cwd.
 function searchPathArgs(cmd, cwd) {
   const paths = [];
   const noPathCwds = [];
   let sawSearch = false;
+  // NAME=VALUE assignments seen so far in this command, for expandVars.
+  const vars = Object.create(null);
   // Keep the separators so a stdin-fed segment can be told from a fresh command.
   // A single `|` pipes stdin in; `||`, `&&` and `;` start a new command that
   // reads the filesystem. `qmd … | grep -v x` must stay untouched — it filters
   // stdout and never searches the vault.
-  const parts = String(cmd).split(/(\|{1,2}|&&|;)/);
+  const parts = splitSegments(cmd);
   // cp-n03f: `cd <dir> && grep …` is the ordinary way to search another tree, and
   // the old rule (a) caught the vault case only incidentally, by containment over
   // the whole command text. With (a) reading path ARGUMENTS, the cwd a later
@@ -321,7 +311,17 @@ function searchPathArgs(cmd, cwd) {
     const toks = stripRedirections(tokenize(segment.trim()));
     if (!toks.length) continue;
     let i = 0;
-    while (i < toks.length && (ASSIGNMENT.test(toks[i]) || WRAPPER.test(baseCmd(toks[i])))) i++;
+    while (i < toks.length && (ASSIGNMENT.test(toks[i]) || WRAPPER.test(baseCmd(toks[i])))) {
+      // Record `P=/some/path` so a later `"$P/file"` resolves (cp-ojk2). Both an
+      // inline prefix (`LC_ALL=C grep …`) and a standalone `P=x; grep …` segment
+      // land here, which is the shape that was blocking real work.
+      const eq = ASSIGNMENT.test(toks[i]) ? toks[i].indexOf('=') : -1;
+      if (eq > 0) {
+        const value = expandVars(toks[i].slice(eq + 1), vars);
+        if (value !== null) vars[toks[i].slice(0, eq)] = value;
+      }
+      i++;
+    }
     const cmdName = i < toks.length ? baseCmd(toks[i]) : '';
     if (CD.test(cmdName)) {
       // cd's own options are -L/-P/-e/-@; a BARE `-` is not one of them, it is
@@ -331,7 +331,7 @@ function searchPathArgs(cmd, cwd) {
       // knowable from one command, so the cwd is left exactly as it was.
       if (target === undefined) effCwd = os.homedir();
       else if (target !== '-') {
-        const expanded = expandVars(target);
+        const expanded = expandVars(target, vars);
         if (expanded !== null) {
           try { effCwd = path.resolve(effCwd, expanded); } catch { /* keep the old cwd */ }
         }
@@ -346,10 +346,20 @@ function searchPathArgs(cmd, cwd) {
     const isGrep = GREP_FAMILY.test(cmdName);
     i++;
     let patternTaken = !isGrep; // `find` takes paths first; grep takes a pattern first
+    // cp-ojk2: `--` ends option parsing. Without it, `grep -roh -- "--no-[a-z-]*" DIR`
+    // read the PATTERN as a flag (it starts with a dash), so DIR fell into the
+    // pattern slot, no path was seen, and rule (c) blocked a search of DIR. This
+    // is the documented way to grep for a pattern that begins with a dash, so the
+    // guard was punishing correct usage.
+    let endOfOptions = false;
+    // A path argument that exists but cannot be resolved (an unset variable).
+    // Distinct from "no path argument", which is what rule (c) judges.
+    let sawUnknownPath = false;
     const found = [];
     for (; i < toks.length; i++) {
       const t = toks[i];
-      if (t.startsWith('-')) {
+      if (!endOfOptions && t === '--') { endOfOptions = true; continue; }
+      if (!endOfOptions && t.startsWith('-')) {
         // An -e/-f style flag supplies the pattern, so the first bare token after
         // it is a path, not the pattern.
         if (/^(-e|--regexp|-f|--file)$/.test(t)) patternTaken = true;
@@ -363,15 +373,25 @@ function searchPathArgs(cmd, cwd) {
         continue;
       }
       if (!patternTaken) { patternTaken = true; continue; } // this token is the pattern
-      if (isPathLike(t, effCwd)) found.push(t);
+      const kind = classifyPath(t, effCwd, vars);
+      if (kind === 'path') found.push(t);
+      else if (kind === 'unknown') sawUnknownPath = true;
     }
-    if (found.length) paths.push(...found.map((raw) => ({ raw, cwd: effCwd })));
+    if (found.length) {
+      paths.push(...found.map((raw) => ({ raw, cwd: effCwd, resolved: resolveArg(effCwd, raw, vars) })));
+    }
     // A stdin-fed grep with no path reads the pipe, not the cwd — never a vault
     // search, so it must not trip the cwd rule. cp-0oqe: `git -C <vault> log
     // --diff-filter=D --name-only | grep x` was blocked despite being the one way
     // to answer "what did this deleted note contain" — QMD indexes the working
     // tree only, so it structurally cannot. Blocking it left no compliant path.
-    else if (!piped) noPathCwds.push(effCwd);
+    // cp-ojk2: an unresolvable path argument still reaches rule (c) — a variable
+    // this hook cannot see may well be set in the shell that runs the command,
+    // and pointing it into the vault is exactly the bypass cp-mx34 closed. What
+    // changes is the REPORT: the old message said "no path argument was given",
+    // which is false when one was given and merely could not be resolved, and a
+    // wrong diagnosis sends the reader looking for the wrong mistake.
+    else if (!piped) noPathCwds.push({ cwd: effCwd, unresolved: sawUnknownPath });
   }
   return { paths, sawSearch, noPathCwds };
 }
@@ -394,8 +414,8 @@ function isKnownFile(p) {
 }
 
 // The path an argument actually points at, or null when that cannot be told.
-function resolveArg(base, raw) {
-  const expanded = expandVars(raw);
+function resolveArg(base, raw, vars) {
+  const expanded = expandVars(raw, vars);
   if (expanded === null) return null;   // unresolvable variable — (c) still guards a vault cwd
   try { return path.resolve(base, expanded); } catch { return null; }
 }
@@ -442,10 +462,10 @@ function blockReasonForBash(cmd, vaultRoot, cwd) {
   // a search through a form no resolver can follow — or it RESOLVES there.
   // Relative arguments resolve against the cwd of their own segment, so
   // `../../Obsidian Vault/...` from a code repo is caught and `./src` is not.
-  for (const { raw, cwd: base } of paths) {
-    // cp-mx34: expand before resolving. `paths` keeps the RAW token so the deny
-    // message quotes what was actually typed.
-    const resolved = resolveArg(base, raw);
+  for (const { raw, resolved } of paths) {
+    // cp-mx34: expanded before resolving, inside searchPathArgs where the
+    // command's own variable assignments are known. `paths` keeps the RAW token
+    // so the deny message quotes what was actually typed.
     const namesVault = text(raw).includes(text(vaultRoot));
     const inside = resolved !== null && isInsideVault(resolved, vaultRoot);
     if (!namesVault && !inside) continue;
@@ -458,24 +478,38 @@ function blockReasonForBash(cmd, vaultRoot, cwd) {
 
   // (c) No path argument at all → the search follows the cwd. Block only when
   // that cwd is the vault; a code-repo cwd is left alone.
-  for (const base of noPathCwds) {
+  for (const { cwd: base, unresolved } of noPathCwds) {
     if (isInsideVault(base, vaultRoot)) {
-      return { what: 'a grep/find with no path argument while the working directory is inside the vault', certain: false };
+      return {
+        what: unresolved
+          ? 'a grep/find whose path argument could not be resolved (an unset variable) while the working directory is inside the vault'
+          : 'a grep/find with no path argument while the working directory is inside the vault',
+        certain: false,
+        unresolved: !!unresolved,
+      };
     }
   }
   return null;
 }
 
-function denyMessage(what, terms, certain) {
+function denyMessage(what, terms, certain, unresolved) {
   const t = terms ? terms.slice(0, 60) : 'your terms';
   // The old text asserted "Code-repo searches are unaffected", which was false
   // for exactly the cases that tripped this guard. Say what was actually
   // detected, and separate "this targets the vault" from "I cannot tell what
   // this targets, and the cwd is the vault" (cp-ccsh.8).
+  // cp-ojk2: three cases, three tails. Telling "I cannot resolve your variable"
+  // apart from "you passed no path" is the difference between a fix the reader
+  // can make in one edit and a hunt for a mistake they did not make.
   const tail = certain
     ? 'A search whose path resolves outside the vault is not blocked.'
-    : 'No path argument was given, so this cannot be told apart from a vault-wide ' +
-      'search. Pass an explicit path outside the vault to run it, or use QMD.';
+    : unresolved
+      ? 'A path argument was given but could not be resolved here — this hook runs as a ' +
+        'child of Claude Code, not of your shell, so a variable your shell sets is invisible ' +
+        'to it. Assign it in the SAME command (`P=/some/dir; grep -rn x "$P/f"`) and it ' +
+        'resolves, or pass the path literally.'
+      : 'No path argument was given, so this cannot be told apart from a vault-wide ' +
+        'search. Pass an explicit path outside the vault to run it, or use QMD.';
   return (
     `BLOCKED: ${what}. Vault content must be searched with QMD, not filesystem search ` +
     `(a no-path Glob/Grep follows the shell cwd and can silently search the wrong tree). Use:\n` +
@@ -531,7 +565,7 @@ process.stdin.on('end', () => {
       const reason = blockReasonForBash(ti.command, vaultRoot, cwd);
       if (reason) {
         log.warn(HOOK, `blocked ${tool} search of vault: ${ti.command.slice(0, 80)}`);
-        process.stderr.write(denyMessage(reason.what, null, reason.certain));
+        process.stderr.write(denyMessage(reason.what, null, reason.certain, reason.unresolved));
         process.exit(2);
       }
       process.exit(0);
