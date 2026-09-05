@@ -218,11 +218,17 @@ def claude_md(name: str, company: str, projects: list[dict],
         ## Search (Mandatory — never use grep or find in vault)
 
         ```bash
-        qmd search "exact terms"        # BM25 keyword search
-        qmd vsearch "conceptual query"  # semantic search
-        qmd query "deep research"       # CPU-intensive deep research
+        qmd search "exact terms"        # BM25: titles, symbols, rare phrases (AND-based)
+        qmd query $'intent: what to find, and what to avoid\\nlex: exact terms\\nvec: the idea in source wording\\nhyde: the answer you expect'
+        qmd vsearch "conceptual query"  # vector similarity
+        qmd get "#docid"                # read a hit; slice with "#docid:from:count"
         obsidian search:context query="term" format=json
         ```
+
+        Write the `query` fields yourself — you know the goal and the vocabulary,
+        the expansion model does not. Hits are leads, not answers: retrieve with
+        `qmd get "#docid"` (or `multi-get "#a,#b"`) before stating a fact, decision
+        or quote from the vault.
 
         Note: `qmd` command is added to PATH automatically when the braynee plugin is enabled.
 
