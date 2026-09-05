@@ -44,6 +44,36 @@ const STAMP_FILE = path.join(controlDir(), '.braynee-qmd-embed.stamp');
 const BODY_SYNC_STAMP = path.join(controlDir(), '.braynee-beads-body-sync.stamp');
 const BODY_SYNC_INTERVAL_MS = 30 * 60 * 1000; // 30 min
 
+// Ceiling for the synchronous keyword update on the Stop path. It was 30s,
+// against a run measured at 18s on a 10.6k-document index — 1.6x headroom on a
+// number that only grows, and `qmd update` re-walks EVERY collection (it takes
+// no -c), so the margin shrinks with any collection the user adds. Past the
+// ceiling execSync SIGTERMs it every Stop and the index silently stops updating.
+// Three minutes is still bounded but no longer a near-miss.
+const UPDATE_TIMEOUT_MS = 3 * 60 * 1000;
+
+// `qmd embed` leaves orphaned vector chunks behind as documents change, and
+// nothing in braynee ever reclaimed them: a real index reached 26k orphans —
+// 50% of its vector rows and ~35 MB — before anyone ran `qmd cleanup` by hand.
+// It is cheap and safe (it also drops inactive document records and vacuums),
+// so it rides along with the detached embed on a weekly stamp.
+const CLEANUP_STAMP = path.join(controlDir(), '.braynee-qmd-cleanup.stamp');
+const CLEANUP_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
+
+function cleanupDue() {
+  try {
+    const last = Number(fs.readFileSync(CLEANUP_STAMP, 'utf8').trim()) || 0;
+    return Date.now() - last >= CLEANUP_INTERVAL_MS;
+  } catch {
+    return true;   // never run here
+  }
+}
+
+function markCleanupRun() {
+  try { fs.writeFileSync(CLEANUP_STAMP, String(Date.now()), 'utf8'); }
+  catch (e) { log.debug(LOG_NAME, `could not write cleanup stamp: ${e && e.message}`); }
+}
+
 // A lock older than this is presumed dead (process crashed mid-embed). A
 // large embed backlog can legitimately run for several minutes, so keep
 // this generous to avoid stealing a lock from a live embed.
@@ -179,18 +209,29 @@ function runKeywordUpdate(qmdWrapper) {
     // Freshen beads-derived TaskNote bodies before indexing so the vault
     // picks up issue reasoning that QMD can't read from hidden .beads/ dirs.
     syncBeadsBodies();
-    execSync(`"${process.execPath}" "${qmdWrapper}" update -c vault`, {
+    // `qmd update` takes no arguments — `case "update": await updateCollections()`
+    // — so the `-c vault` this used to pass was silently ignored and every
+    // collection was re-walked anyway. Passing a flag the CLI drops is worse
+    // than passing none: it reads like the work is scoped when it is not.
+    execSync(`"${process.execPath}" "${qmdWrapper}" update`, {
       encoding: 'utf8',
       stdio: ['pipe', 'pipe', 'ignore'],
-      timeout: 30000,
+      timeout: UPDATE_TIMEOUT_MS,
       windowsHide: true,
     });
     return { ran: true };
   } catch (e) {
     // A permanently failing keyword update means vault search goes quietly stale
-    // — the caller only ever saw reason:'error' (cp-ccsh.11).
-    log.debug(LOG_NAME, `keyword reindex failed: ${e && e.message}`);
-    return { ran: false, reason: 'error' }; // index catches up next run
+    // — the caller only ever saw reason:'error' (cp-ccsh.11). A TIMEOUT is the
+    // likely shape as an index grows, and it is indistinguishable from a crash
+    // at debug level, so it is called out by name and logged loud enough to
+    // find: an index that stopped updating weeks ago is the failure this
+    // codebase has already been bitten by once (see qmd-embed-runner).
+    const timedOut = e && (e.killed || e.signal === 'SIGTERM');
+    log.warn(LOG_NAME, timedOut
+      ? `keyword reindex TIMED OUT after ${UPDATE_TIMEOUT_MS}ms — the vault index is not being updated`
+      : `keyword reindex failed: ${e && e.message}`);
+    return { ran: false, reason: timedOut ? 'timeout' : 'error' }; // index catches up next run
   } finally {
     releaseLock();
   }
@@ -249,6 +290,9 @@ module.exports = {
   releaseLock,
   pendingEmbedCount,
   embedPendingThreshold,
+  cleanupDue,
+  markCleanupRun,
   LOCK_FILE,
   STAMP_FILE,
+  CLEANUP_STAMP,
 };
