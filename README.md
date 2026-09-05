@@ -152,9 +152,10 @@ If you already have an Obsidian vault, `/setup` detects it and runs a non-destru
 Braynee installs QMD (a local BM25 + semantic search engine) and keeps its index fresh via the `session-export-qmd.js` Stop hook. All braynee skills use QMD for vault search — never grep or filesystem scanning.
 
 ```bash
-node ${CLAUDE_PLUGIN_ROOT}/scripts/qmd-wrapper.mjs search "query"    # exact terms
-node ${CLAUDE_PLUGIN_ROOT}/scripts/qmd-wrapper.mjs vsearch "query"   # semantic
-node ${CLAUDE_PLUGIN_ROOT}/scripts/qmd-wrapper.mjs query "query"     # deep research
+node ${CLAUDE_PLUGIN_ROOT}/scripts/qmd-wrapper.mjs search "query"    # BM25, exact terms
+node ${CLAUDE_PLUGIN_ROOT}/scripts/qmd-wrapper.mjs vsearch "query"   # vector similarity
+node ${CLAUDE_PLUGIN_ROOT}/scripts/qmd-wrapper.mjs query $'intent: what to find, and what to avoid\nlex: exact terms and aliases\nvec: the idea in the source own wording\nhyde: the answer you expect to find'   # hybrid, fields written by the agent
+node ${CLAUDE_PLUGIN_ROOT}/scripts/qmd-wrapper.mjs get "#docid"      # read the source before citing it
 ```
 
 ---

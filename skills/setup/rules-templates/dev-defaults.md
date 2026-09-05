@@ -9,7 +9,7 @@ Sensible defaults for development work. Deviate only with a concrete reason — 
 
 ## Vault-first — check it before deciding, asking, or guessing
 The vault is the source of truth for the stack, conventions, and tool docs below. Before asking a stack/architecture/convention question or assuming an answer, **search the vault** — the answer is almost always already there.
-- Search with QMD (the only search tool — never grep/find/Glob the vault): `node ${CLAUDE_PLUGIN_ROOT}/scripts/qmd-wrapper.mjs search "terms"` (BM25) or `node ${CLAUDE_PLUGIN_ROOT}/scripts/qmd-wrapper.mjs vsearch "concept"` (semantic). Braynee's per-prompt hook injects this same command with the path already resolved — if you see it in context, use that copy verbatim.
+- Search with QMD (the only search tool — never grep/find/Glob the vault): `node ${CLAUDE_PLUGIN_ROOT}/scripts/qmd-wrapper.mjs <cmd>` — `search "terms"` (BM25, exact), structured `query $'intent: …\nlex: …\nvec: …\nhyde: …'` (hybrid, you write the fields), `vsearch "concept"` (vectors), then `get "#docid"` / `multi-get "#a,#b"` to read the source you cite. Hits are leads, not answers. Braynee's per-prompt hook injects these commands with the path already resolved — if you see them in context, use that copy verbatim.
 - The `→ Vault:` paths below are canonical reference docs — read them on demand before deciding.
 
 General: run a tool's `--help` before writing code against it; prefer the CLI over MCP when both exist; reach for a CLI before a web dashboard.

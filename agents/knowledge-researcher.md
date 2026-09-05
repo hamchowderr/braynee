@@ -27,8 +27,8 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/qmd-wrapper.mjs" search "term1 term2"
 # 2. Semantic search (meaning-based — use concepts, not just keywords)
 node "${CLAUDE_PLUGIN_ROOT}/scripts/qmd-wrapper.mjs" vsearch "conceptual query"
 
-# 3. Deep research (CPU-bound, comprehensive)
-node "${CLAUDE_PLUGIN_ROOT}/scripts/qmd-wrapper.mjs" query "research question"
+# 3. Structured hybrid retrieval — write the fields yourself, do not paste the question
+node "${CLAUDE_PLUGIN_ROOT}/scripts/qmd-wrapper.mjs" query $'intent: what to find, and what to avoid\nlex: exact terms and aliases\nvec: the idea in the source own wording\nhyde: the answer you expect to find'
 ```
 
 Run all 3 in sequence. For compound topics, run each sub-topic separately. Minimum 3 searches, maximum 6 before synthesizing.

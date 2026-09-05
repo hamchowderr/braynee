@@ -29,21 +29,43 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/qmd-wrapper.mjs query "QUERY"
 obsidian search:context query="TERM" format=json
 ```
 
+## Write the query fields yourself
+
+`query` takes a structured document. Author each field — you know the goal, the
+domain vocabulary, and the nearby-but-wrong concepts; the built-in expander does not.
+
+```bash
+node ${CLAUDE_PLUGIN_ROOT}/scripts/qmd-wrapper.mjs query $'intent: what to find, and what to avoid\nlex: exact terms and aliases\nvec: the idea in the source own wording\nhyde: the answer you expect to find'
+```
+
 ## Search Strategy
 
-For best results, run 2-3 different searches on the same topic:
-1. `search` with core keywords (split hyphenated terms — BM25 is literal)
-2. `vsearch` with the concept in plain English
-3. `search` with related terms or synonyms
+Run 2-3 angles on the same topic, mixing modes:
+1. `search` with core keywords (split hyphenated terms — BM25 is literal and AND-based)
+2. structured `query` with `intent:` plus `lex:`/`vec:`
+3. `vsearch` with the concept in plain English
 
 ## When to Use Each Mode
 
 | Mode | Use for |
 |------|---------|
-| `search` | Finding notes by title, exact terms, IDs |
-| `vsearch` | "What do I know about X?" type questions |
-| `query` | Deep research across the vault, needs time |
+| `query` (structured) | The default. Conceptual recall, indirect wording, anything you can state an intent for |
+| `search` | Titles, exact terms, code symbols, IDs, rare phrases |
+| `vsearch` | A quick semantic pass with no lexical anchor |
 | `search:context` | Finding where a specific phrase appears |
+
+## Hits are leads, not answers
+
+A result is a snippet. Before reporting a fact, decision, quote or number, retrieve
+the source:
+
+```bash
+node ${CLAUDE_PLUGIN_ROOT}/scripts/qmd-wrapper.mjs get "#docid"          # whole note, line-numbered
+node ${CLAUDE_PLUGIN_ROOT}/scripts/qmd-wrapper.mjs get "#docid:40:20"    # 20 lines from line 40
+node ${CLAUDE_PLUGIN_ROOT}/scripts/qmd-wrapper.mjs multi-get "#a,#b"     # several at once
+```
+
+Cite the docid. Add `-c vault` to scope a search, `-n <k>` for more hits.
 
 ## What Gets Indexed
 
