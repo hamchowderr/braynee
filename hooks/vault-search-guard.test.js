@@ -579,6 +579,55 @@ try {
        prod(bash(`echo hi\ngrep -rn "x" "${V}"`, REPO)) === 0);
   }
 
+  // ── cp-ojk2: command shapes that DO carry a path were read as carrying none ─
+  //
+  // Three parser gaps, each of which blocked an ordinary command from a vault
+  // cwd and pushed the author toward writing it a clumsier way. The bypass twin
+  // of each is asserted next to it: a fix that stops seeing paths would pass the
+  // first half of every pair and fail the second.
+  {
+    const R = REPO.split(path.sep).join('/');
+    const V = VAULT.split(path.sep).join('/');
+    const code = (cmd, cwd) => run(bash(cmd, cwd), REPO).code;
+
+    // 1. A variable ASSIGNED in the same command is knowable without running it.
+    ok('allowed: variable assigned in the same command, pointing at a repo file',
+       code(`P="${R}"; grep -rn "x" "$P/notes.md"`, VAULT) === 0);
+    ok('allowed: same, a directory under the repo',
+       code(`P="${R}"; grep -rn "x" "$P/src"`, VAULT) === 0);
+    ok('allowed: inline NAME=VALUE prefix form',
+       code(`P="${R}" grep -rn "x" "$P/src"`, VAULT) === 0);
+    ok('blocked: a command-local variable pointed INTO the vault is still caught',
+       code(`P="${V}"; grep -rn "x" "$P/2. Areas"`, REPO) === 2);
+
+    // 2. `--` ends option parsing, which is the documented way to grep for a
+    //    pattern that starts with a dash.
+    ok('allowed: -- separator, dash-leading pattern, repo path',
+       code(`grep -roh -- "--no-[a-z-]*" "${R}"`, VAULT) === 0);
+    ok('blocked: -- separator does not launder a vault path',
+       code(`grep -roh -- "--no-[a-z-]*" "${V}/2. Areas"`, REPO) === 2);
+
+    // 3. A `|` inside a quoted pattern is not a pipeline separator.
+    ok('allowed: escaped alternation in the pattern, repo file after it',
+       code(`grep -n -B3 -A3 "timeout\\|--timeout" "${R}/notes.md"`, VAULT) === 0);
+    ok('allowed: attached-value context flags do not eat the path',
+       code(`grep -n -B3 -A3 "pat" "${R}/notes.md"`, VAULT) === 0);
+    ok('blocked: quoted alternation with a vault path still blocks',
+       code(`grep -n "a\\|b" "${V}/2. Areas"`, REPO) === 2);
+    ok('allowed: a real pipe is still a pipe — stdout filter from a vault cwd',
+       code('echo hi | grep -v x', VAULT) === 0);
+    ok('blocked: a real pipe does not launder a vault search after it',
+       code(`echo hi | grep -rn "x" "${V}/2. Areas"`, REPO) === 2);
+
+    // 4. An unresolvable variable still blocks from a vault cwd (cp-mx34 keeps
+    //    that), but the message must say WHY rather than claiming no path was
+    //    given — the wrong diagnosis sends the reader after the wrong mistake.
+    const unresolved = run(bash('grep -rn "x" "$VSG_NEVER_SET/foo"', VAULT), REPO);
+    ok('blocked: unresolvable variable from a vault cwd', unresolved.code === 2);
+    ok('the deny message names the unresolved variable, not a missing path',
+       /could not be resolved/.test(unresolved.err) && !/No path argument was given/.test(unresolved.err));
+  }
+
   // ── never throws: malformed input fails open ───────────────────────────────
   {
     const r = spawnSync(process.execPath, [HOOK], {
