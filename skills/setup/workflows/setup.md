@@ -427,7 +427,7 @@ cd "{vault_path}" && bd init --shared-server --external --skip-agents --skip-hoo
 python3 ${CLAUDE_PLUGIN_ROOT}/skills/setup/scripts/provision-formulas.py
 
 # QMD (search index — rebuild after scaffold)
-node ${CLAUDE_PLUGIN_ROOT}/scripts/qmd-wrapper.mjs index
+node ${CLAUDE_PLUGIN_ROOT}/scripts/qmd-wrapper.mjs update
 ```
 
 ---
