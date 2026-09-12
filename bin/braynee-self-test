@@ -1637,6 +1637,174 @@ results.mainguard = { ok: 0, fail: 0, errors: [] };
 }
 log(`  ${results.mainguard.ok} passed | ${results.mainguard.fail} failed`);
 
+// ── 19b. git guards judge the repo git RUNS in, not the session cwd (cp-2jlh) ─
+// The guards read HEAD and the per-repo opt-outs from the hook payload's cwd —
+// the SESSION's directory. One command reaches other repos all the time, so that
+// failed in both directions: a commit in a feature-branch worktree reached by
+// `cd` was blocked because the session sat on main, and from a feature-branch
+// session `cd <repo-on-main> && git commit` (or `git -C <repo-on-main> commit`)
+// went straight through.
+//
+// Real repos, a real worktree, the real hooks over stdin — and each form is
+// asserted in both directions, because an allow-only suite passes just as well
+// with the guard deleted.
+log('\n=== 19b. git guards judge the repo git runs in (cp-2jlh) ===');
+results.gitdir = { ok: 0, fail: 0, errors: [] };
+{
+  const assertD = (label, cond, detail) => {
+    if (cond) { results.gitdir.ok++; log(`  OK: ${label}`); }
+    else {
+      results.gitdir.fail++;
+      results.gitdir.errors.push({ test: label, detail });
+      log(`  FAIL: ${label}${detail ? ` — ${detail}` : ''}`);
+    }
+  };
+
+  const mainHook = path.join(PLUGIN_ROOT, 'hooks', 'check-no-main-push.js');
+  const nameHook = path.join(PLUGIN_ROOT, 'hooks', 'branch-name-check.js');
+  const fmtHook = path.join(PLUGIN_ROOT, 'hooks', 'commit-format-check.js');
+  const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), '2jlh-'));
+  try {
+    const gitIn = (dir) => (...args) =>
+      spawnSync('git', args, { cwd: dir, encoding: 'utf8', windowsHide: true, timeout: 15000 });
+    // On main, with a real commit: an empty repo has no HEAD, which the guard
+    // treats as "not a repo" and allows — a pass for the wrong reason.
+    const mkRepo = (dir) => {
+      fs.mkdirSync(dir, { recursive: true });
+      const g = gitIn(dir);
+      g('init', '-q', '.');
+      g('config', 'user.email', 'selftest@example.invalid');
+      g('config', 'user.name', 'selftest');
+      g('commit', '-q', '--allow-empty', '-m', 'init');
+      g('checkout', '-q', '-B', 'main');
+      return g;
+    };
+    const branchOf = (dir) => (gitIn(dir)('rev-parse', '--abbrev-ref', 'HEAD').stdout || '').trim();
+
+    const repo = path.join(sandbox, 'repo');
+    const gitRepo = mkRepo(repo);
+    const wt = path.join(repo, '.worktrees', 'gate');
+    gitRepo('worktree', 'add', '-q', '-b', 'feature/gate', wt);
+    const spacedWt = path.join(repo, '.worktrees', 'feature wt');
+    gitRepo('worktree', 'add', '-q', '-b', 'feature/spaced', spacedWt);
+    const spacedMain = path.join(sandbox, 'on main');
+    mkRepo(spacedMain);
+    const optin = path.join(sandbox, 'optin');
+    const gitOptin = mkRepo(optin);
+    gitOptin('config', '--local', 'braynee.allow-main-commits', 'true');
+    gitOptin('config', '--local', 'braynee.allow-main-push', 'true');
+    gitOptin('config', '--local', 'braynee.allow-freeform-commits', 'true');
+    const odd = path.join(sandbox, 'odd');
+    mkRepo(odd)('checkout', '-q', '-b', 'wip-no-prefix');
+
+    // Preconditions: with a wrong fixture every assertion below would pass or
+    // fail for a reason that has nothing to do with the guard.
+    const branches = [wt, spacedWt, repo, spacedMain].map(branchOf);
+    assertD('fixture: the worktrees are on feature branches, the repos on main',
+      branches.join(' ') === 'feature/gate feature/spaced main main', branches.join(' / '));
+
+    const fwd = (p) => p.replace(/\\/g, '/');
+    const fire = (hook, command, cwd, { tool = 'Bash', env = {} } = {}) => spawnSync(process.execPath, [hook], {
+      input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: tool, tool_input: { command }, cwd }),
+      encoding: 'utf8', timeout: 20000, windowsHide: true,
+      // Cleared explicitly: an exported opt-out would make every BLOCK pass vacuously.
+      env: {
+        ...process.env,
+        BRAYNEE_ALLOW_MAIN_COMMITS: '', BRAYNEE_ALLOW_MAIN_PUSH: '', BRAYNEE_ALLOW_FREEFORM_COMMITS: '',
+        ...env,
+      },
+    });
+    const guard = (command, cwd, opts) => fire(mainHook, command, cwd, opts).status;
+
+    // The reported case, and its mirror image — the bypass.
+    assertD('`cd <feature worktree> && git commit` from a session on main is allowed',
+      guard(`cd "${fwd(wt)}" && git commit -m x`, repo) === 0);
+    assertD('`git -C <feature worktree> commit` from a session on main is allowed',
+      guard(`git -C "${fwd(wt)}" commit -m x`, repo) === 0);
+    assertD('`cd <repo on main> && git commit` from a feature worktree is blocked',
+      guard(`cd "${fwd(repo)}" && git commit -m x`, wt) === 2);
+    assertD('`git -C <repo on main> commit` from a feature worktree is blocked (was never matched)',
+      guard(`git -C "${fwd(repo)}" commit -m x`, wt) === 2);
+    assertD('a plain `git commit` with the session on main is still blocked',
+      guard('git commit -m x', repo) === 2);
+    assertD('a plain `git commit` with the session in the feature worktree is allowed',
+      guard('git commit -m x', wt) === 0);
+
+    // Path spellings.
+    assertD('a double-quoted path with spaces into a feature worktree is allowed',
+      guard(`cd "${fwd(spacedWt)}" && git commit -m x`, repo) === 0);
+    assertD('a single-quoted path with spaces into a repo on main is blocked',
+      guard(`cd '${fwd(spacedMain)}' && git commit -m x`, wt) === 2);
+    assertD('a quoted native path (backslashes on Windows) resolves',
+      guard(`cd "${wt}" && git commit -m x`, repo) === 0);
+    const asHome = { env: { HOME: repo, USERPROFILE: repo } };
+    assertD('`cd ~/…` into a feature worktree is allowed',
+      guard('cd ~/.worktrees/gate && git commit -m x', repo, asHome) === 0);
+    assertD('`cd ~` into a repo on main is blocked',
+      guard('cd ~ && git commit -m x', wt, asHome) === 2);
+    if (process.platform === 'win32') {
+      const gitBash = (p) => fwd(p).replace(/^([A-Za-z]):/, (_, d) => `/${d.toLowerCase()}`);
+      assertD('a Git-Bash /c/… path into a feature worktree is allowed',
+        guard(`cd ${gitBash(wt)} && git commit -m x`, repo) === 0);
+      assertD('a Git-Bash /c/… path into a repo on main is blocked',
+        guard(`git -C ${gitBash(repo)} commit -m x`, wt) === 2);
+    } else {
+      log('  SKIP: Git-Bash /c/… paths (Windows only)');
+    }
+    assertD('PowerShell: `cd <native path>; git commit` into a feature worktree is allowed',
+      guard(`cd ${wt}; git commit -m x`, repo, { tool: 'PowerShell' }) === 0);
+
+    // Push variants.
+    assertD('`cd <feature worktree> && git push` from a session on main is allowed',
+      guard(`cd "${fwd(wt)}" && git push`, repo) === 0);
+    assertD('`cd <repo on main> && git push` from a feature worktree is blocked',
+      guard(`cd "${fwd(repo)}" && git push`, wt) === 2);
+    assertD('`git -C <repo on main> push origin` from a feature worktree is blocked',
+      guard(`git -C "${fwd(repo)}" push origin`, wt) === 2);
+    assertD('`git -C <feature worktree> push origin feature/gate` is allowed',
+      guard(`git -C "${fwd(wt)}" push origin feature/gate`, repo) === 0);
+    assertD('an explicit push to main is blocked from inside a feature worktree too',
+      guard(`cd "${fwd(wt)}" && git push origin main`, repo) === 2);
+
+    // Opt-outs belong to the repo the command acts on (the cp-m6g6 case), and an
+    // opted-in SESSION must not lend its opt-out to another repo.
+    assertD('an opted-in repo reached by `cd` allows a commit on its main',
+      guard(`cd "${fwd(optin)}" && git commit -m x`, repo) === 0);
+    assertD('an opted-in repo reached by `cd` allows a push to its main',
+      guard(`cd "${fwd(optin)}" && git push origin main`, repo) === 0);
+    assertD('an opted-in session does not unlock a commit on another repo\'s main',
+      guard(`cd "${fwd(repo)}" && git commit -m x`, optin) === 2);
+    assertD('an opted-in session does not unlock a push to another repo\'s main',
+      guard(`git -C "${fwd(repo)}" push origin main`, optin) === 2);
+
+    // Only a directory change the shell really makes may move the judgement.
+    assertD('a `cd` inside a subshell does not leak: `(cd <wt>) && git commit` on main is blocked',
+      guard(`(cd "${fwd(wt)}") && git commit -m x`, repo) === 2);
+    assertD('a piped `cd` does not persist: `cd <wt> | cat; git commit` on main is blocked',
+      guard(`cd "${fwd(wt)}" | cat; git commit -m x`, repo) === 2);
+    assertD('`pushd <wt> && popd && git commit` on main is blocked',
+      guard(`pushd "${fwd(wt)}" && popd && git commit -m x`, repo) === 2);
+    assertD('an unresolvable directory is judged at the session cwd (blocked on main)',
+      guard('cd "$SOMEWHERE" && git commit -m x', repo) === 2);
+    assertD('every segment is judged: `git commit && git push origin feature/x` on main is blocked',
+      guard('git commit -m x && git push origin feature/x', repo) === 2);
+
+    // The sibling guards read the same directory.
+    const named = fire(nameHook, `cd "${fwd(odd)}" && git push`, repo);
+    assertD('branch-name-check reports the branch of the repo being pushed',
+      named.status === 0 && /wip-no-prefix/.test(named.stdout || ''), (named.stdout || '').slice(0, 160));
+    assertD('commit-format-check honours the freeform opt-out of the repo reached by `cd`',
+      fire(fmtHook, `cd "${fwd(optin)}" && git commit -m "not conventional"`, repo).status === 0);
+    assertD('commit-format-check does not lend an opted-out session\'s waiver to another repo',
+      fire(fmtHook, `cd "${fwd(repo)}" && git commit -m "not conventional"`, optin).status === 2);
+  } catch (e) {
+    assertD('cp-2jlh sandbox ran', false, e && e.message);
+  } finally {
+    rmSandbox(sandbox);
+  }
+}
+log(`  ${results.gitdir.ok} passed | ${results.gitdir.fail} failed`);
+
 // ── 20. version-bump gate: warn mid-batch, fail on release (cp-0gs2) ─────────
 // The gate used to FAIL on any unreleased shipping change, which contradicted the
 // batched-release rule (commits accumulate; ONE release per batch). Main was red
