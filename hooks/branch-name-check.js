@@ -6,6 +6,7 @@
 const { execSync } = require('child_process');
 const path = require('path');
 const log = require(path.join(__dirname, 'lib', 'hook-logger.js'));
+const { resolveSegments, shellFor } = require(path.join(__dirname, 'lib', 'git-command.js'));
 
 const HOOK = 'branch-name-check';
 // `feat` is the conventional-commits type, so branches routinely use it as the
@@ -19,16 +20,20 @@ process.stdin.on('end', () => {
   try {
     const data = JSON.parse(input || '{}');
     const command = data.tool_input?.command || '';
-    if (!/^\s*git\s+push/i.test(command)) process.exit(0);
+    // cp-2jlh: find the push by segment and read the branch where it RUNS, so
+    // `cd <repo> && git push` names <repo>'s branch. Anchoring at the start of
+    // the whole command skipped that form, and the session cwd named the wrong one.
+    const push = resolveSegments(command, data.cwd || process.cwd(), { shell: shellFor(data.tool_name) })
+      .find((s) => /^git\s+push/i.test(s.match));
+    if (!push) process.exit(0);
 
-    const cwd = data.cwd || process.cwd();
     let branch = null;
     try {
       // cp-16u: ignore git's stderr so `fatal: not a git repository` (and any
       // other git diagnostic) never leaks to this hook's stderr in non-git
       // dirs. stdin=pipe, stdout=pipe, stderr=ignore.
       branch = execSync('git rev-parse --abbrev-ref HEAD', {
-        cwd,
+        cwd: push.dir,
         encoding: 'utf8',
         stdio: ['pipe', 'pipe', 'ignore'],
         windowsHide: true,

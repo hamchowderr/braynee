@@ -42,7 +42,7 @@ const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const log = require(path.join(__dirname, 'lib', 'hook-logger.js'));
-const { commandSegments, repoAllows } = require(path.join(__dirname, 'lib', 'git-command.js'));
+const { resolveSegments, shellFor, repoAllows } = require(path.join(__dirname, 'lib', 'git-command.js'));
 const CF = require(path.join(__dirname, 'lib', 'commit-format.js'));
 const { readIssues } = require(path.join(__dirname, 'lib', 'read-issues-jsonl.js'));
 
@@ -160,24 +160,33 @@ process.stdin.on('end', () => {
     // SHELL SEGMENT in command position, so `cd repo && git commit -m x` is
     // still seen. Anchoring at the start of the whole command is the cp-fznk
     // hole that made the main-branch guard bypassable by a three-char prefix.
-    const segments = commandSegments(command);
-    const commitSeg = segments.find((s) => /^git\s+commit\b/i.test(s));
-    const prSeg = segments.find((s) => /^gh\s+pr\s+create\b/i.test(s));
-    if (!commitSeg && !prSeg) process.exit(0);
+    //
+    // cp-2jlh: and read every repo fact — the opt-outs, .beads, the PR's diff —
+    // from the directory each segment RUNS in (seg.dir), not the session's cwd:
+    // `cd <other-repo> && git commit` is about <other-repo>.
+    const segments = resolveSegments(command, cwd, { shell: shellFor(data.tool_name) });
+    const commit = segments.find((s) => /^git\s+commit\b/i.test(s.match));
+    const pr = segments.find((s) => /^gh\s+pr\s+create\b/i.test(s.match));
+    if (!commit && !pr) process.exit(0);
 
-    if (ENV_ALLOW || repoAllows(cwd, 'allow-freeform-commits')) process.exit(0);
+    if (ENV_ALLOW) process.exit(0);
+    const judged = (seg) => (seg && !repoAllows(seg.dir, 'allow-freeform-commits') ? seg : null);
+    const commitSeg = judged(commit);
+    const prSeg = judged(pr);
+    if (!commitSeg && !prSeg) process.exit(0);
 
     const warnings = [];
 
     // ── git commit ────────────────────────────────────────────────────────────
     if (commitSeg) {
       // A message that lives in a file, another commit, or the editor is not on
-      // this command line. Judging it would mean guessing.
-      if (!CF.messageIsElsewhere(commitSeg)) {
+      // this command line. Judging it would mean guessing. Read from .match: a
+      // global `git -C <dir>` would otherwise pass for `commit -C <commit>`.
+      if (!CF.messageIsElsewhere(commitSeg.match)) {
         // Segment-scoped by default, raw only when a heredoc was torn apart by
         // the split — see commitMessageFor(); both naive choices misjudge a
-        // valid commit.
-        const message = CF.commitMessageFor(command, commitSeg);
+        // valid commit. .text, because it must be a verbatim slice of the command.
+        const message = CF.commitMessageFor(command, commitSeg.text);
         if (message) {
           const subject = message.split(/\r?\n/)[0];
           const { errors, warnings: subWarn } = CF.checkSubject(subject, { label: 'Commit subject' });
@@ -197,10 +206,10 @@ process.stdin.on('end', () => {
 
           warnings.push(...subWarn);
 
-          const beads = usesBeads(cwd) ? beadsState(cwd) : null;
+          const beads = usesBeads(commitSeg.dir) ? beadsState(commitSeg.dir) : null;
           if (beads && !isTraceable(message, beads.all)) {
             // cp-lj73.4: block ONLY when there is demonstrably an id to cite.
-            const claimed = repoAllows(cwd, 'allow-untracked-commits') ? [] : beads.claimed;
+            const claimed = repoAllows(commitSeg.dir, 'allow-untracked-commits') ? [] : beads.claimed;
             if (claimed.length) {
               log.warn(HOOK, `blocked untraceable commit; ${claimed.length} issue(s) claimed`);
               process.stderr.write(
@@ -225,7 +234,7 @@ process.stdin.on('end', () => {
 
     // ── gh pr create ──────────────────────────────────────────────────────────
     if (prSeg) {
-      const title = CF.flagValue(prSeg, ['--title', '-t']);
+      const title = CF.flagValue(prSeg.text, ['--title', '-t']);
       // No --title means `--fill` (title from the commits, already checked
       // above) or the interactive prompt. Neither is judgeable here.
       if (title) {
@@ -245,16 +254,16 @@ process.stdin.on('end', () => {
 
       // A --body given as a heredoc is torn apart by the split exactly like a
       // commit message, so the same selector recovers it.
-      const body = CF.flagValue(prSeg, ['--body', '-b']) || CF.commitMessageFor(command, prSeg) || '';
-      const hasBodyFile = /(?:^|\s)(?:--body-file|-F)(?:[=\s])/.test(prSeg);
-      if (usesBeads(cwd) && !hasBodyFile && !CF.findIssueRefs(body).length) {
+      const body = CF.flagValue(prSeg.text, ['--body', '-b']) || CF.commitMessageFor(command, prSeg.text) || '';
+      const hasBodyFile = /(?:^|\s)(?:--body-file|-F)(?:[=\s])/.test(prSeg.text);
+      if (usesBeads(prSeg.dir) && !hasBodyFile && !CF.findIssueRefs(body).length) {
         warnings.push(
           'The PR body references no beads issue, so the shipped change cannot be traced ' +
           'back to the tracked work.'
         );
       }
 
-      const loc = prDiffSize(cwd, CF.flagValue(prSeg, ['--base', '-B']));
+      const loc = prDiffSize(prSeg.dir, CF.flagValue(prSeg.text, ['--base', '-B']));
       if (loc !== null && loc > PR_LOC_WARN) {
         warnings.push(
           `This branch changes ~${loc} lines against its base; the rule's reviewable ceiling ` +

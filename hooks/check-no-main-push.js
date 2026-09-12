@@ -24,7 +24,9 @@ const payload = require(path.join(__dirname, 'lib', 'hook-payload.js'));
 // commit/PR format guard needed exactly the same two behaviors. Shared rather
 // than copied: a copy lets one guard silently regress while the other stays
 // correct. The rationale for each lives with the code there.
-const { commandSegments, repoAllows } = require(path.join(__dirname, 'lib', 'git-command.js'));
+// cp-2jlh: resolveSegments() is commandSegments() plus the directory each
+// segment runs in, which is what every check below reads.
+const { resolveSegments, shellFor, repoAllows } = require(path.join(__dirname, 'lib', 'git-command.js'));
 
 const HOOK = 'check-no-main-push';
 
@@ -43,96 +45,106 @@ process.stdin.on('end', () => {
     // `execute_command` on Mastra Code, but the payload reads the same (cp-3o3g.3).
     const p = payload.parse(input);
     const command = p.toolInput.command || '';
-    const cwd = p.cwd;
 
-    // Resolved per invocation, not at module load: the opt-out is per-repo and
-    // `cwd` is only known once the payload is parsed.
-    const ALLOW_MAIN = ENV_ALLOW_MAIN || repoAllows(cwd, 'allow-main-commits');
-    const ALLOW_MAIN_PUSH = ENV_ALLOW_MAIN_PUSH || repoAllows(cwd, 'allow-main-push');
+    // cp-2jlh: p.cwd is the SESSION's directory — only where the command starts.
+    // `cd <repo> && git commit` and `git -C <repo> commit` act on <repo>. Judging
+    // p.cwd blocked commits in a feature-branch worktree whenever the session sat
+    // on main, and let `cd <repo-on-main> && git commit` through from a session
+    // on a feature branch. Every check reads seg.dir instead.
+    const segments = resolveSegments(command, p.cwd, { shell: shellFor(p.hostTool) });
 
-    // cp-fznk: each guard now inspects the matching SEGMENT, not the raw string.
-    const segments = commandSegments(command);
-    const pushSeg = segments.find((s) => /^git\s+push/i.test(s));
-    const orphanSeg = segments.find((s) => /^git\s+(checkout|switch)\b/i.test(s) && /--orphan\b/.test(s));
-    const commitSeg = segments.find((s) => /^git\s+commit\b/i.test(s));
+    // Opt-outs are per-repo, so they are read from the repo each segment acts on,
+    // and only for a segment that needs one (they used to cost two git spawns on
+    // every Bash call).
+    const allowMain = (dir) => ENV_ALLOW_MAIN || repoAllows(dir, 'allow-main-commits');
+    const allowMainPush = (dir) => ENV_ALLOW_MAIN_PUSH || repoAllows(dir, 'allow-main-push');
+    const branchIn = (dir) =>
+      execSync('git rev-parse --abbrev-ref HEAD', { cwd: dir, encoding: 'utf8', windowsHide: true }).trim();
 
-    // ---- 1. push to/from main/master ----
-    // Opt-out via env BRAYNEE_ALLOW_MAIN_PUSH=1 (for no-PR workflows where
-    // direct main pushes are the intended ship path after green local tests).
-    if (pushSeg) {
-      if (/git\s+push.*\b(main|master)\b/i.test(pushSeg)) {
-        if (ALLOW_MAIN_PUSH) process.exit(0);
-        log.warn(HOOK, `blocked explicit push to main/master`);
-        process.stderr.write('BLOCKED: Do not push directly to main/master. Create a feature branch and PR instead. Set BRAYNEE_ALLOW_MAIN_PUSH=1 if this repo intentionally uses a no-PR direct-to-main workflow.');
-        process.exit(2);
-      }
-      if (/git\s+push\s*$/.test(pushSeg) || /git\s+push\s+origin\s*$/.test(pushSeg)) {
-        try {
-          const branch = execSync('git rev-parse --abbrev-ref HEAD', { cwd, encoding: 'utf8', windowsHide: true }).trim();
-          if (branch === 'main' || branch === 'master') {
-            if (ALLOW_MAIN_PUSH) process.exit(0);
-            log.warn(HOOK, `blocked implicit push from ${branch}`);
-            process.stderr.write(`BLOCKED: Currently on '${branch}'. Create a feature branch and PR instead of pushing directly. Set BRAYNEE_ALLOW_MAIN_PUSH=1 if this repo intentionally uses a no-PR direct-to-main workflow.`);
-            process.exit(2);
+    // Every matching segment is judged, not just the first of each kind. Once
+    // segments can act on different repos, one allowed segment says nothing about
+    // the next — and first-match already let `git commit -m x && git push origin
+    // feature/x` on main exit through the push branch with the commit unchecked.
+    let beadsHint = false;
+    for (const seg of segments) {
+      const s = seg.match;
+
+      // ---- 1. push to/from main/master ----
+      // Opt-out via env BRAYNEE_ALLOW_MAIN_PUSH=1 (for no-PR workflows where
+      // direct main pushes are the intended ship path after green local tests).
+      if (/^git\s+push/i.test(s)) {
+        if (/git\s+push.*\b(main|master)\b/i.test(s)) {
+          if (allowMainPush(seg.dir)) continue;
+          log.warn(HOOK, `blocked explicit push to main/master`);
+          process.stderr.write('BLOCKED: Do not push directly to main/master. Create a feature branch and PR instead. Set BRAYNEE_ALLOW_MAIN_PUSH=1 if this repo intentionally uses a no-PR direct-to-main workflow.');
+          process.exit(2);
+        }
+        if (/git\s+push\s*$/.test(s) || /git\s+push\s+origin\s*$/.test(s)) {
+          try {
+            const branch = branchIn(seg.dir);
+            if ((branch === 'main' || branch === 'master') && !allowMainPush(seg.dir)) {
+              log.warn(HOOK, `blocked implicit push from ${branch}`);
+              process.stderr.write(`BLOCKED: Currently on '${branch}'. Create a feature branch and PR instead of pushing directly. Set BRAYNEE_ALLOW_MAIN_PUSH=1 if this repo intentionally uses a no-PR direct-to-main workflow.`);
+              process.exit(2);
+            }
+          } catch (e) {
+            // This is a SAFETY gate. If resolving the branch fails, a bare `git
+            // push` from main sails through unguarded and nothing reports why.
+            log.debug(HOOK, `could not resolve branch for implicit push: ${e && e.message}`);
           }
-        } catch (e) {
-          // This is a SAFETY gate. If resolving the branch fails, a bare `git
-          // push` from main sails through unguarded and nothing reports why.
-          log.debug(HOOK, `could not resolve branch for implicit push: ${e && e.message}`);
         }
+        try {
+          if (fs.existsSync(path.join(seg.dir, '.beads'))) beadsHint = true;
+        } catch { /* the beads preflight hint is advisory; never delay a push for it */ }
+        continue;
       }
-      try {
-        if (fs.existsSync(path.join(cwd, '.beads'))) {
-          // cp-psc/HD-4.3: PreToolUse exit-0 stdout is NOT added to context;
-          // use the documented additionalContext channel, factual phrasing.
-          // Passing the event keeps that envelope on Claude Code while emitting
-          // the flat shape Mastra Code reads (cp-3o3g.9).
-          payload.emitContext(
-            'This repo uses beads; running `bd preflight --check` before opening a PR catches stale or orphaned issues.',
-            'PreToolUse',
-          );
-        }
-      } catch { /* the beads preflight hint is advisory; never delay a push for it */ }
-      process.exit(0);
-    }
 
-    // ---- 3. git checkout/switch --orphan main|master ----
-    // Caught before the commit check because an orphan checkout is the act
-    // that puts you onto a fresh main/master with no branch protection.
-    if (orphanSeg) {
-      if (/--orphan\s+(['"]?)(main|master)\1(\s|$)/i.test(orphanSeg)) {
-        if (ALLOW_MAIN) process.exit(0);
-        log.warn(HOOK, `blocked orphan checkout onto main/master`);
-        process.stderr.write(
-          'BLOCKED: `--orphan main/master` starts a fresh history directly on a protected branch. ' +
-          'Use a feature branch (e.g. `git checkout --orphan feature/init`) and open a PR. ' +
-          'Set BRAYNEE_ALLOW_MAIN_COMMITS=1 only if this repo intentionally works on main.'
-        );
-        process.exit(2);
-      }
-      process.exit(0);
-    }
-
-    // ---- 2. git commit while HEAD is main/master ----
-    if (commitSeg) {
-      if (ALLOW_MAIN) process.exit(0);
-      try {
-        const branch = execSync('git rev-parse --abbrev-ref HEAD', { cwd, encoding: 'utf8', windowsHide: true }).trim();
-        if (branch === 'main' || branch === 'master') {
-          log.warn(HOOK, `blocked commit on ${branch}`);
+      // ---- 3. git checkout/switch --orphan main|master ----
+      // Caught before the commit check because an orphan checkout is the act
+      // that puts you onto a fresh main/master with no branch protection.
+      if (/^git\s+(checkout|switch)\b/i.test(s) && /--orphan\b/.test(s)) {
+        if (/--orphan\s+(['"]?)(main|master)\1(\s|$)/i.test(s) && !allowMain(seg.dir)) {
+          log.warn(HOOK, `blocked orphan checkout onto main/master`);
           process.stderr.write(
-            `BLOCKED: You are committing directly on '${branch}'. Create a feature branch first ` +
-            `(e.g. \`git checkout -b feature/<topic>\`) — the commit will then succeed. ` +
-            `Set BRAYNEE_ALLOW_MAIN_COMMITS=1 only if this repo intentionally works on main.`
+            'BLOCKED: `--orphan main/master` starts a fresh history directly on a protected branch. ' +
+            'Use a feature branch (e.g. `git checkout --orphan feature/init`) and open a PR. ' +
+            'Set BRAYNEE_ALLOW_MAIN_COMMITS=1 only if this repo intentionally works on main.'
           );
           process.exit(2);
         }
-      } catch {
-        // not a git repo / detached HEAD / git unavailable — don't get in the way
+        continue;
       }
-      process.exit(0);
+
+      // ---- 2. git commit while HEAD is main/master ----
+      if (/^git\s+commit\b/i.test(s)) {
+        if (allowMain(seg.dir)) continue;
+        try {
+          const branch = branchIn(seg.dir);
+          if (branch === 'main' || branch === 'master') {
+            log.warn(HOOK, `blocked commit on ${branch}`);
+            process.stderr.write(
+              `BLOCKED: You are committing directly on '${branch}'. Create a feature branch first ` +
+              `(e.g. \`git checkout -b feature/<topic>\`) — the commit will then succeed. ` +
+              `Set BRAYNEE_ALLOW_MAIN_COMMITS=1 only if this repo intentionally works on main.`
+            );
+            process.exit(2);
+          }
+        } catch {
+          // not a git repo / detached HEAD / git unavailable — don't get in the way
+        }
+      }
     }
 
+    if (beadsHint) {
+      // cp-psc/HD-4.3: PreToolUse exit-0 stdout is NOT added to context;
+      // use the documented additionalContext channel, factual phrasing.
+      // Passing the event keeps that envelope on Claude Code while emitting
+      // the flat shape Mastra Code reads (cp-3o3g.9).
+      payload.emitContext(
+        'This repo uses beads; running `bd preflight --check` before opening a PR catches stale or orphaned issues.',
+        'PreToolUse',
+      );
+    }
     process.exit(0);
   } catch (e) {
     log.error(HOOK, `crash: ${e.message}`);
