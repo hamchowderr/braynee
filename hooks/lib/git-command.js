@@ -8,7 +8,7 @@
 // stayed correct — which is exactly the drift self-test §16 already asserts
 // against for the vault-project lookup.
 
-const { execSync } = require('child_process');
+const { execSync, execFileSync } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -167,9 +167,11 @@ function repoAllows(cwd, key) {
 //
 // FAIL-SAFE RULE: a directory that cannot be KNOWN from the text — a variable,
 // command substitution, a glob, ~user, a path that does not exist, eval/source,
-// --git-dir/--work-tree/GIT_DIR, a cd inside a heredoc body — becomes unknown,
-// and unknown falls back to the payload cwd. That is exactly what every guard
-// did before, so a guessed directory is never what lets a command through.
+// a cd inside a heredoc a shell runs — becomes unknown, and unknown falls back
+// to the payload cwd. That is exactly what every guard did before, so a guessed
+// directory is never what lets a command through. A --git-dir / GIT_DIR is
+// different (cp-qvkv): it names another repository outright, so it is resolved,
+// and when it cannot be the entry is `closed` and guards fail CLOSED on it.
 // Nothing here executes command text: a hook must not run what it is judging.
 
 /**
@@ -317,6 +319,120 @@ function resolveTarget(tok, base, ctx) {
   }
 }
 
+/**
+ * The program a command word runs: directories and a Windows .exe stripped, so
+ * /usr/bin/git, "C:\…\git.exe" and git.exe are all `git` (cp-qvkv). An exact
+ * `name === 'git'` let every one of those spellings commit straight onto main.
+ * Case-insensitive where the filesystem is.
+ */
+function commandName(tok, shell) {
+  if (!tok || tok.op || tok.dynamic) return '';
+  const base = tok.value.split(/[\\/]/).pop().replace(/\.exe$/i, '');
+  return shell === 'powershell' || process.platform === 'win32' ? base.toLowerCase() : base;
+}
+
+const ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
+// Programs that run their argument as a command, with the options that take a
+// value — so the value is never mistaken for the command.
+const WRAPPERS = {
+  command: [], builtin: [], exec: ['-a'], nohup: [],
+  nice: ['-n', '--adjustment'],
+  time: ['-f', '-o', '--format', '--output'],
+  timeout: ['-s', '-k', '--signal', '--kill-after'],
+  stdbuf: ['-i', '-o', '-e', '--input', '--output', '--error'],
+  sudo: ['-u', '-g', '-h', '-p', '-C', '-r', '-t', '-U', '-T', '--user', '--group', '--host', '--prompt',
+    '--close-from', '--role', '--type', '--other-user', '--command-timeout'],
+  xargs: ['-I', '-n', '-L', '-P', '-s', '-d', '-E', '-a', '--arg-file', '--delimiter', '--max-args',
+    '--max-lines', '--max-procs', '--max-chars', '--replace', '--eof', '--process-slot-var'],
+};
+const SHELLS = new Set(['sh', 'bash', 'zsh', 'dash', 'ksh']);
+const POWERSHELLS = new Set(['pwsh', 'powershell']);
+
+/**
+ * The programs a command actually runs (cp-qvkv). `env git commit`,
+ * `echo x | xargs git commit`, `find . -exec git commit \;` and
+ * `bash -c "git commit"` all run git, but git is not the first word, so a guard
+ * matching the first word never saw them.
+ *
+ * Returns leaves: { words } for a program, or { script, scriptShell } for a
+ * command string a shell will run. Each carries the NAME=value words (`env`),
+ * `chdir` (env -C / sudo -D) and `unknownDir` (find -execdir runs in a directory
+ * known only at run time) that apply to it.
+ */
+function leafCommands(words, shell) {
+  const out = [];
+  const walk = (w, env, chdir, unknownDir, depth) => {
+    while (w.length && depth < 8) {
+      const n = commandName(w[0], shell);
+      const afterEq = (t) => ({ ...t, value: t.value.slice(t.value.indexOf('=') + 1), tilde: false });
+      if (n === 'env' && shell === 'posix') {
+        let i = 1;
+        for (; i < w.length && !w[i].dynamic; i++) {
+          const v = w[i].value;
+          if (v === '-C' || v === '--chdir') { chdir = w[++i]; continue; }
+          if (v.startsWith('--chdir=')) { chdir = afterEq(w[i]); continue; }
+          if (v === '-u' || v === '--unset') { i++; continue; }
+          if (v === '-S' || v === '--split-string') {
+            if (w[i + 1]) out.push({ script: w[i + 1], scriptShell: 'posix', env, chdir, unknownDir });
+            return;
+          }
+          if (ASSIGNMENT.test(v)) { env = [...env, w[i]]; continue; }
+          if (v.startsWith('-')) continue;
+          break;
+        }
+        w = w.slice(i);
+        depth++;
+        continue;
+      }
+      if (Object.prototype.hasOwnProperty.call(WRAPPERS, n) && (shell === 'posix' || n === 'sudo')) {
+        const takes = WRAPPERS[n];
+        let i = 1;
+        for (; i < w.length && !w[i].dynamic; i++) {
+          const v = w[i].value;
+          if (v === '--') { i++; break; }
+          if (n === 'sudo' && (v === '-D' || v === '--chdir')) { chdir = w[++i]; continue; }
+          if (n === 'sudo' && v.startsWith('--chdir=')) { chdir = afterEq(w[i]); continue; }
+          if (n === 'sudo' && ASSIGNMENT.test(v)) { env = [...env, w[i]]; continue; }
+          if (takes.includes(v)) { i++; continue; }
+          if (v.length > 1 && v.startsWith('-')) continue;
+          break;
+        }
+        if (n === 'timeout') i++; // its duration
+        w = w.slice(i);
+        depth++;
+        continue;
+      }
+      if (n === 'find') {
+        for (let i = 1; i < w.length; i++) {
+          const v = w[i].dynamic ? '' : w[i].value;
+          if (!/^-(?:exec|execdir|ok|okdir)$/.test(v)) continue;
+          let j = i + 1;
+          while (j < w.length && (w[j].dynamic || (w[j].value !== ';' && w[j].value !== '+'))) j++;
+          walk(w.slice(i + 1, j), env, chdir, unknownDir || v.endsWith('dir'), depth + 1);
+          i = j;
+        }
+        return;
+      }
+      if ((shell === 'posix' && SHELLS.has(n)) || POWERSHELLS.has(n)) {
+        const ps = POWERSHELLS.has(n);
+        for (let i = 1; i < w.length && !w[i].dynamic; i++) {
+          const v = w[i].value;
+          if (ps ? /^-(?:c|command)$/i.test(v) : /^-[A-Za-z]*c[A-Za-z]*$/.test(v)) {
+            if (w[i + 1]) out.push({ script: w[i + 1], scriptShell: ps ? 'powershell' : 'posix', env, chdir, unknownDir });
+            return;
+          }
+          if (!ps && /^[-+][oO]$/.test(v)) { i++; continue; }
+          if (!v.startsWith('-') && !v.startsWith('+')) break;
+        }
+      }
+      break;
+    }
+    out.push({ words: w, env, chdir, unknownDir });
+  };
+  walk(words, [], undefined, false, 0);
+  return out;
+}
+
 /** What a command word does to the working directory, if anything. */
 function dirVerb(name, shell) {
   if (shell === 'powershell') {
@@ -394,51 +510,283 @@ const GIT_OPT_WITH_VALUE = new Set([
   '-C', '-c', '--git-dir', '--work-tree', '--namespace', '--super-prefix', '--config-env', '--attr-source',
 ]);
 const GIT_OPT_FLAG = /^(?:-p|-P|--paginate|--no-pager|--bare|--no-replace-objects|--(?:literal|glob|noglob|icase)-pathspecs|--no-optional-locks|--no-lazy-fetch|--no-advice|--exec-path|--[a-z][a-z-]*=.*)$/;
-// These move the repository away from the working directory, so no directory
-// can stand in for it.
-const GIT_RELOCATES = /^(?:--git-dir|--work-tree|--bare)(?:=|$)/;
-const GIT_ENV = /\bGIT_(?:DIR|WORK_TREE)=/;
-const GIT_ENV_STATEMENT = /^(?:export\s[^\n]*)?\bGIT_(?:DIR|WORK_TREE)=|^\$env:GIT_(?:DIR|WORK_TREE)\s*=/i;
 
 /**
- * Read `git <global options> <subcommand> …`: the directory -C moves it to, and
- * which word is the subcommand. -C is cumulative — each relative -C is taken
- * from the previous one, as git documents.
+ * Read `git <global options> <subcommand> …`: the directory -C moves it to, the
+ * --git-dir word if one is given, and which word is the subcommand. -C is
+ * cumulative — each relative -C is taken from the previous one, as git documents.
+ *
+ * --work-tree is skipped on purpose (cp-qvkv): HEAD, and so the branch a commit
+ * lands on, belongs to the git DIR. A work tree alone changes neither.
  */
 function gitInvocation(words, cur, ctx) {
   let dir = cur;
-  let relocated = false;
+  let gitDirTok;
   let k = 1;
-  while (k < words.length && !words[k].dynamic) {
+  while (k < words.length) {
     const v = words[k].value;
-    if (GIT_RELOCATES.test(v)) relocated = true;
+    // `--git-dir="$X"` is ONE dynamic word. Stopping at it made `$X` the
+    // "subcommand", so the commit behind it was never recognised at all.
+    if (words[k].dynamic && !/^--[a-z][a-z-]*=/.test(v)) break;
     if (v === '-C') { dir = resolveTarget(words[k + 1], dir, ctx); k += 2; continue; }
+    if (v === '--git-dir') { gitDirTok = words[k + 1] || null; k += 2; continue; }
+    if (v.startsWith('--git-dir=')) { gitDirTok = { ...words[k], value: v.slice(10), tilde: false }; k++; continue; }
     if (GIT_OPT_WITH_VALUE.has(v)) { k += 2; continue; }
     if (GIT_OPT_FLAG.test(v)) { k++; continue; }
     break;
   }
-  return { dir: relocated ? null : dir, sub: k };
+  return { dir, gitDirTok, sub: k };
 }
 
-// A heredoc body is data handed to a program, not commands this shell runs, so
-// a `cd` line inside one must never MOVE the tracked directory. It must not be
-// silently skipped either — this scan is not quote-aware, and skipping a real
-// `cd` would judge the wrong repo — so a directory change inside a body makes
-// the directory unknown instead.
-function heredocBodies(s) {
-  const ranges = [];
-  const opener = /<<-?[ \t]*(['"]?)([A-Za-z_][A-Za-z0-9_]*)\1[^\n]*\n/g;
-  let m;
-  while ((m = opener.exec(s)) !== null) {
-    const from = m.index + m[0].length;
-    const term = new RegExp(`\\n[ \\t]*${m[2]}(?=\\s|$)`, 'g');
-    term.lastIndex = from - 1;
-    const t = term.exec(s);
-    const to = t ? t.index + 1 : s.length;
-    ranges.push([from, to]);
-    opener.lastIndex = Math.max(to, from);
+/**
+ * Split a git subcommand's words into options and positionals. `takes` lists
+ * the options that consume the next word; `--name=value` is one word. Words
+ * after `--` are returned as `paths`.
+ */
+function parseArgs(args, takes = []) {
+  const opts = [];
+  const pos = [];
+  let paths = null;
+  for (let i = 0; i < args.length; i++) {
+    const t = args[i];
+    if (paths) { paths.push(t); continue; }
+    if (t.dynamic) { pos.push(t); continue; }
+    const v = t.value;
+    if (v === '--') { paths = []; continue; }
+    if (v.length < 2 || !v.startsWith('-')) { pos.push(t); continue; }
+    const eq = v.indexOf('=');
+    if (v.startsWith('--') && eq > 0) {
+      opts.push({ name: v.slice(0, eq), value: { ...t, value: v.slice(eq + 1), tilde: false } });
+    } else if (takes.includes(v)) {
+      opts.push({ name: v, value: args[i + 1] || null });
+      i++;
+    } else {
+      opts.push({ name: v });
+    }
   }
-  return ranges;
+  return { opts, pos, paths };
+}
+
+const literal = (t) => (t && !t.dynamic ? t.value : null);
+const CREATE_BRANCH = ['-b', '-B', '-c', '-C', '--create', '--force-create', '--orphan'];
+
+/** The branch `git rebase` rewrites when it names one: `rebase <upstream> <branch>`. */
+function rebaseBranch(args) {
+  const p = parseArgs(args, ['--onto', '-s', '--strategy', '-X', '--strategy-option', '-x', '--exec']);
+  const at = p.opts.some((o) => o.name === '--root') ? 0 : 1;
+  return p.pos.length > at ? literal(p.pos[at]) : undefined;
+}
+
+/**
+ * Where HEAD points after this git call (cp-qvkv): a branch name, 'HEAD' when
+ * detached, null when it cannot be told, undefined when HEAD does not move.
+ * `git checkout <x>` alone is a switch, a detach or a file restore depending on
+ * what <x> is in that repo, so that one case asks git.
+ */
+function projectBranch(seg, ctx) {
+  const { sub, args } = seg.git;
+  if (sub === 'switch' || sub === 'checkout') {
+    const p = parseArgs(args, ['-b', '-B', '-c', '-C', '--orphan']);
+    const create = p.opts.find((o) => CREATE_BRANCH.includes(o.name));
+    if (create) return literal(create.value);
+    if (p.opts.some((o) => o.name === '--detach' || (sub === 'switch' && o.name === '-d'))) return 'HEAD';
+    if (sub === 'checkout') {
+      if (p.opts.some((o) => o.name === '-p' || o.name === '--patch')) return undefined;
+      // `checkout -- <paths>` and `checkout <tree-ish> -- <paths>` restore files.
+      if (p.paths && (p.paths.length || !p.pos.length)) return undefined;
+      if (p.pos.length > 1) return undefined;
+    }
+    if (!p.pos.length) return undefined;
+    const name = literal(p.pos[0]);
+    if (name === null || name === '-' || /^@\{-\d+\}$/.test(name)) return null;
+    if (p.opts.some((o) => o.name === '--track' || o.name === '-t')) {
+      return name.includes('/') ? name.slice(name.indexOf('/') + 1) : name;
+    }
+    if (sub === 'switch') return name;
+    const kind = ctx.probe.refKind(seg, name);
+    return kind === 'branch' ? name : kind === 'commit' ? 'HEAD' : kind === 'path' ? undefined : null;
+  }
+  if (sub === 'branch') {
+    const p = parseArgs(args);
+    if (!p.opts.some((o) => ['-m', '-M', '--move'].includes(o.name))) return undefined;
+    if (p.pos.length === 1) return literal(p.pos[0]);        // renames the CURRENT branch
+    if (p.pos.length === 2) {
+      const to = literal(p.pos[1]);
+      return to === null || to === 'main' || to === 'master' ? null : undefined;
+    }
+    return undefined;
+  }
+  if (sub === 'symbolic-ref') {
+    const p = parseArgs(args, ['-m']);
+    if (p.pos.length !== 2 || literal(p.pos[0]) !== 'HEAD') return undefined;
+    const to = literal(p.pos[1]);
+    return to === null ? null : to.replace(/^refs\/heads\//, '');
+  }
+  if (sub === 'rebase') return rebaseBranch(args);
+  return undefined;
+}
+
+/**
+ * Does this push send HEAD's own branch (cp-qvkv)? A bare push, a HEAD or @
+ * refspec, --all, --mirror and --branches all do — with no `main` anywhere in
+ * the text, which is how `git push origin HEAD` from main got through.
+ */
+function pushTargetsHead(args) {
+  const p = parseArgs(args, ['--repo', '-o', '--push-option', '--receive-pack', '--exec']);
+  const has = (...names) => p.opts.some((o) => names.includes(o.name));
+  if (has('--all', '--mirror', '--branches')) return true;
+  if (has('--delete', '-d')) return false;
+  const refspecs = p.pos.slice(1); // the first positional is the remote
+  if (!refspecs.length) return !has('--tags');
+  return refspecs.some((r) => r.dynamic || /^\+?(?:HEAD|@)(?::(?:HEAD|@)?)?$/.test(r.value));
+}
+
+/**
+ * Reads a guard needs from git, run where the segment runs (its --git-dir /
+ * GIT_DIR included) and memoized for one hook invocation. execFileSync, not a
+ * shell string: repo paths reach git verbatim, spaces and all.
+ */
+function gitProbe() {
+  const memo = new Map();
+  const run = (seg, args) => {
+    const argv = [...(seg.gitDir ? ['--git-dir', seg.gitDir] : []), ...args];
+    const key = `${seg.dir}\u0000${argv.join('\u0000')}`;
+    if (!memo.has(key)) {
+      let r;
+      try {
+        r = { ok: true, out: execFileSync('git', argv, {
+          cwd: seg.dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000, windowsHide: true,
+        }).trim() };
+      } catch {
+        r = { ok: false, out: '' };
+      }
+      memo.set(key, r);
+    }
+    return memo.get(key);
+  };
+  return {
+    head: (seg) => {
+      const r = run(seg, ['rev-parse', '--abbrev-ref', 'HEAD']);
+      return r.ok ? r.out : undefined;
+    },
+    // Identifies the HEAD a segment moves: one per worktree, whichever subdir.
+    key: (seg) => {
+      const r = run(seg, ['rev-parse', '--absolute-git-dir']);
+      return r.ok ? path.resolve(r.out) : `dir:${seg.gitDir || seg.dir}`;
+    },
+    refKind: (seg, name) => {
+      if (run(seg, ['show-ref', '--verify', '--quiet', `refs/heads/${name}`]).ok) return 'branch';
+      if (!run(seg, ['rev-parse', '--git-dir']).ok) return null;
+      if (run(seg, ['for-each-ref', '--format=%(refname)', `refs/remotes/*/${name}`]).out) return 'branch';
+      if (run(seg, ['rev-parse', '--verify', '--quiet', `${name}^{commit}`]).ok) return 'commit';
+      return 'path';
+    },
+    allows: (seg, key) => {
+      const r = run(seg, ['config', '--get', `braynee.${key}`]);
+      return r.ok && /^(?:true|1|yes)$/i.test(r.out);
+    },
+  };
+}
+
+const LIVE = '\u0000live'; // "whatever HEAD is right now" inside a projected branch list
+
+/**
+ * The branches a segment's HEAD may be on when it runs: strings, undefined when
+ * it is not a repo, null when a switch earlier in the command makes it
+ * unknowable. See `branches` in resolveSegments().
+ */
+function branchesOf(seg, probe) {
+  return (seg.branches || [LIVE]).map((b) => (b === LIVE ? probe.head(seg) : b));
+}
+
+/**
+ * Heredocs, found the way the shell finds them: an unquoted `<<WORD` (not
+ * `<<<`) queues a body that starts after the next unquoted newline and runs to
+ * a line that is exactly WORD (leading tabs dropped for `<<-`). Returns
+ * { opener, from, to }, `to` being where the terminator line starts.
+ */
+function heredocs(s) {
+  const found = [];
+  const pending = [];
+  let quote = null;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (quote === "'") { if (c === "'") quote = null; continue; }
+    if (quote === '"') { if (c === '\\') i++; else if (c === '"') quote = null; continue; }
+    if (c === '\\') { i++; continue; }
+    if (c === "'" || c === '"') { quote = c; continue; }
+    if (c === '<' && s[i + 1] === '<' && s[i + 2] !== '<') {
+      let j = i + 2;
+      const strip = s[j] === '-';
+      if (strip) j++;
+      while (s[j] === ' ' || s[j] === '\t') j++;
+      const m = /^(['"]?)([A-Za-z_][A-Za-z0-9_]*)\1/.exec(s.slice(j));
+      if (m) { pending.push({ opener: i, word: m[2], strip }); i = j + m[0].length - 1; } else i++;
+      continue;
+    }
+    if (c !== '\n' || !pending.length) continue;
+    let at = i + 1;
+    for (const h of pending) {
+      let to = s.length;
+      let next = s.length;
+      for (let k = at; k < s.length;) {
+        const nl = s.indexOf('\n', k);
+        let line = s.slice(k, nl === -1 ? s.length : nl).replace(/\r$/, '');
+        if (h.strip) line = line.replace(/^\t+/, '');
+        if (line === h.word) { to = k; next = nl === -1 ? s.length : nl + 1; break; }
+        if (nl === -1) break;
+        k = nl + 1;
+      }
+      found.push({ opener: h.opener, from: at, to });
+      at = next;
+    }
+    pending.length = 0;
+    i = at - 1;
+  }
+  return found;
+}
+
+// Programs that only READ a heredoc body as data. A body fed to anything else —
+// a shell, an interpreter, a wrapper — may be executed, so it stays visible.
+const DATA_CONSUMERS = new Set([
+  'cat', 'tee', 'git', 'gh', 'bd', 'grep', 'egrep', 'fgrep', 'rg', 'wc', 'head', 'tail', 'sort', 'uniq',
+  'jq', 'yq', 'base64', 'read', 'mapfile', 'readarray', 'patch', 'diff', 'clip', 'xclip', 'pbcopy', 'wl-copy',
+]);
+
+/**
+ * `command` with the bodies of data-only heredocs removed (cp-qvkv). A commit
+ * message or PR body written as `git commit -F - <<'EOF'` is text: read as
+ * commands, a line like `git checkout main` in it projects a branch switch that
+ * nothing runs. A body reaching a shell (`bash <<EOF`, `cat <<EOF | sh`) keeps
+ * its lines, as does a body for any program not known to only read it — so
+ * hiding a body can never hide something that runs.
+ */
+function stripDataHeredocs(command, shell = 'posix') {
+  const s = String(command);
+  const docs = shell === 'posix' ? heredocs(s) : [];
+  if (!docs.length) return s;
+  // Pieces over a copy with every body blanked, so a quote inside one body can
+  // never merge lines and misattribute the next opener to the wrong command.
+  let masked = s;
+  for (const d of docs) masked = masked.slice(0, d.from) + masked.slice(d.from, d.to).replace(/[^\n]/g, ' ') + masked.slice(d.to);
+  const pieces = splitPieces(masked);
+  const reads = (piece) => {
+    const toks = shellWords(piece.text.trim().replace(ENV_PREFIX, ''), 'posix').filter((t) => !t.op);
+    return DATA_CONSUMERS.has(commandName(toks[0], 'posix'));
+  };
+  let out = '';
+  let last = 0;
+  for (const d of docs) {
+    let a = 0;
+    pieces.forEach((pc, k) => { if (pc.start <= d.opener) a = k; });
+    let b = a;
+    while (a > 0 && pieces[a - 1].sep === '|') a--;
+    while (b < pieces.length - 1 && pieces[b].sep === '|') b++;
+    if (!pieces.slice(a, b + 1).every(reads)) continue;
+    out += s.slice(last, d.from);
+    last = d.to;
+  }
+  return out + s.slice(last);
 }
 
 /**
@@ -455,26 +803,89 @@ function heredocBodies(s) {
  *   dir    the absolute directory the segment runs in; the payload cwd when
  *          that cannot be known (see the fail-safe rule above)
  *
+ * and, for a git call (after unwrapping env, xargs, find -exec, sudo, nice,
+ * time, nohup, timeout, bash -c — cp-qvkv):
+ *
+ *   git       { sub, args } — the subcommand and the words after it
+ *   gitDir    the absolute git dir named by --git-dir / GIT_DIR, when it resolves
+ *   closed    why the repository cannot be known even though the command names
+ *             one (an unresolvable --git-dir / GIT_DIR, find -execdir). Guards
+ *             fail CLOSED on it: the cwd fallback would judge a repo the command
+ *             explicitly does not use.
+ *   branches  the branches HEAD may be on when it runs, after a `git switch` /
+ *             `checkout` / `branch -m` earlier in the command — undefined when
+ *             nothing moved it. Read it through branchesOf().
+ *   extra     true for a further command inside the same segment (a second
+ *             find -exec, a `bash -c` string); every segment has exactly one
+ *             entry without it
+ *
  * opts.shell  'posix' (default) or 'powershell' — see shellFor()
  * opts.home   home for `~` and a bare `cd` (default os.homedir())
+ * opts.probe  the gitProbe() to read repos with; a guard shares one per run
  */
 function resolveSegments(command, cwd, opts = {}) {
   const ctx = {
     shell: opts.shell === 'powershell' ? 'powershell' : 'posix',
     home: opts.home || os.homedir(),
+    probe: opts.probe || gitProbe(),
   };
   const posix = ctx.shell === 'posix';
+  const depth = opts.depth || 0;
+  // Keyed by worktree, and shared with nested `bash -c` scripts: a branch switch
+  // is repository state, so no subshell or pipeline undoes it.
+  const projections = opts.projections || new Map();
   const isWord = (t, v) => !!t && !t.op && !t.quoted && t.value === v;
-  const raw = String(command);
-  const bodies = heredocBodies(raw);
-  const inBody = (at) => bodies.some(([from, to]) => at >= from && at < to);
+  const src = stripDataHeredocs(command, ctx.shell);
+  // Bodies still present are ones a shell may run: follow their commands, but a
+  // directory change inside one does not persist past it, so it makes the
+  // directory unknown.
+  const bodies = posix ? heredocs(src) : [];
+  const inBody = (at) => bodies.some(({ from, to }) => at >= from && at < to);
 
   let st = { cur: cwd || null, prev: null, stack: [] };
-  let gitEnvSet = false;   // GIT_DIR / GIT_WORK_TREE assigned earlier in the command
+  let gitEnv = opts.gitEnv || {};   // { GIT_DIR: word } assigned or exported earlier
   const subshells = [];    // POSIX `( … )` restores the directory it started in
   const out = [];
 
-  const pieces = splitPieces(raw);
+  const setGitDir = (env, words) => {
+    let next = env;
+    for (const t of words) {
+      const m = !t.op && /^GIT_DIR=([\s\S]*)$/.exec(t.value);
+      if (m) next = { ...next, GIT_DIR: { ...t, value: m[1], tilde: m[1].startsWith('~') } };
+    }
+    return next;
+  };
+
+  const gitEntry = (leaf, text, leafDir, env, certain) => {
+    const w = leaf.words;
+    const inv = gitInvocation(w, leafDir, ctx);
+    const e = { text, match: text, dir: inv.dir || cwd, git: { sub: '', args: [] } };
+    if (inv.sub < w.length) {
+      e.git = { sub: literal(w[inv.sub]) || '', args: w.slice(inv.sub + 1) };
+      e.match = `git ${text.slice(w[inv.sub].start, w[w.length - 1].end)}`;
+    }
+    if (leaf.unknownDir) e.closed = '`find -execdir`, which picks the directory at run time';
+    const tok = inv.gitDirTok !== undefined ? inv.gitDirTok : env.GIT_DIR;
+    if (tok !== undefined) {
+      const gd = resolveTarget(tok, inv.dir, ctx);
+      if (gd) e.gitDir = gd;
+      else e.closed = e.closed || 'a --git-dir / GIT_DIR that does not resolve to an existing directory';
+    }
+    if (e.git.sub) {
+      const proj = projectBranch(e, ctx);
+      const key = projections.size || proj !== undefined ? ctx.probe.key(e) : null;
+      if (key && projections.has(key)) e.branches = projections.get(key);
+      if (proj !== undefined) {
+        // Only an `&&` guarantees the switch happened before what follows; after
+        // `;`, `||`, a pipe or `&` it may have failed, so both are possible.
+        const prev = projections.get(key) || [LIVE];
+        projections.set(key, certain ? [proj] : [...new Set([...prev, proj])]);
+      }
+    }
+    return e;
+  };
+
+  const pieces = splitPieces(src);
   for (let i = 0; i < pieces.length; i++) {
     const trimmed = pieces[i].text.trim();
     const text = trimmed.replace(ENV_PREFIX, '');
@@ -502,7 +913,7 @@ function resolveSegments(command, cwd, opts = {}) {
       else if (!isWord(t, '}')) break;
       b--;
     }
-    if (posix) for (let n = 0; n < opens; n++) subshells.push({ st, gitEnvSet });
+    if (posix) for (let n = 0; n < opens; n++) subshells.push({ st, gitEnv });
 
     const words = [];
     let tangled = false;   // an operator mid-command that is not modeled
@@ -515,40 +926,60 @@ function resolveSegments(command, cwd, opts = {}) {
       words.shift();
     }
 
-    const name = words.length && !words[0].dynamic ? words[0].value : '';
+    const name = commandName(words[0], ctx.shell);
     const verb = name ? dirVerb(name, ctx.shell) : null;
-    const isGit = posix ? name === 'git' : name.toLowerCase() === 'git';
     // Each element of a POSIX pipeline runs in its own subshell, and a
     // backgrounded command in another process: neither moves this shell.
     const piped = posix && (pieces[i].sep === '|' || (i > 0 && pieces[i - 1].sep === '|'));
+    const certain = pieces[i].sep === '&&' && !background;
+    const here = st.cur;
 
-    let dir = st.cur;
-    let match = text;
+    const own = [];     // the git calls this segment itself makes
+    const inner = [];   // commands inside a `bash -c` string it runs
     if (verb) {
       if (!piped && !background) {
         st = verb === 'opaque' || tangled || inBody(pieces[i].start)
           ? { cur: null, prev: st.cur, stack: st.stack }
           : moveDir(verb, words.slice(1), st, ctx);
       }
-    } else if (isGit) {
-      const inv = gitInvocation(words, st.cur, ctx);
-      const envHere = GIT_ENV.test(trimmed.slice(0, trimmed.length - text.length));
-      dir = gitEnvSet || envHere ? null : inv.dir;
-      if (inv.sub < words.length) {
-        let last = b - 1;
-        while (toks[last].op) last--;
-        match = `git ${text.slice(words[inv.sub].start, toks[last].end)}`;
+    } else if (posix && words.length && words.every((t) => ASSIGNMENT.test(literal(t) || ''))) {
+      gitEnv = setGitDir(gitEnv, words);                       // `GIT_DIR=x` on its own
+    } else if (posix && name === 'export') {
+      gitEnv = setGitDir(gitEnv, words.slice(1));
+    } else if (posix && name === 'unset') {
+      if (words.some((t) => t.value === 'GIT_DIR')) gitEnv = { ...gitEnv, GIT_DIR: undefined };
+    } else if (!posix && /^\$env:GIT_DIR\s*=/i.test(text)) {
+      const value = shellWords(text.replace(/^\$env:GIT_DIR\s*=\s*/i, ''), 'powershell').find((t) => !t.op);
+      gitEnv = { ...gitEnv, GIT_DIR: value || null };
+    } else {
+      const prefix = shellWords(trimmed.slice(0, trimmed.length - text.length), ctx.shell).filter((t) => !t.op);
+      for (const leaf of leafCommands(words, ctx.shell)) {
+        const leafDir = leaf.chdir === undefined ? st.cur : resolveTarget(leaf.chdir, st.cur, ctx);
+        const env = setGitDir(gitEnv, [...prefix, ...leaf.env]);
+        if (leaf.script) {
+          if (leaf.script.dynamic || depth >= 3) continue;
+          inner.push(...resolveSegments(leaf.script.value, leafDir || cwd, {
+            ...opts, shell: leaf.scriptShell, probe: ctx.probe, depth: depth + 1, projections, gitEnv: env,
+          }));
+          continue;
+        }
+        if (commandName(leaf.words[0], ctx.shell) === 'git') own.push(gitEntry(leaf, text, leafDir, env, certain));
       }
     }
-    if (GIT_ENV_STATEMENT.test(text)) gitEnvSet = true;
 
-    out.push({ text, match, dir: dir || cwd });
+    const list = own.length ? own : [{ text, match: text, dir: here || cwd }];
+    list.push(...inner);
+    list.forEach((e, k) => { if (k > 0) e.extra = true; });
+    out.push(...list);
 
     if (posix) {
-      for (let n = 0; n < closes && subshells.length; n++) ({ st, gitEnvSet } = subshells.pop());
+      for (let n = 0; n < closes && subshells.length; n++) ({ st, gitEnv } = subshells.pop());
     }
   }
   return out;
 }
 
-module.exports = { commandSegments, repoAllows, resolveSegments, shellFor, toNativePath };
+module.exports = {
+  commandSegments, repoAllows, resolveSegments, shellFor, toNativePath, stripDataHeredocs,
+  gitProbe, branchesOf, parseArgs, rebaseBranch, pushTargetsHead,
+};

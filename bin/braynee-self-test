@@ -1805,6 +1805,149 @@ results.gitdir = { ok: 0, fail: 0, errors: [] };
 }
 log(`  ${results.gitdir.ok} passed | ${results.gitdir.fail} failed`);
 
+// ── 19c. main-branch guard: the bypass classes (cp-qvkv) ────────────────────
+// Seven ways a commit or push still landed on main, each confirmed against real
+// repos: git spelled git.exe or as a full path; a branch switch earlier in the
+// same command; a push of HEAD / --all / --mirror with no `main` in the text;
+// env, xargs or find -exec at the head of the segment; and --git-dir / GIT_DIR
+// pointing at another repo. Plus the owner's scope: merge, rebase, cherry-pick,
+// revert and am on main are blocked; pull, fetch and `git rebase main` from a
+// feature branch are not. Every class is asserted in both directions, and the
+// red-team's false-positive controls must stay allowed.
+log('\n=== 19c. main-branch guard bypass classes (cp-qvkv) ===');
+results.bypass = { ok: 0, fail: 0, errors: [] };
+{
+  const assertB = (label, cond, detail) => {
+    if (cond) { results.bypass.ok++; log(`  OK: ${label}`); }
+    else {
+      results.bypass.fail++;
+      results.bypass.errors.push({ test: label, detail });
+      log(`  FAIL: ${label}${detail ? ` — ${detail}` : ''}`);
+    }
+  };
+
+  const hook = path.join(PLUGIN_ROOT, 'hooks', 'check-no-main-push.js');
+  const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), 'bypass-'));
+  try {
+    const gitIn = (dir) => (...args) =>
+      spawnSync('git', args, { cwd: dir, encoding: 'utf8', windowsHide: true, timeout: 15000 });
+    const mkRepo = (dir) => {
+      fs.mkdirSync(dir, { recursive: true });
+      const g = gitIn(dir);
+      g('init', '-q', '.');
+      g('config', 'user.email', 'selftest@example.invalid');
+      g('config', 'user.name', 'selftest');
+      fs.writeFileSync(path.join(dir, 'README.md'), 'base\n');
+      g('add', '-A');
+      g('commit', '-q', '-m', 'init');
+      g('checkout', '-q', '-B', 'main');
+      return g;
+    };
+    const repo = path.join(sandbox, 'repo');   // a session sitting on main
+    const gitRepo = mkRepo(repo);
+    const wt = path.join(repo, '.worktrees', 'gate');
+    gitRepo('worktree', 'add', '-q', '-b', 'feature/gate', wt);
+    const solo = path.join(sandbox, 'solo');   // a feature branch with main free to switch to
+    mkRepo(solo)('checkout', '-q', '-b', 'feature/solo');
+    const optin = path.join(sandbox, 'optin');
+    mkRepo(optin)('config', '--local', 'braynee.allow-main-commits', 'true');
+    const heads = [repo, wt, solo].map((d) => (gitIn(d)('rev-parse', '--abbrev-ref', 'HEAD').stdout || '').trim());
+    assertB('fixture: repo on main, worktree and solo on feature branches',
+      heads.join(' ') === 'main feature/gate feature/solo', heads.join(' / '));
+
+    const fwd = (p) => p.replace(/\\/g, '/');
+    const guard = (command, cwd, tool = 'Bash') => spawnSync(process.execPath, [hook], {
+      input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: tool, tool_input: { command }, cwd }),
+      encoding: 'utf8', timeout: 20000, windowsHide: true,
+      // Cleared explicitly: an exported opt-out would make every BLOCK pass vacuously.
+      env: { ...process.env, BRAYNEE_ALLOW_MAIN_COMMITS: '', BRAYNEE_ALLOW_MAIN_PUSH: '' },
+    }).status;
+    const both = (label, command, tool) => {
+      assertB(`${label}: blocked on main`, guard(command, repo, tool) === 2);
+      assertB(`${label}: allowed on a feature branch`, guard(command, wt, tool) === 0);
+    };
+
+    // 1–2. git recognised by basename.
+    both('`git.exe commit`', 'git.exe commit -m x');
+    both('PowerShell `git.exe commit`', 'git.exe commit -m x', 'PowerShell');
+    both('`/usr/bin/git commit`', '/usr/bin/git commit -m x');
+    both('`"/mingw64/bin/git" commit`', '"/mingw64/bin/git" commit -m x');
+    both('`"C:\\…\\git.exe" commit`', '"C:\\Program Files\\Git\\cmd\\git.exe" commit -m x');
+
+    // 3. a branch switch earlier in the same command.
+    assertB('`git switch main && git commit` from a feature branch is blocked', guard('git switch main && git commit -m x', solo) === 2);
+    assertB('`git checkout main && git commit` from a feature branch is blocked', guard('git checkout main && git commit -m x', solo) === 2);
+    assertB('`git checkout main && git push` from a feature branch is blocked', guard('git checkout main && git push', solo) === 2);
+    assertB('`git branch -m main && git commit` is blocked', guard('git branch -m main && git commit -m x', solo) === 2);
+    assertB('an unknowable switch target fails closed', guard('git switch "$B" && git commit -m x', solo) === 2);
+    assertB('a switch away from main joined with `;` may have failed: blocked',
+      guard('git checkout -b feature/new; git commit -m x', repo) === 2);
+    assertB('`git checkout -b feature/new && git commit` from main is allowed', guard('git checkout -b feature/new && git commit -m x', repo) === 0);
+    assertB('`git switch -c feature/new && git commit` from main is allowed', guard('git switch -c feature/new && git commit -m x', repo) === 0);
+    assertB('`git checkout -- README.md && git commit` on a feature branch is allowed', guard('git checkout -- README.md && git commit -m x', solo) === 0);
+    assertB('`git checkout HEAD -- README.md && git commit` on a feature branch is allowed', guard('git checkout HEAD -- README.md && git commit -m x', solo) === 0);
+    assertB('`git checkout README.md` (a file restore) then commit on a feature branch is allowed', guard('git checkout README.md && git commit -m x', solo) === 0);
+
+    // 4. a push of HEAD's branch that never says `main`.
+    for (const cmd of ['git push origin HEAD', 'git push -u origin HEAD', 'git push --all', 'git push --mirror', 'git push origin @', 'git push -u origin']) {
+      assertB(`\`${cmd}\` from main is blocked`, guard(cmd, repo) === 2);
+    }
+    assertB('`git push origin HEAD` from a feature branch is allowed', guard('git push origin HEAD', solo) === 0);
+    assertB('`git push origin HEAD:feature/x` from main names another branch: allowed', guard('git push origin HEAD:feature/x', repo) === 0);
+    assertB('`git push --tags` from main is allowed', guard('git push --tags', repo) === 0);
+
+    // 5–6. wrappers at the head of the segment.
+    both('`env git commit`', 'env git commit -m x');
+    both('`env -i A=b git commit`', 'env -i A=b git commit -m x');
+    both('`echo x | xargs git commit -m`', 'echo x | xargs git commit -m');
+    both('`find -exec git commit \\;`', 'find . -maxdepth 0 -exec git commit -m x \\;');
+    both('`sudo -u root git commit`', 'sudo -u root git commit -m x');
+    both('`nice -n 5 git commit`', 'nice -n 5 git commit -m x');
+    both('`bash -c "git commit"`', 'bash -c "git commit -m x"');
+
+    // 7. another repository's git dir.
+    const repoGit = path.join(repo, '.git');
+    const wtGit = (gitIn(wt)('rev-parse', '--absolute-git-dir').stdout || '').trim();
+    assertB('`git --git-dir=<main repo> --work-tree=<main repo> commit` from a feature branch is blocked',
+      guard(`git --git-dir="${fwd(repoGit)}" --work-tree="${fwd(repo)}" commit -m x`, solo) === 2);
+    assertB('`GIT_DIR=<main repo> GIT_WORK_TREE=<main repo> git commit` from a feature branch is blocked',
+      guard(`GIT_DIR="${fwd(repoGit)}" GIT_WORK_TREE="${fwd(repo)}" git commit -m x`, solo) === 2);
+    assertB('`export GIT_DIR=<main repo>; git commit` from a feature branch is blocked',
+      guard(`export GIT_DIR="${fwd(repoGit)}"; git commit -m x`, solo) === 2);
+    assertB('`git --git-dir=<feature worktree> commit` from main is allowed (resolved, not blanket-blocked)',
+      guard(`git --git-dir="${fwd(wtGit)}" commit -m x`, repo) === 0);
+    assertB('an unresolvable --git-dir fails closed', guard('git --git-dir="$X" commit -m x', solo) === 2);
+    assertB('a GIT_DIR that does not exist fails closed', guard('GIT_DIR=/no/such/.git git commit -m x', solo) === 2);
+
+    // Owner's scope: commit-making operations on main.
+    for (const cmd of ['git merge feature/gate', 'git merge --continue', 'git rebase -i HEAD~1', 'git cherry-pick HEAD', 'git revert HEAD', 'git am x.patch']) {
+      assertB(`\`${cmd}\` on main is blocked`, guard(cmd, repo) === 2);
+    }
+    for (const cmd of ['git pull', 'git pull --rebase', 'git fetch origin', 'git merge --abort', 'git rebase --abort', 'git cherry-pick --quit']) {
+      assertB(`\`${cmd}\` on main is allowed`, guard(cmd, repo) === 0);
+    }
+    assertB('`git rebase main` on a feature branch is allowed', guard('git rebase main', solo) === 0);
+    assertB('`git merge main` on a feature branch is allowed', guard('git merge main', solo) === 0);
+    assertB('`git rebase feature/solo main` (rewrites main) is blocked', guard('git rebase feature/solo main', solo) === 2);
+    assertB('the commit opt-out also covers merge in an opted-in repo', guard('git merge feature/x', optin) === 0);
+
+    // The red-team's false-positive controls, on a feature branch.
+    assertB('a commit message quoting `cd <main> && git push origin main; git checkout main` is allowed',
+      guard(`git commit -m "cd ${fwd(repo)} && git push origin main; git checkout main"`, wt) === 0);
+    assertB('a PR title quoting `push origin main; cd x` is allowed',
+      guard('gh pr create --title "fix: push origin main; cd x" --body "y"', wt) === 0);
+    assertB('a heredoc commit body about switching to main and pushing it is allowed',
+      guard("git commit -F - <<'EOF'\nfix: x\n\ngit checkout main\ngit merge feature/gate\ngit push origin main\nEOF", wt) === 0);
+    assertB('...while the same lines fed to a shell are commands, and blocked',
+      guard("cat <<'EOF' | bash\ngit checkout main\ngit merge feature/gate\nEOF", solo) === 2);
+  } catch (e) {
+    assertB('bypass sandbox ran', false, e && e.message);
+  } finally {
+    rmSandbox(sandbox);
+  }
+}
+log(`  ${results.bypass.ok} passed | ${results.bypass.fail} failed`);
+
 // ── 20. version-bump gate: warn mid-batch, fail on release (cp-0gs2) ─────────
 // The gate used to FAIL on any unreleased shipping change, which contradicted the
 // batched-release rule (commits accumulate; ONE release per batch). Main was red

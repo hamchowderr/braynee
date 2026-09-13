@@ -14,7 +14,9 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { commandSegments, resolveSegments, shellFor, toNativePath } = require('./git-command.js');
+const {
+  commandSegments, resolveSegments, shellFor, toNativePath, stripDataHeredocs, pushTargetsHead, rebaseBranch,
+} = require('./git-command.js');
 
 let pass = 0, fail = 0;
 const fails = [];
@@ -26,6 +28,9 @@ const eq = (name, got, want) =>
   ok(name, got === want, `got ${JSON.stringify(got)}, want ${JSON.stringify(want)}`);
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gitcmd-'));
+// Real git runs for the branch-projection cases. Stop its repo discovery at the
+// sandbox, so a repository that happens to enclose the temp dir cannot answer.
+process.env.GIT_CEILING_DIRECTORIES = root;
 const mk = (...parts) => {
   const d = path.join(root, ...parts);
   fs.mkdirSync(d, { recursive: true });
@@ -37,12 +42,26 @@ const ab = mk('a', 'b');
 const spaced = mk('with space');
 const home = mk('home');
 const proj = mk('home', 'proj');
+const dotgit = mk('a', '.git'); // a directory is all --git-dir resolution needs
 const fwd = (p) => p.replace(/\\/g, '/');
 
 // The directory the first git segment of `command` runs in.
 const gitDir = (command, opts = {}) => {
   const seg = resolveSegments(command, start, { home, ...opts }).find((s) => /^git\s/.test(s.match));
   return seg ? seg.dir : undefined;
+};
+// The first entry that is a git call with a subcommand.
+const gitSeg = (command, opts = {}) =>
+  resolveSegments(command, start, { home, ...opts }).find((s) => s.git && s.git.sub) || {};
+const subOf = (command, opts) => {
+  const s = gitSeg(command, opts);
+  return s.git ? `${s.git.sub}|${s.match}` : undefined;
+};
+// The branches the LAST git call may run on, LIVE meaning "as HEAD is now".
+const branchesAfter = (command) => {
+  const last = resolveSegments(command, start, { home }).filter((s) => s.git && s.git.sub).pop();
+  if (!last || !last.branches) return 'LIVE';
+  return last.branches.map((b) => (b === null ? 'null' : b.replace('\u0000live', 'LIVE'))).join(',');
 };
 
 try {
@@ -91,10 +110,20 @@ try {
   eq('a glob', gitDir('cd ../a* && git status'), start);
   eq('a path that does not exist', gitDir('cd ../no-such-dir && git status'), start);
   eq('a git -C that does not resolve', gitDir('git -C "$D" status'), start);
-  eq('--git-dir relocates the repo', gitDir(`git --git-dir=${fwd(a)}/.git status`), start);
-  eq('--work-tree relocates the repo', gitDir(`git -C ${fwd(a)} --work-tree ${fwd(ab)} status`), start);
-  eq('an inline GIT_DIR relocates the repo', gitDir(`cd ${fwd(a)} && GIT_DIR=x git status`), start);
-  eq('an exported GIT_DIR relocates every later git', gitDir(`export GIT_DIR=x; cd ${fwd(a)} && git status`), start);
+  // --git-dir / GIT_DIR are resolved, and fail CLOSED when they cannot be (cp-qvkv).
+  eq('--git-dir=<literal> resolves to that git dir', gitSeg(`git --git-dir=${fwd(dotgit)} commit -m x`).gitDir, dotgit);
+  ok('...and is not closed', !gitSeg(`git --git-dir=${fwd(dotgit)} commit -m x`).closed);
+  eq('--git-dir <relative> is taken from -C', gitSeg(`git -C ${fwd(a)} --git-dir .git commit`).gitDir, dotgit);
+  eq('--work-tree alone does not move HEAD: -C still decides', gitDir(`git -C ${fwd(a)} --work-tree ${fwd(ab)} status`), a);
+  eq('an inline GIT_DIR=<literal> resolves',
+    gitSeg(`GIT_DIR=${fwd(dotgit)} GIT_WORK_TREE=${fwd(a)} git commit -m x`).gitDir, dotgit);
+  eq('an exported GIT_DIR applies to later git calls', gitSeg(`export GIT_DIR=${fwd(dotgit)}; git commit -m x`).gitDir, dotgit);
+  eq('env GIT_DIR=<literal> git resolves', gitSeg(`env GIT_DIR=${fwd(dotgit)} git commit`).gitDir, dotgit);
+  ok('unset GIT_DIR clears it', !gitSeg(`export GIT_DIR=${fwd(dotgit)}; unset GIT_DIR; git commit`).gitDir);
+  ok('an unresolvable --git-dir fails closed', !!gitSeg('git --git-dir="$X" commit').closed);
+  ok('a GIT_DIR that does not exist fails closed', !!gitSeg('GIT_DIR=../no-such/.git git commit').closed);
+  ok('PowerShell $env:GIT_DIR = <variable> fails closed', !!gitSeg('$env:GIT_DIR = $x; git commit', { shell: 'powershell' }).closed);
+  ok('find -execdir fails closed', !!gitSeg('find . -execdir git commit -m x \\;').closed);
   eq('eval can move anywhere', gitDir(`cd ${fwd(a)} && eval "cd b" && git status`), start);
   eq('source can move anywhere', gitDir(`cd ${fwd(a)} && source ./env.sh && git status`), start);
   eq('an absolute cd recovers from unknown', gitDir(`cd "$X" && cd ${fwd(a)} && git status`), a);
@@ -107,8 +136,64 @@ try {
   eq('a { } group DOES persist', gitDir(`{ cd ${fwd(a)}; } && git status`), a);
   eq('a piped cd does not persist', gitDir(`cd ${fwd(a)} | cat; git status`), start);
   eq('a backgrounded cd does not persist', gitDir(`cd ${fwd(a)} &\ngit status`), start);
-  eq('a cd line inside a heredoc body is never followed',
-    gitDir(`cd ${fwd(a)} && cat > notes <<'EOF'\ncd ${fwd(ab)}\nEOF\ngit status`), start);
+  eq('a cd line inside a data heredoc (cat) is not a command at all',
+    gitDir(`cd ${fwd(a)} && cat > notes <<'EOF'\ncd ${fwd(ab)}\nEOF\ngit status`), a);
+  eq('a cd line inside a heredoc a SHELL runs makes the directory unknowable',
+    gitDir(`cd ${fwd(a)} && bash <<'EOF'\ncd ${fwd(ab)}\nEOF\ngit status`), start);
+
+  // ── the program a segment really runs (cp-qvkv) ──────────────────────────
+  eq('git.exe', subOf('git.exe commit -m x'), 'commit|git commit -m x');
+  eq('a full POSIX path to git', subOf('/usr/bin/git commit -m x'), 'commit|git commit -m x');
+  eq('a quoted Git-Bash path to git', subOf('"/mingw64/bin/git" commit -m x'), 'commit|git commit -m x');
+  eq('a quoted Windows path to git.exe', subOf('"C:\\Program Files\\Git\\cmd\\git.exe" commit -m x'), 'commit|git commit -m x');
+  eq('PowerShell: & "…\\git.exe"',
+    subOf('& "C:\\Program Files\\Git\\cmd\\git.exe" commit -m x', { shell: 'powershell' }), 'commit|git commit -m x');
+  eq('env', subOf('env git commit -m x'), 'commit|git commit -m x');
+  eq('env -i -u NAME A=b', subOf('env -i -u HOME A=b git commit -m x'), 'commit|git commit -m x');
+  eq('sudo -u', subOf('sudo -u root git commit -m x'), 'commit|git commit -m x');
+  eq('nice -n', subOf('nice -n 5 git commit -m x'), 'commit|git commit -m x');
+  eq('nohup', subOf('nohup git push'), 'push|git push');
+  eq('time -p', subOf('time -p git commit -m x'), 'commit|git commit -m x');
+  eq('timeout <duration>', subOf('timeout 30 git commit -m x'), 'commit|git commit -m x');
+  eq('xargs after a pipe', subOf('echo x | xargs git commit -m'), 'commit|git commit -m');
+  eq('xargs -I', subOf('ls | xargs -I {} git commit -m {}'), 'commit|git commit -m {}');
+  eq('find -exec … \\;', subOf('find . -maxdepth 0 -exec git commit -m x \\;'), 'commit|git commit -m x \\');
+  eq('find -exec … +', subOf('find . -exec git add {} +'), 'add|git add {}');
+  eq('bash -c "<commands>"', subOf('bash -c "git commit -m x"'), 'commit|git commit -m x');
+  eq("sh -lc '<commands>'", subOf("sh -lc 'git push'"), 'push|git push');
+  eq('a bash -c string runs in the tracked directory', gitDir(`cd ${fwd(a)} && bash -c "git status"`), a);
+  eq('env -C moves the wrapped command', gitDir(`env -C ${fwd(a)} git status`), a);
+
+  // ── branch projection, push targets, rebase target (cp-qvkv) ─────────────
+  eq('switch && commit runs on the switched branch', branchesAfter('git switch main && git commit -m x'), 'main');
+  eq('switch -c', branchesAfter('git switch -c feature/x && git commit -m x'), 'feature/x');
+  eq('checkout -b', branchesAfter('git checkout -b feature/x && git commit -m x'), 'feature/x');
+  eq('branch -m renames the current branch', branchesAfter('git branch -m main && git commit -m x'), 'main');
+  eq('switch --detach', branchesAfter('git switch --detach main && git commit -m x'), 'HEAD');
+  eq('checkout -- <paths> does not move HEAD', branchesAfter('git checkout -- a.txt && git commit -m x'), 'LIVE');
+  eq('checkout <commit> -- <path> does not move HEAD', branchesAfter('git checkout HEAD~1 -- a.txt && git commit -m x'), 'LIVE');
+  eq('a switch joined with ; may have failed: either branch', branchesAfter('git switch feature/x; git commit -m x'), 'LIVE,feature/x');
+  eq('a variable switch target is unknowable', branchesAfter('git switch "$B" && git commit -m x'), 'null');
+  eq('switch - is unknowable', branchesAfter('git switch - && git commit -m x'), 'null');
+  eq('checkout <name> outside any repo is unknowable', branchesAfter('git checkout main && git commit -m x'), 'null');
+  const argsOf = (command) => gitSeg(command).git.args;
+  for (const cmd of ['git push origin HEAD', 'git push -u origin HEAD', 'git push --all', 'git push --mirror',
+    'git push origin @', 'git push -u origin', 'git push']) {
+    ok(`\`${cmd}\` pushes HEAD's branch`, pushTargetsHead(argsOf(cmd)));
+  }
+  for (const cmd of ['git push origin HEAD:feature/x', 'git push origin feature/x', 'git push --tags', 'git push origin --delete old']) {
+    ok(`\`${cmd}\` does not push HEAD's branch`, !pushTargetsHead(argsOf(cmd)));
+  }
+  eq('rebase <upstream> rewrites the current branch', rebaseBranch(argsOf('git rebase main')), undefined);
+  eq('rebase <upstream> <branch> rewrites <branch>', rebaseBranch(argsOf('git rebase feature/x main')), 'main');
+
+  // ── data heredocs ──────────────────────────────────────────────────────────
+  ok('a data heredoc body is removed', !/checkout main/.test(stripDataHeredocs("git commit -F - <<'EOF'\ngit checkout main\nEOF")));
+  ok('a heredoc piped into a shell keeps its body', /git push/.test(stripDataHeredocs("cat <<'EOF' | bash\ngit push origin main\nEOF")));
+  ok('a heredoc fed to a shell keeps its body', /git push/.test(stripDataHeredocs("bash <<'EOF'\ngit push origin main\nEOF")));
+  ok('a quoted << is not a heredoc', stripDataHeredocs('echo "a <<EOF"\ngit commit -m x').includes('git commit'));
+  ok('a quote inside one body cannot hide the next, shell-run body',
+    /git push/.test(stripDataHeredocs("cat <<'A'\ncat it's\nA\nbash <<'B'\ngit push origin main\nB")));
 
   // ── pushd / popd / cd - ────────────────────────────────────────────────────
   eq('pushd moves', gitDir(`pushd ${fwd(a)} && git status`), a);
@@ -151,7 +236,8 @@ try {
   // ── the same segments as commandSegments(), always ─────────────────────────
   // The guards moved from commandSegments() to resolveSegments(). If the two
   // ever split a command differently, a guard would stop seeing a segment that
-  // commandSegments() callers still see.
+  // commandSegments() callers still see. Compared after data heredocs are
+  // stripped, and on each segment's own entry (not the `extra` ones).
   for (const cmd of [
     'git commit -m x',
     'cd . && git push origin main',
@@ -161,8 +247,8 @@ try {
     '(cd a && git status) || echo "no; really"',
     '  \n;;  ',
   ]) {
-    const got = JSON.stringify(resolveSegments(cmd, start).map((s) => s.text));
-    const want = JSON.stringify(commandSegments(cmd));
+    const got = JSON.stringify(resolveSegments(cmd, start).filter((s) => !s.extra).map((s) => s.text));
+    const want = JSON.stringify(commandSegments(stripDataHeredocs(cmd)));
     ok(`segments match commandSegments for ${JSON.stringify(cmd).slice(0, 40)}`, got === want, `${got} vs ${want}`);
   }
 } finally {
