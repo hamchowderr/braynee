@@ -16,6 +16,7 @@ const os = require('os');
 const path = require('path');
 const {
   commandSegments, resolveSegments, shellFor, toNativePath, stripDataHeredocs, pushTargetsHead, rebaseBranch,
+  pushWritesMain, pushesEveryBranch, mainRefEffect,
 } = require('./git-command.js');
 
 let pass = 0, fail = 0;
@@ -212,6 +213,79 @@ try {
   eq('PowerShell: ( ) does not scope the location', gitDir(`(cd ${a}); git status`, ps), a);
   eq('PowerShell: ~ expands even when quoted', gitDir('cd "~/proj"; git status', ps), proj);
   eq('PowerShell: $env: paths are unknowable', gitDir('cd $env:REPO; git status', ps), start);
+
+  // ── round 2: cmd.exe and Start-Process (cp-4vfe) ────────────────────────────
+  const psh = { shell: 'powershell' };
+  eq('cmd /c "<commands>"', subOf('cmd /c "git commit -m x"'), 'commit|git commit -m x');
+  eq('cmd.exe /k <words>', subOf('cmd.exe /k git push'), 'push|git push');
+  eq('Git-Bash cmd //c', subOf('cmd //c "git commit -m x"'), 'commit|git commit -m x');
+  eq('cmd /s /c', subOf('cmd /s /c "git commit -m x"'), 'commit|git commit -m x');
+  eq('PowerShell: cmd.exe /c "<commands>"', subOf('cmd.exe /c "git commit -m x"', psh), 'commit|git commit -m x');
+  eq('cmd: a lone & separates commands (and may follow a failure)',
+    branchesAfter('cmd /c "git switch main & git commit -m x"'), 'LIVE,main');
+  eq('cmd: %VAR% is unknowable', branchesAfter('cmd /c "git switch %B% && git commit -m x"'), 'null');
+  eq('PowerShell: Start-Process git -ArgumentList <list>',
+    subOf("Start-Process git -ArgumentList 'commit','-m','x' -Wait", psh), 'commit|git commit -m x');
+  eq('PowerShell: Start-Process -FilePath git.exe -ArgumentList "<string>"',
+    subOf('Start-Process -FilePath git.exe -ArgumentList "push origin main"', psh), 'push|git push origin main');
+  eq('PowerShell: saps with positional arguments', subOf("saps git 'commit -m x'", psh), 'commit|git commit -m x');
+  eq('PowerShell: Start-Process cmd -ArgumentList "/c git commit"',
+    subOf('Start-Process cmd -ArgumentList "/c git commit -m x"', psh), 'commit|git commit -m x');
+
+  // ── round 2: push destinations, every-branch pushes, main ref rewrites ────
+  const pushArgs = (cmd) => gitSeg(cmd).git.args;
+  for (const cmd of ['git push origin main', 'git push origin HEAD:main', 'git push origin :main',
+    'git push origin +main', 'git push origin refs/heads/main', 'git push origin main~0:main',
+    'git push --force-with-lease origin main', 'git push origin --delete main', 'git push origin HEAD:refs/heads/master']) {
+    ok(`\`${cmd}\` writes main/master`, !!pushWritesMain(pushArgs(cmd)));
+  }
+  for (const cmd of ['git push origin feature/main', 'git push origin main2', 'git push origin HEAD:feature/main',
+    'git push main', 'git push origin HEAD']) {
+    ok(`\`${cmd}\` does not write main/master by name`, !pushWritesMain(pushArgs(cmd)));
+  }
+  eq('push --all sends every branch', pushesEveryBranch(pushArgs('git push --all')), '--all');
+  eq('push --mirror origin', pushesEveryBranch(pushArgs('git push --mirror origin')), '--mirror');
+  eq('push origin HEAD is not every branch', pushesEveryBranch(pushArgs('git push origin HEAD')), '');
+  const rewrite = (cmd) => {
+    const r = mainRefEffect(gitSeg(cmd).git).rewrite;
+    return r ? `${r.what}>${r.ref}` : '';
+  };
+  eq('branch -f main', rewrite('git branch -f main HEAD'), 'git branch --force>main');
+  eq('branch --force master', rewrite('git branch --force master'), 'git branch --force>master');
+  eq('branch -m <x> main', rewrite('git branch -m feature/x main'), 'git branch -m>main');
+  eq('branch -M main renames the current branch onto main', rewrite('git branch -M main'), 'git branch -M>main');
+  eq('branch -C <x> main', rewrite('git branch -C feature/x main'), 'git branch -C>main');
+  eq('update-ref refs/heads/main', rewrite('git update-ref refs/heads/main HEAD'), 'git update-ref>main');
+  eq('update-ref -d refs/heads/master', rewrite('git update-ref -d refs/heads/master'), 'git update-ref>master');
+  eq('update-ref --stdin is unreadable', rewrite('git update-ref --stdin'), 'git update-ref --stdin>null');
+  eq('update-ref "$REF" is unreadable', rewrite('git update-ref "$REF" HEAD'), 'git update-ref>null');
+  for (const cmd of ['git branch -f feature/x HEAD', 'git branch -m feature/x feature/y', 'git branch main',
+    'git branch -d main', 'git update-ref refs/heads/feature/x HEAD', 'git update-ref refs/heads/main2 HEAD',
+    'git reset --hard origin/main']) {
+    eq(`\`${cmd}\` rewrites no main ref`, rewrite(cmd), '');
+  }
+  ok('`git branch main` still counts as writing the main ref', mainRefEffect(gitSeg('git branch main').git).writes);
+  ok('`git fetch origin main:main` writes it', mainRefEffect(gitSeg('git fetch origin main:main').git).writes);
+  ok('`git fetch origin main` does not', !mainRefEffect(gitSeg('git fetch origin main').git).writes);
+  ok('`git checkout -b main` writes it', mainRefEffect(gitSeg('git checkout -b main').git).writes);
+
+  // ── round 2: a worktree the same command creates ──────────────────────────
+  const newWt = path.join(root, 'new-wt'); // never created
+  {
+    const cmd = `git worktree add -b feature/wt "${fwd(newWt)}" && cd "${fwd(newWt)}" && git commit -m x`;
+    const commit = resolveSegments(cmd, start, { home }).filter((s) => s.git && s.git.sub === 'commit').pop();
+    eq('a cd into a worktree created earlier resolves before it exists', commit && commit.dir, newWt);
+    eq('...and the commit runs on the branch the add created', branchesAfter(cmd), 'feature/wt');
+  }
+  eq('git -C <new worktree> uses it too',
+    branchesAfter('git worktree add -b feature/wt ../new-wt && git -C ../new-wt commit -m x'), 'feature/wt');
+  eq('with no commit-ish the branch is named after the path',
+    branchesAfter('git worktree add ../main && cd ../main && git commit -m x'), 'main');
+  eq('--detach', branchesAfter('git worktree add --detach ../new-wt && cd ../new-wt && git commit -m x'), 'HEAD');
+  eq('a subdirectory of the new worktree belongs to it',
+    branchesAfter('git worktree add -b feature/wt ../new-wt && cd ../new-wt/src && git commit -m x'), 'feature/wt');
+  eq('an add joined with ; may have failed: unknowable too',
+    branchesAfter('git worktree add -b feature/wt ../new-wt; cd ../new-wt; git commit -m x'), 'feature/wt,null');
 
   // ── Windows-only spellings ─────────────────────────────────────────────────
   if (process.platform === 'win32') {

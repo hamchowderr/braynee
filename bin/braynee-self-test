@@ -1948,6 +1948,139 @@ results.bypass = { ok: 0, fail: 0, errors: [] };
 }
 log(`  ${results.bypass.ok} passed | ${results.bypass.fail} failed`);
 
+// ── 19d. main-branch guard, round 2 (cp-4vfe) ───────────────────────────────────
+// Four more ways onto main, and one false positive, each confirmed against real
+// repos: a worktree the same command creates (its path does not exist at hook
+// time, so a cd into it fell back to the session cwd); cmd /c and Start-Process
+// strings; a direct rewrite of the main ref from another branch, published by
+// `push --all`; and `git push origin feature/main` blocked for containing the
+// word main. Both directions for each.
+log('\n=== 19d. main-branch guard round 2 (cp-4vfe) ===');
+results.round2 = { ok: 0, fail: 0, errors: [] };
+{
+  const assertR = (label, cond, detail) => {
+    if (cond) { results.round2.ok++; log(`  OK: ${label}`); }
+    else {
+      results.round2.fail++;
+      results.round2.errors.push({ test: label, detail });
+      log(`  FAIL: ${label}${detail ? ` — ${detail}` : ''}`);
+    }
+  };
+
+  const hook = path.join(PLUGIN_ROOT, 'hooks', 'check-no-main-push.js');
+  const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), 'round2-'));
+  try {
+    const gitIn = (dir) => (...args) =>
+      spawnSync('git', args, { cwd: dir, encoding: 'utf8', windowsHide: true, timeout: 15000 });
+    const mkRepo = (dir) => {
+      fs.mkdirSync(dir, { recursive: true });
+      const g = gitIn(dir);
+      g('init', '-q', '.');
+      g('config', 'user.email', 'selftest@example.invalid');
+      g('config', 'user.name', 'selftest');
+      fs.writeFileSync(path.join(dir, 'README.md'), 'base\n');
+      g('add', '-A');
+      g('commit', '-q', '-m', 'init');
+      g('checkout', '-q', '-B', 'main');
+      return g;
+    };
+    const repo = path.join(sandbox, 'repo');     // HEAD on main
+    mkRepo(repo)('branch', 'feature/spare');
+    const feat = path.join(sandbox, 'feat');     // a feature branch, with a local main
+    mkRepo(feat)('checkout', '-q', '-b', 'feature/x');
+    const nomain = path.join(sandbox, 'nomain'); // no main or master at all
+    const gitNomain = mkRepo(nomain);
+    gitNomain('branch', '-m', 'trunk');
+    // With init.defaultBranch unset, the first commit lands on `master`, and
+    // `checkout -B main` leaves it behind: the guard then rightly blocks
+    // `push --all` here, failing this fixture's assertion for the wrong reason.
+    gitNomain('branch', '-D', 'master');
+    const optin = path.join(sandbox, 'optin');   // a feature branch in a repo that opted out
+    const gitOptin = mkRepo(optin);
+    gitOptin('checkout', '-q', '-b', 'feature/o');
+    gitOptin('config', '--local', 'braynee.allow-main-commits', 'true');
+    gitOptin('config', '--local', 'braynee.allow-main-push', 'true');
+    const headOf = (d) => (gitIn(d)('rev-parse', '--abbrev-ref', 'HEAD').stdout || '').trim();
+    const heads = [repo, feat, nomain].map(headOf);
+    const nomainBranches = (gitNomain('branch', '--format=%(refname:short)').stdout || '').trim().split(/\r?\n/);
+    assertR('fixture: repo on main, feat on a feature branch with a local main, nomain has only trunk',
+      heads.join(' ') === 'main feature/x trunk' &&
+      gitIn(feat)('show-ref', '--verify', '--quiet', 'refs/heads/main').status === 0 &&
+      nomainBranches.join(' ') === 'trunk',
+      `${heads.join(' / ')}; nomain branches: ${nomainBranches.join(', ')}`);
+
+    const fwd = (p) => p.replace(/\\/g, '/');
+    const guard = (command, cwd, tool = 'Bash') => spawnSync(process.execPath, [hook], {
+      input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: tool, tool_input: { command }, cwd }),
+      encoding: 'utf8', timeout: 20000, windowsHide: true,
+      // Cleared explicitly: an exported opt-out would make every BLOCK pass vacuously.
+      env: { ...process.env, BRAYNEE_ALLOW_MAIN_COMMITS: '', BRAYNEE_ALLOW_MAIN_PUSH: '' },
+    }).status;
+    const both = (label, command, tool) => {
+      assertR(`${label}: blocked on main`, guard(command, repo, tool) === 2);
+      assertR(`${label}: allowed on a feature branch`, guard(command, feat, tool) === 0);
+    };
+
+    // 1. a worktree the same command creates (the path is never created here).
+    const newWt = fwd(path.join(sandbox, 'new wt'));
+    assertR('`git worktree add <new> main && cd <new> && git commit` from a feature branch is blocked',
+      guard(`git worktree add "${newWt}" main && cd "${newWt}" && git commit -m x`, feat) === 2);
+    assertR('...and through `git -C <new> commit`',
+      guard(`git worktree add "${newWt}" main && git -C "${newWt}" commit -m x`, feat) === 2);
+    assertR('`git worktree add -b main <new> && cd <new> && git commit` is blocked',
+      guard(`git worktree add -b main "${newWt}" && cd "${newWt}" && git commit -m x`, nomain) === 2);
+    assertR('`git worktree add -b feature/new <new> && cd <new> && git commit` from main is allowed',
+      guard(`git worktree add -b feature/new "${newWt}" && cd "${newWt}" && git commit -m x`, repo) === 0);
+    assertR('`git worktree add <new> feature/spare && cd <new> && git commit` from main is allowed',
+      guard(`git worktree add "${newWt}" feature/spare && cd "${newWt}" && git commit -m x`, repo) === 0);
+
+    // 2. cmd.exe and Start-Process.
+    both('`cmd /c "git commit"`', 'cmd /c "git commit -m x"');
+    both('`cmd.exe /k git commit`', 'cmd.exe /k git commit -m x');
+    both('Git-Bash `cmd //c "git commit"`', 'cmd //c "git commit -m x"');
+    both('PowerShell `cmd.exe /c "git commit"`', 'cmd.exe /c "git commit -m x"', 'PowerShell');
+    both('PowerShell `Start-Process git -ArgumentList <list>`',
+      "Start-Process git -ArgumentList 'commit','-m','x' -Wait -NoNewWindow", 'PowerShell');
+    both('PowerShell `Start-Process -FilePath git.exe -ArgumentList "<string>"`',
+      'Start-Process -FilePath git.exe -ArgumentList "commit -m x"', 'PowerShell');
+    assertR('`cmd /c "git switch main & git commit"` from a feature branch is blocked',
+      guard('cmd /c "git switch main & git commit -m x"', feat) === 2);
+
+    // 3–4. rewriting the main ref from another branch.
+    assertR('`git branch -f main HEAD && git push --all` from a feature branch is blocked',
+      guard('git branch -f main HEAD && git push --all', feat) === 2);
+    assertR('`git update-ref refs/heads/main HEAD && git push --all` from a feature branch is blocked',
+      guard('git update-ref refs/heads/main HEAD && git push --all', feat) === 2);
+    for (const cmd of ['git branch -f main HEAD', 'git branch --force master', 'git update-ref refs/heads/main HEAD',
+      'git branch -m feature/x main', 'git branch -M main', 'git push --all', 'git push --mirror']) {
+      assertR(`\`${cmd}\` from a feature branch is blocked`, guard(cmd, feat) === 2);
+    }
+    assertR('`git push --all` in a repository with no main or master is allowed', guard('git push --all', nomain) === 0);
+    assertR('...unless the same command creates main first', guard('git branch main HEAD && git push --all', nomain) === 2);
+    for (const cmd of ['git branch -f feature/y HEAD', 'git update-ref refs/heads/feature/y HEAD', 'git branch -d main']) {
+      assertR(`\`${cmd}\` from a feature branch is allowed`, guard(cmd, feat) === 0);
+    }
+    assertR('`git reset --hard HEAD` on main is allowed (owner: local sync)', guard('git reset --hard HEAD', repo) === 0);
+    assertR('the per-repo opt-outs cover a main ref rewrite and push --all',
+      guard('git branch -f main HEAD && git push --all', optin) === 0);
+
+    // 5. a push is judged by where its refspecs write, not by the word main.
+    for (const cmd of ['git push origin feature/main', 'git push origin main2', 'git push origin HEAD:feature/main',
+      'git push -u origin feature/main']) {
+      assertR(`\`${cmd}\` from a feature branch is allowed`, guard(cmd, feat) === 0);
+    }
+    for (const cmd of ['git push origin HEAD:main', 'git push origin :main', 'git push origin +main',
+      'git push origin refs/heads/main', 'git push origin main~0:main', 'git push --force-with-lease origin main']) {
+      assertR(`\`${cmd}\` from a feature branch is blocked`, guard(cmd, feat) === 2);
+    }
+  } catch (e) {
+    assertR('round-2 sandbox ran', false, e && e.message);
+  } finally {
+    rmSandbox(sandbox);
+  }
+}
+log(`  ${results.round2.ok} passed | ${results.round2.fail} failed`);
+
 // ── 20. version-bump gate: warn mid-batch, fail on release (cp-0gs2) ─────────
 // The gate used to FAIL on any unreleased shipping change, which contradicted the
 // batched-release rule (commits accumulate; ONE release per batch). Main was red
