@@ -1,14 +1,16 @@
 // check-no-main-push.js
 // Hook: PreToolUse (Bash) — protects main/master from direct work.
 // Guards the ways onto main/master, not just push (cp-3rg):
-//   1. git push to/from main/master      -> block
+//   1. git push that writes main/master   -> block
 //   2. a commit-making git operation while HEAD is main/master -> block
 //      (commit, merge, rebase, cherry-pick, revert, am — cp-qvkv)
 //   3. git checkout/switch --orphan main|master -> block (this is how the
 //      braynee-web autonomous build slipped a fresh history onto main)
+//   4. a direct rewrite of the main/master ref from any branch -> block
+//      (branch -f / -m / -c onto it, update-ref refs/heads/main — cp-4vfe)
 // Exit 2 = block (stderr to Claude), exit 0 = allow.
 // Opt-outs for solo repos / no-PR workflows that intentionally work on main:
-//   env BRAYNEE_ALLOW_MAIN_COMMITS=1  -> bypass the commit + orphan-checkout guards
+//   env BRAYNEE_ALLOW_MAIN_COMMITS=1  -> bypass the commit, orphan and ref-rewrite guards
 //   env BRAYNEE_ALLOW_MAIN_PUSH=1     -> bypass the push-to-main guard
 // Each is opt-in and per-invocation. The two are independent so you can allow
 // commits-on-main without also allowing direct pushes (or vice versa).
@@ -26,6 +28,7 @@ const payload = require(path.join(__dirname, 'lib', 'hook-payload.js'));
 // runs, resolves --git-dir / GIT_DIR, and projects the branch HEAD will be on.
 const {
   resolveSegments, shellFor, gitProbe, branchesOf, parseArgs, rebaseBranch, pushTargetsHead,
+  pushWritesMain, pushesEveryBranch, mainRefEffect,
 } = require(path.join(__dirname, 'lib', 'git-command.js'));
 
 const HOOK = 'check-no-main-push';
@@ -41,7 +44,9 @@ const isMain = (b) => b === 'main' || b === 'master';
 // cp-qvkv (owner's scope): every operation that creates or rewrites commits on
 // the branch it runs on is guarded like `commit`. `git pull` and `git fetch` are
 // ordinary sync and are not, and `git rebase main` on a feature branch rewrites
-// the FEATURE branch — rebase is judged by the branch it rewrites.
+// the FEATURE branch — rebase is judged by the branch it rewrites. `git reset`
+// is not guarded either (cp-4vfe): on main it is local sync, and pushing the
+// result is caught by the push check.
 const COMMIT_OPS = new Set(['commit', 'merge', 'rebase', 'cherry-pick', 'revert', 'am']);
 // Options that only stop or inspect an operation already under way.
 const CONTROL = {
@@ -77,9 +82,10 @@ process.stdin.on('end', () => {
     const segments = resolveSegments(command, p.cwd, { shell: shellFor(p.hostTool), probe });
 
     // Opt-outs are per-repo, read from the repo each segment acts on, and only
-    // for a segment that needs one.
-    const allowMain = (seg) => ENV_ALLOW_MAIN || probe.allows(seg, 'allow-main-commits');
-    const allowMainPush = (seg) => ENV_ALLOW_MAIN_PUSH || probe.allows(seg, 'allow-main-push');
+    // for a segment that needs one. A repository that cannot be known has no
+    // opt-out to read: the fallback directory is not the one being written.
+    const allowMain = (seg) => ENV_ALLOW_MAIN || (!seg.closed && probe.allows(seg, 'allow-main-commits'));
+    const allowMainPush = (seg) => ENV_ALLOW_MAIN_PUSH || (!seg.closed && probe.allows(seg, 'allow-main-push'));
     const closedMessage = (seg, what) =>
       `BLOCKED: \`${what}\` is given ${seg.closed}, so the repository and branch it acts on cannot be ` +
       `checked. Use a literal path that exists, or run it from inside the repository.`;
@@ -95,33 +101,65 @@ process.stdin.on('end', () => {
       const { sub, args } = seg.git;
       const s = seg.match;
 
-      // ---- 1. push to/from main/master ----
+      // ---- 4. a direct rewrite of the main/master ref, from any branch ----
+      // cp-4vfe: `git branch -f main HEAD && git push --all` from a feature
+      // branch made no commit on main and pushed no HEAD, so nothing saw it.
+      const rewrite = mainRefEffect(seg.git).rewrite;
+      if (rewrite) {
+        if (allowMain(seg)) continue;
+        if (!rewrite.ref) {
+          block(`blocked ${rewrite.what} of an unreadable ref`,
+            `BLOCKED: \`${rewrite.what}\` writes a branch ref this hook cannot read (a variable, or refs given on ` +
+            `stdin), so it may rewrite main/master. Name the ref literally and run it again. ${COMMIT_HATCH}`);
+        }
+        block(`blocked ${rewrite.what} onto ${rewrite.ref}`,
+          `BLOCKED: \`${rewrite.what}\` rewrites the '${rewrite.ref}' branch ref directly, whichever branch is ` +
+          `checked out, and a later push publishes it. Put the work on a feature branch and merge it through a ` +
+          `PR instead (\`git reset\` on main stays allowed). ${COMMIT_HATCH}`);
+      }
+
+      // ---- 1. push that writes main/master ----
       if (sub === 'push') {
-        const explicit = /git\s+push.*\b(main|master)\b/i.test(s);
-        const head = !explicit && pushTargetsHead(args);
-        if (explicit || head) {
-          // A repo that cannot be known has no opt-out to read either.
-          if (seg.closed && !ENV_ALLOW_MAIN_PUSH) block('blocked push to an unresolvable repo', closedMessage(seg, 'git push'));
-          if (explicit && !allowMainPush(seg)) {
-            block('blocked explicit push to main/master',
-              `BLOCKED: Do not push directly to main/master. Create a feature branch and PR instead. ${PUSH_HATCH}`);
+        // cp-4vfe: judged by refspec destination, so `feature/main` is not main.
+        const named = pushWritesMain(args);
+        const every = pushesEveryBranch(args);
+        const head = pushTargetsHead(args);
+        if ((named || every || head) && seg.closed && !ENV_ALLOW_MAIN_PUSH) {
+          block('blocked push to an unresolvable repo', closedMessage(seg, 'git push'));
+        }
+        if (named && !allowMainPush(seg)) {
+          block(`blocked push to ${named}`,
+            `BLOCKED: This push writes '${named}' on the remote. Do not push directly to main/master. Create a ` +
+            `feature branch and PR instead. ${PUSH_HATCH}`);
+        }
+        if (every) {
+          // cp-4vfe: --all / --mirror / --branches send every local branch, main
+          // included, whatever branch is checked out. --mirror also deletes a
+          // remote main that has no local counterpart.
+          const main = probe.localMain(seg) || (seg.mainRefWritten ? 'main' : '') ||
+            (every === '--mirror' && probe.remoteMain(seg) ? 'main' : '');
+          if (main && !allowMainPush(seg)) {
+            block(`blocked push ${every} with ${main} present`,
+              `BLOCKED: \`git push ${every}\` sends every local branch, and '${main}' is among them here, so it ` +
+              `pushes main directly whichever branch is checked out. Push the feature branch by name instead ` +
+              `(\`git push -u origin <branch>\`). ${PUSH_HATCH}`);
           }
-          if (head) {
-            const branches = branchesOf(seg, probe);
-            const onMain = branches.find(isMain);
-            if (branches.includes(null) && !allowMainPush(seg)) block('blocked push after an unknowable switch', unknownMessage('git push'));
-            if (onMain && !allowMainPush(seg)) {
-              // cp-qvkv: `git push origin HEAD`, `--all` and `--mirror` name no
-              // branch, yet from main they push main.
-              block(`blocked push of HEAD from ${onMain}`,
-                `BLOCKED: Currently on '${onMain}', and this push sends it (a bare push, HEAD/@, --all or ` +
-                `--mirror). Create a feature branch and PR instead of pushing directly. ${PUSH_HATCH}`);
-            }
-            if (branches.includes(undefined)) {
-              // This is a SAFETY gate: a HEAD push whose branch cannot be read
-              // goes through unguarded, so leave a trace of why.
-              log.debug(HOOK, 'could not resolve the branch for a push that targets HEAD');
-            }
+        }
+        if (head) {
+          const branches = branchesOf(seg, probe);
+          const onMain = branches.find(isMain);
+          if (branches.includes(null) && !allowMainPush(seg)) block('blocked push after an unknowable switch', unknownMessage('git push'));
+          if (onMain && !allowMainPush(seg)) {
+            // cp-qvkv: `git push origin HEAD`, `--all` and `--mirror` name no
+            // branch, yet from main they push main.
+            block(`blocked push of HEAD from ${onMain}`,
+              `BLOCKED: Currently on '${onMain}', and this push sends it (a bare push, HEAD/@, --all or ` +
+              `--mirror). Create a feature branch and PR instead of pushing directly. ${PUSH_HATCH}`);
+          }
+          if (branches.includes(undefined)) {
+            // This is a SAFETY gate: a HEAD push whose branch cannot be read
+            // goes through unguarded, so leave a trace of why.
+            log.debug(HOOK, 'could not resolve the branch for a push that targets HEAD');
           }
         }
         try {
