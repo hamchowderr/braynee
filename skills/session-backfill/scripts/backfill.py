@@ -226,19 +226,40 @@ def kebab_to_wikilink(kebab: str) -> str:
     return " ".join(w.capitalize() for w in kebab.split("-") if w)
 
 
+# Characters Windows refuses in a folder name, plus control characters.
+_FORBIDDEN_FOLDER_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+
+
+def session_folder_name(project: str) -> str:
+    """The Sessions/ folder for a project: its name verbatim, minus characters
+    Windows forbids and trailing dots/spaces. Mirrors sessionFolderName in
+    hooks/lib/session-folder.js (cp-g3xp) so the backfill and the live hooks
+    write one folder per project."""
+    name = _FORBIDDEN_FOLDER_CHARS.sub("", project or "").rstrip(". ")
+    return name or "_uncategorized"
+
+
 def kebab_to_folder(kebab: str) -> str:
-    """`sophon-webapp` → `Sophon-Webapp` (Title-Kebab; vault convention)."""
-    return kebab_to_wikilink(kebab).replace(" ", "-")
+    """`sophon-webapp` → `Sophon Webapp` — the project name, as the live hooks
+    write it (cp-g3xp)."""
+    return session_folder_name(kebab_to_wikilink(kebab))
+
+
+def legacy_folder_names(kebab: str) -> set[str]:
+    """Lowercased dashed folder names earlier versions wrote for this project:
+    the raw kebab (`sophon-webapp`), Title-Kebab (`Sophon-Webapp`), and the
+    hooks' `[^a-zA-Z0-9]+` -> `-` slug. Read side only — never a write target."""
+    name = kebab_to_wikilink(kebab)
+    return {kebab.lower(), name.replace(" ", "-").lower(),
+            re.sub(r"[^a-zA-Z0-9]+", "-", name).lower()}
 
 
 def resolve_project_folder(sessions_dir: Path, kebab: str) -> Path:
-    """Return the Sessions/ subfolder new notes should land in — preferring an
-    EXISTING folder over the computed name, so a backfill consolidates into the
-    folder a project's notes already live in rather than spawning a case-variant
-    twin. The real hook wrote folders inconsistently over time (lowercase
-    `sophon-webapp/` vs Title-Kebab `Sophon-Webapp/`); matching case-insensitively
-    against both the raw kebab and the Title-Kebab form heals that drift.
-    Falls back to the Title-Kebab name only when no folder exists yet. A
+    """Return the Sessions/ subfolder new notes should land in: the project name
+    (cp-g3xp), reusing an existing folder that differs from it only in case so a
+    backfill never spawns a case-variant twin. Legacy dashed folders are not
+    write targets — a stub already in one is still upgraded in place through the
+    session_id index, and the GC pass sweeps them (project_session_folders). A
     project_map override with an explicit 'folder' wins outright — it routes a
     project into a specific folder (e.g. fold an old name into its successor, or
     park non-project cwd sessions in a named bucket), preferring the existing
@@ -251,21 +272,35 @@ def resolve_project_folder(sessions_dir: Path, kebab: str) -> Path:
                     return d
         return sessions_dir / forced
     computed = kebab_to_folder(kebab)
-    wanted = {kebab.lower(), computed.lower()}
     if sessions_dir.exists():
         best = None
         best_count = -1
         for d in sessions_dir.iterdir():
-            if not d.is_dir() or d.name.lower() not in wanted:
+            if not d.is_dir() or d.name.lower() != computed.lower():
                 continue
-            # If both a lowercase and Title-Kebab twin exist, prefer the one
-            # holding more notes (the canonical home).
+            # A case-sensitive filesystem can hold several case variants; prefer
+            # the one holding more notes (the canonical home).
             count = sum(1 for _ in d.glob("*.md"))
             if count > best_count:
                 best, best_count = d, count
         if best is not None:
             return best
     return sessions_dir / computed
+
+
+def project_session_folders(sessions_dir: Path, kebab: str) -> list[Path]:
+    """Every existing Sessions/ folder holding this project's notes: the write
+    folder first, then any legacy dashed folder."""
+    folders: list[Path] = []
+    write = resolve_project_folder(sessions_dir, kebab)
+    if write.is_dir():
+        folders.append(write)
+    if sessions_dir.exists():
+        legacy = legacy_folder_names(kebab)
+        for d in sorted(sessions_dir.iterdir()):
+            if d.is_dir() and d.name.lower() in legacy and d not in folders:
+                folders.append(d)
+    return folders
 
 
 # ── JSONL filtering ───────────────────────────────────────────────────────
@@ -840,8 +875,8 @@ def backfill_one(
     kebab = cc_dir_to_kebab(cc_dir)
     project_wikilink = kebab_to_wikilink(kebab)
 
-    # Prefer the folder this project's notes already live in (heals the
-    # lowercase vs Title-Kebab folder drift the live hook left behind).
+    # The project-name folder the live hooks write (cp-g3xp); an existing
+    # case-variant of it is reused rather than twinned.
     folder = resolve_project_folder(sessions_dir, kebab)
     session_id = jsonl_path.stem
 
@@ -1104,20 +1139,20 @@ def main() -> int:
                     stats["would_create"] += 1
             print(f"  {msg}", flush=True)
 
-        # GC pass — sweep this project's folder for content-free pre-fix stubs
-        # that create-fresh has now superseded. Scoped to the folder the
-        # project's notes actually live in (drift-healed).
+        # GC pass — sweep this project's folders for content-free pre-fix stubs
+        # that create-fresh has now superseded. Pre-fix stubs sit in the legacy
+        # dashed folders older hooks wrote, so those are swept too (cp-g3xp).
         if args.gc_stubs:
             kebab = cc_dir_to_kebab(d.name)
-            folder = resolve_project_folder(sessions_dir, kebab)
-            victims = gc_hollow_stubs(folder, dry_run=args.dry_run)
             verb = "WOULD DELETE" if args.dry_run else "DELETED"
-            print(f"  --- GC: {verb} {len(victims)} hollow stub(s) in {folder.name}/ ---", flush=True)
-            for v in victims[:40]:
-                print(f"      {verb}: {v.name}")
-            if len(victims) > 40:
-                print(f"      … and {len(victims) - 40} more")
-            stats["gc_would_delete" if args.dry_run else "gc_deleted"] += len(victims)
+            for folder in project_session_folders(sessions_dir, kebab):
+                victims = gc_hollow_stubs(folder, dry_run=args.dry_run)
+                print(f"  --- GC: {verb} {len(victims)} hollow stub(s) in {folder.name}/ ---", flush=True)
+                for v in victims[:40]:
+                    print(f"      {verb}: {v.name}")
+                if len(victims) > 40:
+                    print(f"      … and {len(victims) - 40} more")
+                stats["gc_would_delete" if args.dry_run else "gc_deleted"] += len(victims)
 
     print("\n=== Summary ===")
     for k, v in stats.items():

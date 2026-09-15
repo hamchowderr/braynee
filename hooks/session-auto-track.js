@@ -25,6 +25,9 @@ const {
   findProjectName: lookupProjectName,
 } = require(path.join(__dirname, 'lib', 'vault-projects.js'));
 const { findTranscriptDir } = require(path.join(__dirname, 'lib', 'transcript-dir.js'));
+// cp-g3xp: the ONE project-name → Sessions folder mapping. Writes use the
+// verbatim name; resolution also finds a legacy dashed folder.
+const { sessionFolderName, existingSessionFolders } = require(path.join(__dirname, 'lib', 'session-folder.js'));
 
 const HOOK = 'session-auto-track';
 
@@ -280,8 +283,9 @@ function sweepStaleActiveSessions(staleHours) {
 function findActiveSession(projectName) {
   if (!fs.existsSync(SESSIONS_DIR)) return null;
 
-  const projectSlug = projectName.replace(/[^a-zA-Z0-9]+/g, '-');
-  const projectDir = path.join(SESSIONS_DIR, projectSlug);
+  // The project's own folder(s): its name, then a legacy dashed folder if one
+  // exists (cp-g3xp).
+  const projectDirs = existingSessionFolders(SESSIONS_DIR, projectName);
 
   // ─── Try QMD first (fast semantic search) ────────────────────────
   try {
@@ -301,8 +305,8 @@ function findActiveSession(projectName) {
     // QMD unavailable — fall through to filesystem
   }
 
-  // ─── Try project subfolder (fast path) ───────────────────────────
-  if (fs.existsSync(projectDir)) {
+  // ─── Try project subfolder(s) (fast path) ────────────────────────
+  for (const projectDir of projectDirs) {
     const files = walkMdFiles(projectDir);
     files.sort((a, b) => path.basename(b).localeCompare(path.basename(a)));
     for (const filepath of files) {
@@ -312,8 +316,7 @@ function findActiveSession(projectName) {
   }
 
   // ─── Fallback: scan all of SESSIONS_DIR (backwards compat) ──────
-  const seenDirs = new Set();
-  if (fs.existsSync(projectDir)) seenDirs.add(projectDir.toLowerCase());
+  const seenDirs = new Set(projectDirs.map(d => d.toLowerCase()));
 
   const allFiles = walkMdFiles(SESSIONS_DIR).filter(f => {
     // Skip files already checked in projectDir
@@ -337,9 +340,10 @@ function findActiveSession(projectName) {
 // second, parallel note. Without it the stub and the distilled note diverge
 // (duplication + folder drift). See beads: hollow-stub coordination bug.
 function createSession(projectName, branch, sessionId) {
-  // Create project subfolder
-  const projectSlug = projectName.replace(/[^a-zA-Z0-9]+/g, '-');
-  const projectDir = path.join(SESSIONS_DIR, projectSlug);
+  // Create project subfolder — always the verbatim project name, never a
+  // dashed slug (cp-g3xp)
+  const sessionFolder = sessionFolderName(projectName);
+  const projectDir = path.join(SESSIONS_DIR, sessionFolder);
   if (!fs.existsSync(projectDir)) {
     fs.mkdirSync(projectDir, { recursive: true });
   }
@@ -393,7 +397,7 @@ ${branch ? `- Branch: \`${branch}\`` : ''}
 `;
 
   fs.writeFileSync(filepath, content, 'utf-8');
-  const relPath = projectSlug + '/' + filename;
+  const relPath = sessionFolder + '/' + filename;
   return { filename, filepath, content, relPath };
 }
 

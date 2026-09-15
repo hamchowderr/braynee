@@ -44,14 +44,18 @@ function findMdFiles(dir) {
   return results;
 }
 
+// cp-g3xp: the ONE project-name → Sessions folder mapping, legacy dashed
+// folders included on the read side.
+const { existingSessionFolders } = require(path.join(__dirname, 'lib', 'session-folder.js'));
+
 function findActiveSession(projectName) {
   if (!fs.existsSync(SESSIONS_DIR)) return null;
 
-  const projectSlug = projectName.replace(/[^a-zA-Z0-9]+/g, '-');
-  const projectDir = path.join(SESSIONS_DIR, projectSlug);
   const seen = new Set();
 
-  for (const searchDir of [projectDir, SESSIONS_DIR].filter(d => fs.existsSync(d))) {
+  // The project's own folder(s) first — its name, then a legacy dashed folder
+  // if one exists — then all of Sessions/.
+  for (const searchDir of [...existingSessionFolders(SESSIONS_DIR, projectName), SESSIONS_DIR]) {
     const files = findMdFiles(searchDir).filter(f => !seen.has(f));
     files.sort((a, b) => path.basename(b).localeCompare(path.basename(a)));
 

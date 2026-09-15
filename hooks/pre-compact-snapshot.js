@@ -34,14 +34,17 @@ function findProjectName(folderName) {
   return lookupProjectName(folderName, VAULT_DIR);
 }
 
+// cp-g3xp: the ONE project-name → Sessions folder mapping, legacy dashed
+// folders included on the read side.
+const { existingSessionFolders } = require(path.join(__dirname, 'lib', 'session-folder.js'));
+
 // Find active session note for a project, returns { filename, filepath, content } or null.
 // F-8.1: session notes are grouped into project subfolders
-// (Sessions/<ProjectSlug>/...), so a flat readdir of SESSIONS_DIR misses them
+// (Sessions/<Project Name>/...), so a flat readdir of SESSIONS_DIR misses them
 // and compaction reinjection would restore nothing. Walk recursively, matching
 // the resilient scan in session-end.js.
 function findActiveSession(projectName) {
   if (!fs.existsSync(SESSIONS_DIR)) return null;
-  const projectSlug = projectName.replace(/[^a-zA-Z0-9]+/g, '-');
 
   function walkMd(dir) {
     const results = [];
@@ -61,7 +64,9 @@ function findActiveSession(projectName) {
     return results;
   }
 
-  const dirs = [path.join(SESSIONS_DIR, projectSlug), SESSIONS_DIR].filter(d => fs.existsSync(d));
+  // The project's own folder(s) first — its name, then a legacy dashed folder
+  // if one exists — then all of Sessions/.
+  const dirs = [...existingSessionFolders(SESSIONS_DIR, projectName), SESSIONS_DIR];
   const seen = new Set();
   for (const dir of dirs) {
     for (const filepath of walkMd(dir).sort((a, b) => path.basename(b).localeCompare(path.basename(a)))) {

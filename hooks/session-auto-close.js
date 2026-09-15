@@ -37,11 +37,12 @@ function findProjectName(folderName) {
   return lookupProjectName(folderName, VAULT_DIR);
 }
 
+// cp-g3xp: the ONE project-name → Sessions folder mapping, legacy dashed
+// folders included on the read side.
+const { existingSessionFolders } = require(path.join(__dirname, 'lib', 'session-folder.js'));
+
 function findActiveSession(projectName) {
   if (!fs.existsSync(SESSIONS_DIR)) return null;
-
-  const projectSlug = projectName.replace(/[^a-zA-Z0-9]+/g, '-');
-  const projectDir = path.join(SESSIONS_DIR, projectSlug);
 
   // Recursive file finder
   function findMdFiles(dir) {
@@ -63,10 +64,9 @@ function findActiveSession(projectName) {
     return results;
   }
 
-  // Search project subfolder first, then all of Sessions/
-  const searchDirs = [];
-  if (fs.existsSync(projectDir)) searchDirs.push(projectDir);
-  searchDirs.push(SESSIONS_DIR);
+  // Search the project's own folder(s) first — its name, then a legacy dashed
+  // folder if one exists — then all of Sessions/.
+  const searchDirs = [...existingSessionFolders(SESSIONS_DIR, projectName), SESSIONS_DIR];
 
   const searched = new Set();
   for (const searchDir of searchDirs) {
