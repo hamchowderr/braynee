@@ -25,6 +25,8 @@ import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
 const { getVaultRoot } = require('./lib/vault-root.js');
+// cp-g3xp: the one project-name → Sessions folder mapping, shared with the hooks.
+const { sessionFolderName } = require('../hooks/lib/session-folder.js');
 
 // ─── Configuration ──────────────────────────────────────────────────────────
 const VAULT = getVaultRoot();
@@ -326,16 +328,17 @@ function createSessionNote(args) {
   if (!tags.includes('session')) tags.unshift('session');
   if (type && !tags.includes(type)) tags.push(type);
 
-  // Create project subfolder under Sessions/
-  const projectSlug = (project || '_uncategorized').replace(/[^a-zA-Z0-9]+/g, '-');
-  const subfolder = join(FOLDERS.sessions, projectSlug);
+  // Create project subfolder under Sessions/ — the project name verbatim, the
+  // same folder the session hooks write. No --project lands in _uncategorized.
+  const sessionFolder = sessionFolderName(project);
+  const subfolder = join(FOLDERS.sessions, sessionFolder);
   ensureFolder(subfolder);
 
   const filename = generateSessionFilename(project, type);
   const filepath = join(subfolder, filename);
 
   if (existsSync(filepath)) {
-    console.error(`Session file already exists: ${projectSlug}/${filename}`);
+    console.error(`Session file already exists: ${sessionFolder}/${filename}`);
     console.error('Use a different --type or wait for the next date.');
     process.exit(1);
   }
@@ -374,7 +377,7 @@ ${branch ? `- Branch: ${branch}` : ''}
 `;
 
   writeFileSync(filepath, content, 'utf-8');
-  console.log(`✅ Session created: Sessions/${projectSlug}/${filename}`);
+  console.log(`✅ Session created: Sessions/${sessionFolder}/${filename}`);
   console.log(`   Project: ${project || '(none)'}`);
   console.log(`   Type: ${type}`);
   console.log(`   Goal: ${goal}`);
