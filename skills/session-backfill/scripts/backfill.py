@@ -118,16 +118,38 @@ MAX_INPUT_CHARS = 80_000
 
 
 # ── Project name resolution ───────────────────────────────────────────────
-def load_overrides() -> dict[str, str]:
-    if not MAP_FILE.exists():
-        return {}
-    try:
-        data = json.loads(MAP_FILE.read_text(encoding="utf-8"))
-        return {k: v for k, v in data.items() if not k.startswith("_")}
-    except Exception:
-        return {}
+def override_map_paths(vault: Path | None = None) -> list[Path]:
+    """Where a project_map.json may live, most-specific first.
+
+    The vault copy is the real one: it is user data, it survives plugin
+    upgrades, and — unlike SCRIPT_DIR — it exists when this script runs from
+    the installed plugin cache. SCRIPT_DIR stays as a fallback so an existing
+    map next to the script keeps working (cp-x4y8)."""
+    paths: list[Path] = []
+    if vault is not None:
+        paths.append(vault / ".braynee" / "project_map.json")
+    paths.append(MAP_FILE)
+    return paths
 
 
+def load_overrides(vault: Path | None = None) -> dict[str, str]:
+    """First readable project_map.json wins. Keys starting with `_` are
+    metadata (`_comment`, `_use-object-when`) and are never overrides."""
+    for path in override_map_paths(vault):
+        if not path.exists():
+            continue
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        if isinstance(data, dict):
+            return {k: v for k, v in data.items() if not k.startswith("_")}
+    return {}
+
+
+# Module-level default so importers and --help work without a vault. main()
+# reloads this once the vault is resolved, which is what makes the vault copy
+# take effect (cp-x4y8).
 OVERRIDES = load_overrides()
 
 # Common parent-directory tokens. When a CC folder encodes
@@ -1057,6 +1079,11 @@ def main() -> int:
         )
         return 1
     sessions_dir = vault / "2. Areas" / "Sessions"
+
+    # Reload overrides now the vault is known — the vault copy is the one that
+    # exists when this runs from the plugin cache (cp-x4y8).
+    global OVERRIDES
+    OVERRIDES = load_overrides(vault)
 
     client = None
     if args.use_api and not args.dry_run:
