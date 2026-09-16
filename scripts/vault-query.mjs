@@ -147,6 +147,21 @@ function readNote(filePath) {
   };
 }
 
+/**
+ * The project a note's `project:` frontmatter names, as a bare name.
+ *
+ * The value may be a bare wikilink (`[[Foreman]]`) or a vault-relative path
+ * one (`[[1. Projects/Foreman/Foreman]]`) — hooks/lib/project-resolver.js
+ * emits the path form. Comparing the whole stripped value made every
+ * path-form note invisible to `context` (cp-8zpc), so always reduce to the
+ * last path segment.
+ */
+function projectNameOf(frontmatterProject) {
+  if (typeof frontmatterProject !== 'string') return '';
+  const stripped = frontmatterProject.replace(/\[\[|\]\]/g, '').trim();
+  return stripped.split('/').pop().trim();
+}
+
 // ─── Query Engine ───────────────────────────────────────────────────────────
 function matchesFilter(note, filters) {
   for (const [key, target] of Object.entries(filters)) {
@@ -583,11 +598,7 @@ function loadContext(args) {
   console.log('\n── ACTIVE SESSIONS ──────────────────────────────────────');
   const sessions = findMarkdownFiles(FOLDERS.sessions, true)
     .map(f => readNote(f))
-    .filter(n => {
-      const p = n.frontmatter.project;
-      const pName = typeof p === 'string' ? p.replace(/\[\[|\]\]/g, '') : '';
-      return pName.toLowerCase() === project.toLowerCase();
-    })
+    .filter(n => projectNameOf(n.frontmatter.project).toLowerCase() === project.toLowerCase())
     .sort((a, b) => b.modified - a.modified);
 
   const activeSessions = sessions.filter(s => s.frontmatter.status === 'active');
