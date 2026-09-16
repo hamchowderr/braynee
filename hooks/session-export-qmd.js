@@ -23,9 +23,6 @@ const summary = require(path.join(__dirname, 'lib', 'session-summary.js'));
 
 const HOOK = 'session-export-qmd';
 
-const { getVaultRoot } = require(path.join(__dirname, '..', 'scripts', 'lib', 'vault-root.js'));
-const { resolveProjectLink } = require(path.join(__dirname, 'lib', 'project-resolver.js'));
-const VAULT_DIR = getVaultRoot();
 const CLAUDE_PROJECTS_DIR = path.join(os.homedir(), '.claude', 'projects');
 // Use braynee's bundled qmd-wrapper (cross-platform) — handles qmd discovery internally.
 const QMD_WRAPPER = path.join(__dirname, '..', 'scripts', 'qmd-wrapper.mjs');
@@ -125,41 +122,17 @@ function parseJsonl(filepath) {
   return { messages, meta: sessionMeta };
 }
 
-function buildMarkdown(messages, meta) {
-  const date = meta.timestamp ? new Date(meta.timestamp).toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
-  const folderName = meta.cwd ? path.basename(meta.cwd) : 'unknown';
-  const projectLink = resolveProjectLink(folderName, VAULT_DIR);
-
-  const parts = [];
-
-  // Frontmatter
-  parts.push('---');
-  parts.push(`type: transcript`);
-  parts.push(`session_id: "${meta.sessionId}"`);
-  if (projectLink) parts.push(`project: "[[${projectLink}]]"`);
-  parts.push(`project_folder: "${folderName}"`);
-  parts.push(`date: ${date}`);
-  parts.push(`slug: "${meta.slug}"`);
-  parts.push(`messages: ${messages.length}`);
-  parts.push(`tags:\n  - transcript\n  - session`);
-  parts.push('---');
-  parts.push('');
-
-  // Title
-  parts.push(`# Session Transcript — ${date} — ${meta.slug}`);
-  parts.push(`Project: \`${folderName}\` | Messages: ${messages.length}`);
-  parts.push('');
-
-  // Messages
-  for (const msg of messages) {
-    const label = msg.role === 'user' ? '## User' : '## Assistant';
-    parts.push(label);
-    parts.push('');
-    parts.push(msg.text);
-    parts.push('');
-  }
-
-  return { content: parts.join('\n'), date, slug: meta.slug };
+/**
+ * Date + slug for the log line only. This used to be a side effect of building
+ * the whole transcript markdown; that builder outlived the transcript write it
+ * fed (ef40eaf) and kept running per session to have its result thrown away.
+ * Its dead `path.basename(meta.cwd)` attribution also read as live code and
+ * misled an audit into naming this hook the source of session misfiling —
+ * the real writers are session-auto-track.js and session-backfill (cp-d5jz).
+ */
+function sessionLabelParts(meta) {
+  const ts = meta.timestamp ? new Date(meta.timestamp) : new Date();
+  return { date: ts.toISOString().split('T')[0], slug: meta.slug };
 }
 
 function updateQmdIndex() {
@@ -226,7 +199,7 @@ process.stdin.on('end', () => {
     // The vault keeps the distilled summary; the raw conversation stays at its
     // source. This is the vault's own rule — it is the thinking layer, not a
     // transcript archive.
-    const { date, slug } = buildMarkdown(messages, meta);
+    const { date, slug } = sessionLabelParts(meta);
     const sidPrefix = (meta.sessionId || '').slice(0, 8) || 'nosid000';
     const sessionLabel = `${date}-${slug}-${sidPrefix}`;
 
