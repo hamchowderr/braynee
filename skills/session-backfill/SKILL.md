@@ -105,7 +105,11 @@ tags:
 
 Claude Code stores each project under `~/.claude/projects/<encoded-path>/`, where the encoded path is the project's absolute path with separators (and the Windows drive colon) replaced by `-`. The skill derives the project slug generically — it strips a leading Windows drive letter, then takes the path segment after the last recognised parent directory token (`code`, `src`, `work`, `repos`, `dev`, …). This works for any user on any OS regardless of where their code lives.
 
-For projects where the derived slug doesn't map to a clean wikilink (e.g., `dealreveal-engine` → `DealReveal`, not `Dealreveal Engine`), add an override in `scripts/project_map.json`. Overrides are optional — without them the slug is title-cased word-by-word.
+For projects where the derived slug doesn't map to a clean wikilink (e.g., `dealreveal-engine` → `DealReveal`, not `Dealreveal Engine`), add an override. Overrides are optional — without them the slug is title-cased word-by-word.
+
+**Put the map at `<vault>/.braynee/project_map.json`.** It is looked up there first, then at `scripts/project_map.json` next to this script. The vault copy is the one that works in practice: the script-dir copy is git-ignored, so an installed plugin never ships it and every override silently no-ops (cp-x4y8). A map in the vault is also user data that survives plugin upgrades. Copy `scripts/project_map.example.json` as a starting point.
+
+An override's `folder` must name a Sessions folder that actually exists, or the backfill creates a second one beside it. Check before adding: `ls "<vault>/2. Areas/Sessions"`.
 
 ## Requirements
 
