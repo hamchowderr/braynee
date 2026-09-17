@@ -239,12 +239,74 @@ def _override_folder(kebab: str) -> str | None:
     return None
 
 
+# folder-name (lowercased) -> the project note's `name:`. Populated in main()
+# once the vault is known; empty for importers and --help.
+PROJECT_NAMES: dict[str, str] = {}
+
+
+def _fm_field(head: str, field: str) -> str | None:
+    m = re.search(rf'^{field}:\s*"?([^"\n]+)"?$', head, re.M)
+    return m.group(1).strip() if m else None
+
+
+def load_project_names(vault: Path) -> dict[str, str]:
+    """Map every project note's `folder:` field to its `name:`.
+
+    This is the vault's own answer to "what is this repo called", and it is what
+    hooks/lib/vault-projects.js findProjectName() already uses — so reading it
+    here keeps backfill and the live hooks writing ONE folder per project
+    (cp-3bzk). Breadth-first so a top-level note beats a nested one and the
+    result does not depend on filesystem ordering, matching the JS.
+    """
+    root = vault / "1. Projects"
+    if not root.is_dir():
+        return {}
+    names: dict[str, str] = {}
+    levels = [[root]]
+    while levels:
+        current = levels.pop(0)
+        nxt: list[Path] = []
+        for d in current:
+            try:
+                entries = sorted(d.iterdir(), key=lambda p: p.name)
+            except OSError:
+                continue
+            for e in entries:                       # files first = shallowest wins
+                if e.is_file() and e.suffix == ".md":
+                    try:
+                        head = e.read_text(encoding="utf-8", errors="replace")[:4096]
+                    except OSError:
+                        continue
+                    folder = _fm_field(head, "folder")
+                    if not folder:
+                        continue
+                    key = folder.lower()
+                    if key not in names:
+                        names[key] = _fm_field(head, "name") or e.stem
+            for e in entries:
+                if e.is_dir() and not e.name.startswith("."):
+                    nxt.append(e)
+        if nxt:
+            levels.append(nxt)
+    return names
+
+
 def kebab_to_wikilink(kebab: str) -> str:
-    """`sophon-webapp` → `Sophon Webapp` (Title Case With Spaces); a project_map
-    override wins (string value, or the 'wikilink' key of an object value)."""
+    """`sophon-webapp` → `Sophon Webapp` (Title Case With Spaces).
+
+    Precedence: an explicit project_map override, then the vault's own project
+    note (`folder:` → `name:`), then a capitalised join. The middle step is the
+    one that matters: without it `myrp-build` becomes "Myrp Build" and
+    `savant-os` becomes "Savant Os", neither of which is what the project note
+    or the live hooks call it, so backfill spawns a second Sessions folder
+    beside the real one (cp-3bzk).
+    """
     wl = _override_wikilink(kebab)
     if wl:
         return wl
+    from_vault = PROJECT_NAMES.get(kebab.lower())
+    if from_vault:
+        return from_vault
     return " ".join(w.capitalize() for w in kebab.split("-") if w)
 
 
@@ -278,8 +340,12 @@ def legacy_folder_names(kebab: str) -> set[str]:
 
 def resolve_project_folder(sessions_dir: Path, kebab: str) -> Path:
     """Return the Sessions/ subfolder new notes should land in: the project name
-    (cp-g3xp), reusing an existing folder that differs from it only in case so a
-    backfill never spawns a case-variant twin. Legacy dashed folders are not
+    as the VAULT PROJECT NOTE spells it (cp-3bzk), which is the same source the
+    live hooks use — that agreement is what makes "one folder per project" true
+    rather than aspirational. Falls back to a capitalised join of the Claude
+    Code directory name only when no project note claims that folder. Reuses an
+    existing folder that differs only in case so a backfill never spawns a
+    case-variant twin (cp-g3xp). Legacy dashed folders are not
     write targets — a stub already in one is still upgraded in place through the
     session_id index, and the GC pass sweeps them (project_session_folders). A
     project_map override with an explicit 'folder' wins outright — it routes a
@@ -1082,8 +1148,12 @@ def main() -> int:
 
     # Reload overrides now the vault is known — the vault copy is the one that
     # exists when this runs from the plugin cache (cp-x4y8).
-    global OVERRIDES
+    global OVERRIDES, PROJECT_NAMES
     OVERRIDES = load_overrides(vault)
+    # And the vault's own folder->name map, so a project's Sessions folder is
+    # named what the project note calls it, not what the CC directory does
+    # (cp-3bzk).
+    PROJECT_NAMES = load_project_names(vault)
 
     client = None
     if args.use_api and not args.dry_run:
