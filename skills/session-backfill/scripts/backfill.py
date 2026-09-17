@@ -244,9 +244,46 @@ def _override_folder(kebab: str) -> str | None:
 PROJECT_NAMES: dict[str, str] = {}
 
 
+def _frontmatter_block(text: str) -> str:
+    """The YAML between the opening `---` and the next `---`, or "" if absent.
+
+    Scoping the search matters: without it, body prose containing `folder:` can
+    answer a frontmatter query.
+    """
+    t = text.lstrip("﻿")
+    if not t.startswith("---"):
+        return ""
+    rest = t[3:].lstrip("\r\n")
+    end = re.search(r"^---[ \t]*$", rest, re.M)
+    return rest[: end.start()] if end else rest
+
+
 def _fm_field(head: str, field: str) -> str | None:
-    m = re.search(rf'^{field}:\s*"?([^"\n]+)"?$', head, re.M)
-    return m.group(1).strip() if m else None
+    """Read one top-level scalar from a note's YAML frontmatter.
+
+    Small on purpose, but it cannot be naive. The first version of this used
+    `^field:\\s*"?([^"\\n]+)"?$` with re.M, and `\\s` matches a newline — so an
+    empty `folder:` returned the NEXT line's text, silently mapping a project to
+    whatever field happened to follow it. It also kept single quotes in the
+    value, swallowed trailing YAML comments, and returned nothing at all for a
+    correctly quoted value with trailing spaces.
+    """
+    block = _frontmatter_block(head)
+    if not block:
+        return None
+    m = re.search(rf"^{re.escape(field)}:[ \t]*(.*?)[ \t]*$", block, re.M)
+    if not m:
+        return None
+    val = m.group(1)
+    if not val:
+        return None
+    quoted = re.match(r"""^(['"])(.*?)\1[ \t]*(?:#.*)?$""", val)
+    if quoted:
+        val = quoted.group(2)
+    else:
+        # Unquoted: ` #` opens a comment; a bare `#` mid-token does not.
+        val = re.split(r"(?:^|\s)#", val, maxsplit=1)[0]
+    return val.strip() or None
 
 
 def load_project_names(vault: Path) -> dict[str, str]:
