@@ -26,7 +26,7 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/qmd-wrapper.mjs vsearch "QUERY"
 node ${CLAUDE_PLUGIN_ROOT}/scripts/qmd-wrapper.mjs query "QUERY"
 
 # Literal search with line context
-obsidian search:context query="TERM" format=json
+Obsidian.com search:context query="TERM" format=json
 ```
 
 ## Write the query fields yourself

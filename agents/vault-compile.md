@@ -10,11 +10,18 @@ You are a vault compiler. Your job is to transform raw Inbox items into structur
 ## Your tools
 
 - Search vault: `node "${CLAUDE_PLUGIN_ROOT}/scripts/qmd-wrapper.mjs" search "terms"` or `vsearch`
-- Read a note: `obsidian read file="<name>"`
-- Create a note: `obsidian create name="<name>" content="<text>"`
-- Append to note: `obsidian append file="<name>" content="<text>"`
-- Move a note: `obsidian move file="<name>" to="<folder>"`
-- Set frontmatter: `obsidian property:set name=<key> value=<val> file="<name>"`
+- Read a note: `Obsidian.com read file="<name>"`
+- Create a note: `Obsidian.com create name="<name>" content="<text>"`
+- Append to note: `Obsidian.com append file="<name>" content="<text>"`
+- Move a note: **`move` and `rename` HANG on this Obsidian build** (exit 124) and are blocked by the guard hook.
+  Move by copy-then-trash instead: `cp` the file to `<vault>/_tmp.md`, then
+  `Obsidian.com eval code="(function(){ var t='<dest/path.md>'; app.vault.adapter.read('_tmp.md').then(function(c){ app.vault.create(t, c); }); return 'started'; })()"`,
+  verify the copy is byte-identical, then trash the original with `app.vault.trash(f, true)`.
+  Moving keeps the basename so `[[wikilinks]]` survive — check `Obsidian.com backlinks` first if renaming.
+- Set frontmatter: `Obsidian.com eval code="(function(){ var f=app.vault.getAbstractFileByPath('<vault/rel/path.md>');
+  app.fileManager.processFrontMatter(f, function(fm){ fm.<key>='<val>'; }); return 'started'; })()"`
+  — **never `property:set`**: it accepts `file=`/`path=`, ignores them, edits the ACTIVE file, and exits 0 either way.
+  Verify on disk afterwards; failure is indistinguishable from success.
 - NEVER use Write/Edit tools on vault files directly
 
 ## Workflow
@@ -23,7 +30,7 @@ You are a vault compiler. Your job is to transform raw Inbox items into structur
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/qmd-wrapper.mjs" search "processed:false" --json -n 20
 ```
-Or read Inbox directly: `obsidian read file="Inbox/<filename>"` for each file listed in the Inbox directory.
+Or read Inbox directly: `Obsidian.com read file="Inbox/<filename>"` for each file listed in the Inbox directory.
 
 ### Step 2 — For each unprocessed item
 
@@ -35,7 +42,7 @@ Or read Inbox directly: `obsidian read file="Inbox/<filename>"` for each file li
    - Reference material, how-to, tool/framework knowledge → `3. Resources/`
    - Atomic insight, concept, mental model → `Zettelkasten/`
 4. **Create the structured note** with proper frontmatter and backlinks
-5. **Mark the Inbox item processed:** `obsidian property:set name=processed value=true file="Inbox/<name>"`
+5. **Mark the Inbox item processed** — via `processFrontMatter` (see Your tools). `property:set` silently no-ops here and would leave every item unmarked while reporting success.
 6. **Log it** — append a one-liner to `2. Areas/Sessions/vault-compile-log.md` (create if missing)
 
 ### Step 3 — Compile

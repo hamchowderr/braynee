@@ -43,7 +43,7 @@ Also check these specific locations directly:
 
 For each search result, read the top 3-5 files fully. Don't skim file names — read the actual content before summarizing.
 
-Use `obsidian search:context query="term" format=json` for exact phrase searches with surrounding context.
+Use `Obsidian.com search:context query="term" format=json` for exact phrase searches with surrounding context.
 
 ## Briefing Format
 
@@ -73,9 +73,9 @@ Use `obsidian search:context query="term" format=json` for exact phrase searches
 After delivering the briefing, always offer:
 > "Want me to save this as a Zettelkasten note or a reference file? If so, where — Zettelkasten/, 3. Resources/, or somewhere else?"
 
-If yes, create the note using obsidian eval:
+If yes, create the note using Obsidian.com eval:
 ```bash
-obsidian eval code="(async () => { await app.vault.create('{path}', '{content}'); })()"
+Obsidian.com eval code="(async () => { await app.vault.create('{path}', '{content}'); })()"
 ```
 
 ## Rules

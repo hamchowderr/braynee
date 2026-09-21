@@ -69,7 +69,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/qmd-wrapper.mjs" search "relevant terms"
 node "${CLAUDE_PLUGIN_ROOT}/scripts/qmd-wrapper.mjs" vsearch "conceptual query"
 ```
 
-Use `obsidian search:context query="term" format=json` for literal content searches.
+Use `Obsidian.com search:context query="term" format=json` for literal content searches.
 
 ## Your Behavior
 

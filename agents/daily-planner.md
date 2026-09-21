@@ -45,9 +45,9 @@ ls "{vault}/Inbox/" | grep "\.md$" | wc -l
 
 File: `{vault}/2. Areas/Sessions/{today}.md`
 
-Create with obsidian eval if not exists:
+Create with Obsidian.com eval if not exists:
 ```bash
-obsidian eval code="(async () => { const p = '2. Areas/Sessions/{today}.md'; if (!app.vault.getFileByPath(p)) { await app.vault.create(p, '---\ntype: session\ndate: {today}\n---\n\n# {today}\n\n## Morning Check-in\n\n**Inbox:** {count} items\n\n**In Progress:**\n{beads_in_progress}\n\n**Ready to work:**\n{beads_ready}\n\n## Today\'s Focus\n\n## Notes\n\n## Evening Wrap-up\n'); } })()"
+Obsidian.com eval code="(async () => { const p = '2. Areas/Sessions/{today}.md'; if (!app.vault.getFileByPath(p)) { await app.vault.create(p, '---\ntype: session\ndate: {today}\n---\n\n# {today}\n\n## Morning Check-in\n\n**Inbox:** {count} items\n\n**In Progress:**\n{beads_in_progress}\n\n**Ready to work:**\n{beads_ready}\n\n## Today\'s Focus\n\n## Notes\n\n## Evening Wrap-up\n'); } })()"
 ```
 
 ### 3. Present morning briefing
@@ -86,7 +86,7 @@ bd list --status=closed --since=today 2>/dev/null || bd list --status=closed | h
 ### 2. Append wrap-up to today's note
 
 ```bash
-obsidian eval code="(async () => { const f = app.vault.getFileByPath('2. Areas/Sessions/{today}.md'); const cur = await app.vault.read(f); await app.vault.modify(f, cur + '\n## Evening Wrap-up\n\n**Closed today:**\n{closed_issues}\n\n**Carry forward:**\n{in_progress}\n\n**Notes:**\n\n'); })()"
+Obsidian.com eval code="(async () => { const f = app.vault.getFileByPath('2. Areas/Sessions/{today}.md'); const cur = await app.vault.read(f); await app.vault.modify(f, cur + '\n## Evening Wrap-up\n\n**Closed today:**\n{closed_issues}\n\n**Carry forward:**\n{in_progress}\n\n**Notes:**\n\n'); })()"
 ```
 
 ### 3. Present evening summary

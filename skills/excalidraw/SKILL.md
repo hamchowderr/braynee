@@ -61,7 +61,7 @@ For technical diagrams, use real names from the codebase — never "Service A" o
 ## How to Generate a Diagram
 
 Every diagram is a JavaScript script that uses the EA API. A **headless agent
-runs it via `obsidian eval`** (see "Headless Execution" below) — this is the
+runs it via `Obsidian.com eval`** (see "Headless Execution" below) — this is the
 default path for Claude. Templater or a vault EA script is only for a human
 running it interactively inside Obsidian; do not assume Templater is available.
 
@@ -115,12 +115,12 @@ You do **not** have Templater. Run an EA script from the command line via the
    uses `ea` (and optionally `utils`), starting at `ea.reset()`. Do **not**
    include `const ea = ExcalidrawAutomate;` (the wrapper injects `ea`).
 
-2. **Run it through `obsidian eval`** with an async `new Function` wrapper that
+2. **Run it through `Obsidian.com eval`** with an async `new Function` wrapper that
    binds `ea` to `window.ExcalidrawAutomate` and awaits the script. Reading the
    script from disk inside the eval avoids all CLI-arg-parser escaping issues:
 
    ```bash
-   obsidian eval code="(async () => {
+   Obsidian.com eval code="(async () => {
      const fs = require('fs');
      const body = fs.readFileSync('/abs/path/to/ea-diagram.js', 'utf8');
      const ea = window.ExcalidrawAutomate;
@@ -136,16 +136,16 @@ You do **not** have Templater. Run an EA script from the command line via the
      in scope, exactly like Templater would, without any Templater dependency.
    - The body must `await ea.create({ filename, foldername, ... })` as its last
      step. Because `ea.create()` is **async**, the outer IIFE must `await fn(...)`
-     — otherwise `obsidian eval` returns before the file is flushed and the
+     — otherwise `Obsidian.com eval` returns before the file is flushed and the
      drawing is silently dropped (see "Verifying a Diagram Was Written").
 
 3. **For companion `.md` notes** (Codebase Walkthrough Mode index/architecture
-   pages): create them with `app.vault.create`, **not** the `obsidian create`
+   pages): create them with `app.vault.create`, **not** the `Obsidian.com create`
    CLI. The CLI arg parser breaks on YAML frontmatter (`type: note`) and on
    `[...]` (wikilinks, embeds, task checkboxes). Use:
 
    ```bash
-   obsidian eval code="(async () => { await app.vault.create('3. Resources/Proj/index.md', 'CONTENT_HERE\n'); })()"
+   Obsidian.com eval code="(async () => { await app.vault.create('3. Resources/Proj/index.md', 'CONTENT_HERE\n'); })()"
    ```
 
    Escaping inside `eval code="..."`: `'` → `\'`, `"` → `\"`, newline → `\n`,
@@ -154,7 +154,7 @@ You do **not** have Templater. Run an EA script from the command line via the
 
 ### Verifying a Diagram Was Written
 
-`ea.create()` is async and an `obsidian eval` can return **before** the promise
+`ea.create()` is async and an `Obsidian.com eval` can return **before** the promise
 flushes the file (this drops the drawing silently — observed in practice).
 **Never trust the eval return value as proof of success.** Verify by the
 filesystem instead:
@@ -243,7 +243,7 @@ See `references/color-palette.md` for the semantic color system. Quick reference
 
 **Step 4: Write the script** — Use `ea.connectObjects()` over manual `ea.addArrow()` when connecting named shapes — it handles positioning automatically.
 
-**Step 5: Save and verify** — Run the script headless via `obsidian eval` (see "Headless Execution"). `await ea.create()` saves to the vault. Then **verify on disk**: confirm `<foldername>/<filename>.excalidraw.md` exists and contains a `## Drawing` section (see "Verifying a Diagram Was Written"). Adjust coordinates and re-run if the file is missing or layout needs fixing.
+**Step 5: Save and verify** — Run the script headless via `Obsidian.com eval` (see "Headless Execution"). `await ea.create()` saves to the vault. Then **verify on disk**: confirm `<foldername>/<filename>.excalidraw.md` exists and contains a `## Drawing` section (see "Verifying a Diagram Was Written"). Adjust coordinates and re-run if the file is missing or layout needs fixing.
 
 ### Default Output Location
 
@@ -257,7 +257,7 @@ See `references/color-palette.md` for the semantic color system. Quick reference
 - [ ] Each major concept uses a different visual pattern
 - [ ] Real names used for technical diagrams (not "Service A")
 - [ ] Saved to `2. Areas/Excalidraw/` or appropriate subfolder
-- [ ] Ran headless via `obsidian eval` with the outer IIFE `await`ing `fn(...)` (ea.create() is async — an un-awaited eval returns before the file flushes and silently drops the drawing)
+- [ ] Ran headless via `Obsidian.com eval` with the outer IIFE `await`ing `fn(...)` (ea.create() is async — an un-awaited eval returns before the file flushes and silently drops the drawing)
 - [ ] Verified on disk: `<foldername>/<filename>.excalidraw.md` exists (NOT `.excalidraw`) and contains a `## Drawing` section — verify by filesystem existence, not the eval return value
 
 ---
@@ -340,7 +340,7 @@ Tell the user which flows you plan to diagram before producing output.
 
 ### Phase 3: Produce
 
-Generate each diagram script and run it headless via `obsidian eval` (see "Headless Execution" — do not assume Templater). Verify each `<name>.excalidraw.md` exists with a `## Drawing` section before moving on. Then write the markdown files with `app.vault.create` (the `obsidian create` CLI breaks on frontmatter/brackets). Each markdown file opens with its diagram embed.
+Generate each diagram script and run it headless via `Obsidian.com eval` (see "Headless Execution" — do not assume Templater). Verify each `<name>.excalidraw.md` exists with a `## Drawing` section before moving on. Then write the markdown files with `app.vault.create` (the `Obsidian.com create` CLI breaks on frontmatter/brackets). Each markdown file opens with its diagram embed.
 
 **index.md** — landing page with one-paragraph summary, tech stack table, `![[project-architecture.excalidraw]]` embed, and wikilinks to all other files.
 
