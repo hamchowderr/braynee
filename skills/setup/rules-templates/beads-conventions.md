@@ -40,23 +40,39 @@ it, it's probably TodoWrite, not a bead.
 - **Close with a reason:** `bd close <id> --reason "…"` — how/why it ended, with evidence.
 
 ## No user-specific data in shareable artifacts
-Kits, templates, and plugins ship their beads *with them* — `.beads/issues.jsonl` is
-tracked, and commits carry `Closes:`/`Refs:` links into that history. So a beads issue
-(title, description, design, acceptance, notes, **close-reason**) and any commit that
-links one must contain **zero user-specific / private references**: real product names,
-client names, private repos, or internal business context.
+A beads tracker travels with its repository. The whole database — issues, close reasons,
+**memories** — is pushed to **`refs/dolt/data`** on the git remote, and commits carry
+`Closes:`/`Refs:` links into that history. That ref is invisible (not a branch, absent
+from the host's web UI, not fetched by a plain `git clone`) and nonetheless readable by
+anyone who can read the repo. So a beads issue (title, description, design, acceptance,
+notes, **close-reason**), anything stored with `bd remember`, and any commit that links
+one must contain **zero user-specific / private references**: real product names, client
+names, private repos, or internal business context.
 - When a private thing is only a design reference — "go look at *<my product>* for the
   styling" — name it by **role**, never by name: "a reference chat app," "the house
   style," "downstream products."
-- Treat every kit/template/plugin repo as **public-by-default**, even before it's pushed.
+- Treat every repo whose beads could ever be published as **public-by-default**, even
+  before it's pushed — kits, templates and plugins always, product repos the moment
+  open-sourcing is on the table.
+- **Deleting does not remove.** Dolt keeps history like git. `bd forget` and `bd delete`
+  write a *new* commit without the row; every earlier commit still holds it, on the
+  remote too. Check with
+  `dolt sql -q "select count(*) from dolt_history_<table> where …"`. Scrubbing after the
+  fact takes `bd flatten --force` (all history) or `bd compact --days N --force` (older
+  than N days), plus a force push — a delete on its own does nothing.
 - This has bitten more than once — it's a hard rule, not a preference. If names slip in,
-  scrub them from issues *and* the exported `issues.jsonl` *and* commit messages.
+  scrub them from issues *and* the exported `issues.jsonl` *and* commit messages *and*
+  the Dolt history.
 
 ## Discipline
 - **Before coding** in a beads repo: `bd list --status in_progress` → else `bd ready` → claim atomically (`bd update <id> --claim`). Don't invent work.
 - **Research before you create.** Before filing a new issue — or building it — `bd search "<keywords>"` for existing or duplicate work (and, in a repo with PRs, `gh pr list --search "<keywords>"`). If it already exists, **link** (`--deps discovered-from:`/`related:`) or `bd supersede` instead of filing a duplicate; **abort** work that's already claimed or already has an open PR. (This is the beads "check before you build" discipline.)
 - **Turn on the create-time guard** (once per repo): `bd config set validation.on-create warn` — flags new issues missing Description/Acceptance so quality can't silently drift.
 - `bd lint` finds issues missing sections; `bd prime` recovers context after compaction.
+- **`bd prime` is a subset, not the index.** It lists ~40 commands and omits `query`,
+  `graph`, `epic`, `swarm`, `gate`, `provenance`, `federation`, `compact`, `flatten` and
+  `gc`. Never conclude a capability is missing because it wasn't injected — run
+  `bd --help`, then `bd <command> --help`, before hand-rolling anything beads already does.
 
 ## Execution metadata — make an issue a dispatch spec
 
