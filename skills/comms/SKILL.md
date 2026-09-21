@@ -80,7 +80,7 @@ honest about who's talking, even before all contacts are catalogued.
 
 - Re-running `sync` overwrites the weekly + thread files for that week. Manual edits to those
   files will be lost on re-sync — keep editorial notes in a sibling file (e.g. `Wn-notes.md`).
-- All vault writes go through `obsidian eval` (per [[CLAUDE.md]]); never edits files directly.
+- All vault writes go through `Obsidian.com eval` (per [[CLAUDE.md]]); never edits files directly.
 - No API key consumed: summarisation uses `claude -p` which runs on the user's Claude Code OAuth
   subscription. The script refuses to run if `claude` is not on PATH.
 

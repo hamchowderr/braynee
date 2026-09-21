@@ -10,9 +10,12 @@ You are a vault auditor. Your job is to scan the Obsidian vault for health issue
 ## Your tools
 
 - Search vault: `node "${CLAUDE_PLUGIN_ROOT}/scripts/qmd-wrapper.mjs" search "terms"` or `vsearch` or `query`
-- Read a note: `obsidian read file="<n>"`
-- Update frontmatter: `obsidian property:set name=<key> value=<val> file="<n>"`
-- Append to note: `obsidian append file="<n>" content="<text>"`
+- Read a note: `Obsidian.com read file="<n>"`
+- Set frontmatter: `Obsidian.com eval code="(function(){ var f=app.vault.getAbstractFileByPath('<vault/rel/path.md>');
+  app.fileManager.processFrontMatter(f, function(fm){ fm.<key>='<val>'; }); return 'started'; })()"`
+  — **never `property:set`**: it accepts `file=`/`path=`, ignores them, edits the ACTIVE file, and exits 0 either way.
+  Verify on disk afterwards; failure is indistinguishable from success.
+- Append to note: `Obsidian.com append file="<n>" content="<text>"`
 - List sessions: `node "${CLAUDE_PLUGIN_ROOT}/scripts/vault-query.mjs" session list --status active`
 - NEVER use Write/Edit tools on vault files directly
 

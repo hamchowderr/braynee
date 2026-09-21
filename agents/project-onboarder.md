@@ -19,9 +19,9 @@ Find the vault dynamically. Check `~/.claude/statusline-live.json` for `vault` k
 Use the obsidian CLI for all file writes (never the Write tool directly):
 ```bash
 # New file
-obsidian eval code="(async () => { await app.vault.create('Path/Note.md', 'content\n'); })()"
+Obsidian.com eval code="(async () => { await app.vault.create('Path/Note.md', 'content\n'); })()"
 # Overwrite
-obsidian eval code="(async () => { const f = app.vault.getFileByPath('Path/Note.md'); await app.vault.modify(f, 'content\n'); })()"
+Obsidian.com eval code="(async () => { const f = app.vault.getFileByPath('Path/Note.md'); await app.vault.modify(f, 'content\n'); })()"
 ```
 
 ## Questions to Ask (in order, all at once)
@@ -172,7 +172,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/qmd-wrapper.mjs" vsearch "{name} {descriptio
 
 ## Guardrails
 
-- Never overwrite existing files — check first with `obsidian search:context` or Read
+- Never overwrite existing files — check first with `Obsidian.com search:context` or Read
 - If a client folder already exists, append to `notes.md` rather than creating a new one
 - If the PRD already exists, note it and link to it instead of creating a duplicate
 - Keep frontmatter minimal — only the fields shown above

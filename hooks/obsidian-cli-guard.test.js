@@ -83,6 +83,16 @@ ok('allows an unrelated command named obsidian-something',
   allows(`npm install obsidian-dataview --save`));
 ok('allows grepping for the word obsidian',
   allows(`grep -rn "obsidian" ./src`));
+// Regression: segment splitting must honour quotes. A quoted pattern containing
+// escaped pipes used to split into a fragment starting with `obsidian`, blocking
+// an ordinary grep. Found 2026-09-07 by tripping it live.
+ok('allows a quoted grep pattern containing pipes',
+  allows(`grep -rn "obsidian \\(move\\|rename\\)" --include=*.md .`));
+ok('allows a quoted pattern with pipes naming a blocked subcommand',
+  allows(`grep -rn "Obsidian.com \\(move\\|rename\\)" .`));
+// A REAL pipe into the CLI must still be examined.
+ok('still catches a genuine pipeline into the CLI',
+  blocks(`cat note.md | ${OBS} move path="a.md" to="b.md"`));
 
 // ── invocation shapes that must still be caught ─────────────────────────────
 ok('catches bare `obsidian` (not just Obsidian.com)',
@@ -115,6 +125,97 @@ ok('allows a staging copy that mentions no CLI at all',
     env: { ...process.env, BRAYNEE_ALLOW_OBSIDIAN_CLI: '1' },
   });
   ok('env override allows', r.status === 0);
+}
+
+// ── (4) move/rename hang on this Obsidian build ─────────────────────────────
+// Measured 2026-09-07 on 1.13.7: every invocation hits the timeout (exit 124),
+// isolated across plain vs parenthesised names, disk vs API-created files, fresh
+// vs long-indexed destinations, and before vs after a full restart. `delete`
+// succeeding on a parenthesised name is what rules parentheses out as the cause.
+{
+  ok('blocks move (plain name)',
+    blocks(`${OBS} move path="Inbox/Note.md" to="Archive/Note.md"`));
+
+  ok('blocks move (parenthesised name)',
+    blocks(`${OBS} move path="Inbox/Note (2026-08-06).md" to="Archive/Note (2026-08-06).md"`));
+
+  ok('blocks rename',
+    blocks(`${OBS} rename file="Note.md" name="Renamed.md"`));
+
+  // The commands that still work must stay untouched — parentheses and all.
+  ok('allows delete, including a parenthesised name',
+    allows(`${OBS} delete path="Inbox/Note (2026-08-06).md"`));
+
+  ok('allows create',
+    allows(`${OBS} create path="Folder/Note.md" content="hi"`));
+
+  ok('allows search containing the word move',
+    allows(`${OBS} search "move the files"`));
+
+  const msg = run(`${OBS} move path="a/N.md" to="b/N.md"`).err;
+  ok('names the working recipe', /app\.vault\.create/.test(msg) && /app\.vault\.trash/.test(msg));
+  ok('warns renameFile is not the fix', /renameFile/.test(msg) && /no-ops/.test(msg));
+  ok('documents the full-path to= requirement', /FULL destination path/.test(msg));
+  // Parentheses may be MENTIONED (they were ruled out) but must never be blamed.
+  ok('explicitly rules parentheses out as the cause', /NOT about parentheses/.test(msg));
+  ok('cites the isolation, not a guess', /restart/.test(msg) && /exit 124/.test(msg));
+}
+
+// ── (5) property:set / property:read silently ignore path= ──────────────────
+{
+  ok('blocks property:set with path=',
+    blocks(`${OBS} property:set name="status" value="done" path="Folder/Note.md"`));
+
+  ok('blocks property:read with path=',
+    blocks(`${OBS} property:read name="type" path="Folder/Note.md"`));
+
+  ok('blocks property:set with file=',
+    blocks(`${OBS} property:set name="status" value="done" file="Note.md"`));
+
+  // Without a path it targets the active file, which is the documented behaviour.
+  ok('allows property:set with no path/file',
+    allows(`${OBS} property:set name="status" value="done"`));
+
+  // The defect is property:*-specific — do not generalize it.
+  ok('allows delete with path=',
+    allows(`${OBS} delete path="Inbox/Note.md"`));
+
+  const msg = run(`${OBS} property:set name="s" value="d" path="a/b.md"`).err;
+  ok('offers processFrontMatter', /processFrontMatter/.test(msg));
+  ok('property fix carries no await', !/\bawait\b/.test(msg.split('processFrontMatter')[1] || ''));
+}
+
+// ── (6) bare `obsidian` in Bash loses all stdout ────────────────────────────
+{
+  // Windows-only: the .com/.exe split IS the Windows packaging. On macOS/Linux
+  // there is no .com shim and bare `obsidian` is correct, so the rule must not
+  // fire there — braynee ships cross-platform.
+  const win = process.platform === 'win32';
+
+  ok('blocks bare obsidian in Bash (Windows only)',
+    win ? blocks('obsidian read path="Folder/Note.md"', 'Bash')
+        : allows('obsidian read path="Folder/Note.md"', 'Bash'));
+
+  // PowerShell resolves .com via PATHEXT, so bare is fine there.
+  ok('allows bare obsidian in PowerShell',
+    allows('obsidian read path="Folder/Note.md"', 'PowerShell'));
+
+  ok('allows Obsidian.com by full path in Bash',
+    allows(`${OBS} read path="Folder/Note.md"`, 'Bash'));
+
+  // A relative or bare `.com` is explicit enough to resolve correctly.
+  ok('allows bare Obsidian.com in Bash',
+    allows('Obsidian.com read path="Folder/Note.md"', 'Bash'));
+
+  // Prose and unrelated binaries must stay untouched.
+  ok('allows grep mentioning obsidian',
+    allows('grep -r obsidian /c/some/dir', 'Bash'));
+
+  if (win) {
+    const msg = run('obsidian read path="a.md"', 'Bash').err;
+    ok('explains the PATHEXT mechanism', /PATHEXT/.test(msg));
+    ok('names the full-path fix', /Obsidian\.com/.test(msg));
+  }
 }
 
 // ── fail-open on junk input ─────────────────────────────────────────────────

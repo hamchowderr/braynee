@@ -22,7 +22,7 @@
 // indistinguishable from success. That is what makes it worth a PreToolUse gate
 // rather than a post-hoc check.
 //
-// THREE rules, in order of how much damage they prevent:
+// SIX rules, in order of how much damage they prevent:
 //
 //   (1) COMMAND SUBSTITUTION inside content=. `content="$(cat note.md)"` is SHORT
 //       as typed and only explodes after the shell expands it — which happens
@@ -33,6 +33,24 @@
 //       straight into content=.
 //   (3) `await` inside eval code=. `(async () => { ... await ... })()` hangs the
 //       CLI outright — it waits on the returned promise and never resolves.
+//   (4) `move` and `rename` AT ALL. Measured 2026-09-07 on 1.13.7: they never
+//       return (exit 124), isolated across plain vs parenthesised names, disk vs
+//       API-created files, fresh vs long-indexed destinations, and before vs after
+//       a full restart. Not the IPC wedge — delete/create/eval keep working, and
+//       `delete` succeeds on a parenthesised name. Worth blocking because the
+//       obvious workaround is also broken: `app.fileManager.renameFile()` returns
+//       `started`, exits 0, and silently no-ops. Route is read + create + trash.
+//       (An earlier revision of this rule blamed PARENTHESES from a single
+//       observation and was wrong. Encode the observation, not the theory.)
+//   (5) `property:set` / `property:read` carrying `path=` or `file=`. Both are
+//       ACCEPTED AND IGNORED — the command acts on the currently ACTIVE file and
+//       exits 0 either way, so "written" and "silently skipped" are the same
+//       observable. Specific to property:*; delete and move honor their paths.
+//   (6) Bare `obsidian` from Bash. Git Bash ignores PATHEXT and resolves it to
+//       the 225 MB GUI .exe, which has no console — the command runs and every
+//       line of output is lost. Bash-only; PowerShell resolves the .com fine.
+//       Listed last but checked FIRST, because losing stdout makes every other
+//       failure here undiagnosable.
 //
 // Deliberately NOT enforced: the "at most one .then" rule. A nested .then fails
 // silently too, but detecting nesting needs a JS parser, and a regex that guesses
@@ -114,9 +132,35 @@ const SUBSTITUTION = /\$\(|`|\$\{[A-Za-z_]/;
 // Each pipeline segment that invokes the Obsidian CLI, with its raw text.
 // `||`, `&&`, `;` and `|` all start a new command, so a `cat x | obsidian ...`
 // segment is examined on its own rather than as part of the producer.
+// Split on shell operators OUTSIDE quotes. A naive .split(/\|{1,2}|&&|;/) breaks
+// a quoted argument that merely CONTAINS one — e.g.
+//   grep -rn "obsidian \|(move\|rename)" .
+// splits at the escaped pipes and leaves a fragment starting with `obsidian`,
+// which then blocks an ordinary grep. Found 2026-09-07 by tripping it.
+function splitSegments(cmd) {
+  const out = [];
+  let cur = '', quote = null;
+  const s = String(cmd);
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (quote) {
+      cur += c;
+      if (c === quote) quote = null;
+      continue;
+    }
+    if (c === '"' || c === "'") { quote = c; cur += c; continue; }
+    if (c === ';') { out.push(cur); cur = ''; continue; }
+    if (c === '|') { out.push(cur); cur = ''; if (s[i + 1] === '|') i++; continue; }
+    if (c === '&' && s[i + 1] === '&') { out.push(cur); cur = ''; i++; continue; }
+    cur += c;
+  }
+  out.push(cur);
+  return out;
+}
+
 function obsidianSegments(cmd) {
   const found = [];
-  for (const segment of String(cmd).split(/\|{1,2}|&&|;/)) {
+  for (const segment of splitSegments(cmd)) {
     const toks = tokenize(segment.trim());
     if (!toks.length) continue;
     let i = 0;
@@ -144,9 +188,34 @@ function argValue(toks, key) {
   return null;
 }
 
+// Bare `obsidian` — no path, no extension. Git Bash (MSYS2) ignores PATHEXT: it
+// tries the exact name then appends `.exe`, and NEVER tries `.com`. So this runs
+// the 225 MB GUI Electron binary, which has no console attached, and every line
+// of output is lost. Measured 2026-08-05 on 1.13.4, identical 3-create/3-delete
+// burst: PowerShell bare 6/6 printed, Git Bash `Obsidian.com` 6/6, Git Bash bare
+// 0/6 — while all six operations still ran. Losing the output is what makes a
+// silent failure indistinguishable from success. PowerShell resolves `.com`
+// correctly on its own, so this is a Bash-only defect.
+function isBareObsidian(tok) {
+  const t = String(tok);
+  if (/[\\/]/.test(t)) return false;            // has a path — explicit enough
+  return /^obsidian$/i.test(t);                  // no extension at all
+}
+
 // Returns null (allow) or { rule, detail } describing why it is blocked.
-function blockReason(cmd) {
+function blockReason(cmd, tool) {
   for (const { text, toks } of obsidianSegments(cmd)) {
+    // (6) Windows + Bash only: bare `obsidian` loses ALL stdout. Checked first —
+    // it makes every other failure here undiagnosable. Gated on win32 because the
+    // two-binary split IS the Windows packaging: on macOS/Linux there is no
+    // `.com` shim and bare `obsidian` is the correct invocation.
+    if (process.platform === 'win32' && tool === 'Bash' && isBareObsidian(toks[0])) {
+      return {
+        rule: 'bare-obsidian-in-bash',
+        detail: 'this calls bare `obsidian` from Bash, which resolves to the GUI .exe and loses all output',
+      };
+    }
+
     const content = argValue(toks, 'content');
     const code = argValue(toks, 'code');
 
@@ -167,6 +236,47 @@ function blockReason(cmd) {
       };
     }
 
+    // (4) `move` and `rename` HANG. Measured 2026-09-07 on 1.13.7 (installer
+    // 1.13.4): every invocation returns exit 124 at the timeout, never completing.
+    // Isolated across plain vs parenthesised names, files written to disk vs
+    // created through the Obsidian API, destinations freshly made vs long-indexed,
+    // and before vs after a full `Obsidian.com restart`. All hang. `delete`,
+    // `create`, `eval`, `tags` and `backlinks` keep working throughout — and
+    // `delete` succeeds on a parenthesised filename, which is what rules
+    // parentheses out as the cause.
+    //
+    // UNEXPLAINED: `move` succeeded three times earlier in the same session on
+    // this exact version, binaries unchanged. Recorded rather than theorised —
+    // an earlier revision of this rule blamed parentheses on the strength of one
+    // observation and was wrong. The rule encodes the OBSERVATION (they hang),
+    // not a cause.
+    //
+    // Blocked rather than warned because the failure costs a full timeout every
+    // time and the working route is a straight substitution. The override ticket
+    // is the escape hatch if a later Obsidian build fixes it.
+    const sub = toks[1] ? String(toks[1]).toLowerCase() : '';
+    if (sub === 'move' || sub === 'rename') {
+      return {
+        rule: 'move-rename-hangs',
+        detail: `\`${sub}\` hangs on this Obsidian build (exit 124, never returns)`,
+      };
+    }
+
+    // (5) `property:set` / `property:read` with `path=` or `file=`. Measured
+    // 2026-07-25: the property:* commands ACCEPT and IGNORE both, acting on the
+    // currently ACTIVE file instead, and exit 0 either way — so a script cannot
+    // tell "written" from "silently skipped". Specific to property:*; `delete
+    // path=` and `move path=` do honor their path.
+    if (/^property:(set|read)$/i.test(sub)) {
+      const target = argValue(toks, 'path') !== null ? 'path' : (argValue(toks, 'file') !== null ? 'file' : null);
+      if (target) {
+        return {
+          rule: 'property-path-ignored',
+          detail: `this \`${sub}\` passes \`${target}=\`, which the CLI accepts and ignores`,
+        };
+      }
+    }
+
     // (2) Literal length. Measured against the whole segment, because the limit
     // covers the entire command line, not content= alone.
     const len = Buffer.byteLength(text, 'utf8');
@@ -181,6 +291,84 @@ function blockReason(cmd) {
 }
 
 function denyMessage(rule, detail) {
+  if (rule === 'bare-obsidian-in-bash') {
+    return (
+      `BLOCKED: ${detail}.\n\n` +
+      'Obsidian ships TWO binaries: `Obsidian.com` (22 KB, console subsystem — the CLI relay)\n' +
+      'and `Obsidian.exe` (225 MB, GUI subsystem — the Electron app). Windows resolves a bare\n' +
+      'command through PATHEXT, which lists .COM first — but Git Bash (MSYS2) IGNORES PATHEXT:\n' +
+      'it tries the exact name, then appends `.exe`, and never tries `.com`.\n\n' +
+      'So bare `obsidian` in Bash runs the GUI binary, which has no console attached —\n' +
+      'confirmed by `file`: PE32+ executable, GUI subsystem. The command still RUNS; the\n' +
+      'output is what is at risk.\n\n' +
+      'How often: re-measured 2026-09-07 on 1.13.7, bare lost output 1 run in 15 while\n' +
+      '`Obsidian.com` lost 0 in 15. An earlier measurement (2026-08-05, same version) saw\n' +
+      'bare lose 6 of 6. So the rate VARIES and cannot be relied on — which is the point:\n' +
+      'the loss is silent and intermittent, so a passing test proves nothing.\n\n' +
+      'That matters because several CLI failure modes are visible ONLY in stdout. Losing a\n' +
+      'line makes a silent failure indistinguishable from success.\n\n' +
+      'Call it by full path:\n' +
+      '  "C:/Users/HamCh/AppData/Local/Programs/Obsidian/Obsidian.com" <command> ...\n\n' +
+      'Or use the PowerShell tool, where bare `obsidian` resolves to the .com correctly.'
+    );
+  }
+
+  if (rule === 'property-path-ignored') {
+    return (
+      `BLOCKED: ${detail}.\n\n` +
+      '`property:set` and `property:read` ACCEPT `path=` / `file=` and then IGNORE them — they\n' +
+      'act on the currently ACTIVE file instead, and exit 0 either way. A script cannot tell\n' +
+      '"written" from "silently skipped". Confirmed 2026-07-25: three attempts across both\n' +
+      'argument forms all reported success and changed nothing on disk.\n\n' +
+      'This defect is specific to `property:*` — `delete path=` and `move path=` DO honor theirs.\n\n' +
+      'Edit a specific note\'s frontmatter through the API instead. Note there is no `await`:\n' +
+      'an await in an eval body hangs the CLI (rule 3), so start the work and return a plain\n' +
+      'string synchronously:\n\n' +
+      'Obsidian.com eval code="(function(){\n' +
+      '  var f = app.vault.getAbstractFileByPath(\'Folder/Note.md\');\n' +
+      '  app.fileManager.processFrontMatter(f, function(fm){ fm.status = \'done\'; });\n' +
+      '  return \'started\'; })()"\n\n' +
+      'Then VERIFY on disk — read the file back and assert the new value. Failure here is\n' +
+      'indistinguishable from success by exit code alone.\n\n' +
+      'To READ frontmatter, prefer the metadata cache:\n' +
+      '  app.metadataCache.getFileCache(f).frontmatter'
+    );
+  }
+
+  // move/rename have their own failure and their own fix, so they get a dedicated
+  // message rather than the staged-file advice, which does not apply.
+  if (rule === 'move-rename-hangs') {
+    return (
+      `BLOCKED: ${detail}.\n\n` +
+      '`move` and `rename` never return on this Obsidian build (1.13.7 / installer 1.13.4).\n' +
+      'Measured 2026-09-07 and isolated across every variable: plain vs parenthesised names,\n' +
+      'files written to disk vs created through the Obsidian API, destinations freshly made\n' +
+      'vs long-indexed, and before vs after a full `Obsidian.com restart`. All hang at the\n' +
+      'timeout with exit 124.\n\n' +
+      'It is NOT the IPC wedge and NOT about parentheses — `delete`, `create`, `eval`, `tags`\n' +
+      'and `backlinks` all keep working, and `delete` succeeds on a parenthesised filename.\n' +
+      '(Unexplained: `move` did work earlier in one session on this same version. If a later\n' +
+      'build fixes it, take the override ticket below and confirm before trusting it.)\n\n' +
+      '`app.fileManager.renameFile()` via eval is NOT a workaround — it returns `started`,\n' +
+      'exits 0, and silently no-ops. Verified: polled disk 3x over ~9s and re-queried\n' +
+      'app.vault.getMarkdownFiles(); Obsidian still reported the OLD path.\n\n' +
+      'Use read + create + verify + trash instead:\n\n' +
+      'cp "$VAULT/Inbox/Note (2026-08-06).md" "$VAULT/_tmp.md"\n' +
+      'Obsidian.com eval code="(function(){ var t=\'Dest/Note (2026-08-06).md\';\n' +
+      '  app.vault.adapter.read(\'_tmp.md\').then(function(c){ app.vault.create(t, c); });\n' +
+      '  return \'started\'; })()"\n' +
+      '# VERIFY the copy is byte-identical, THEN trash the original:\n' +
+      'Obsidian.com eval code="(function(){ var f=app.vault.getMarkdownFiles()\n' +
+      '  .filter(function(x){return x.path.indexOf(\'Inbox/Note\')===0;})[0];\n' +
+      '  app.vault.trash(f, true); return \'started\'; })()"\n\n' +
+      'Also: `move to=` needs the FULL destination path including the filename. Passing only\n' +
+      'a folder returns "Error: Destination file already exists!" even when nothing is there.\n\n' +
+      'If you must run this as written, take a 5-minute override — an env var set inside the\n' +
+      'command CANNOT work, because this hook has already run:\n' +
+      '  node -e "require(\'fs\').writeFileSync(process.env.USERPROFILE + \'/.claude/braynee-allow-obsidian-cli\',\'\')"'
+    );
+  }
+
   const why = rule === 'await-in-eval'
     ? 'An `await` in an eval body HANGS the CLI — it waits on the returned promise and never resolves.\n' +
       'Start the async work and return a plain string synchronously instead.'
@@ -229,7 +417,7 @@ process.stdin.on('end', () => {
     if (tool !== 'Bash' && tool !== 'PowerShell') process.exit(0);
     if (typeof ti.command !== 'string' || !ti.command) process.exit(0);
 
-    const reason = blockReason(ti.command);
+    const reason = blockReason(ti.command, tool);
     if (reason) {
       log.warn(HOOK, `blocked ${reason.rule}: ${ti.command.slice(0, 80)}`);
       process.stderr.write(denyMessage(reason.rule, reason.detail));
