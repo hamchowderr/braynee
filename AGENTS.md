@@ -53,8 +53,13 @@ bd close <id>         # Complete work
 ### Rules
 
 - Use `bd` for ALL task tracking — do NOT use TodoWrite, TaskCreate, or markdown TODO lists
-- Run `bd prime` for detailed command reference and session close protocol
-- Use `bd remember` for persistent knowledge — do NOT use MEMORY.md files
+- Run `bd prime` for the session close protocol. It is **not** the command index — it
+  omits `query`, `graph`, `epic`, `swarm`, `gate`, `provenance`, `compact` and `flatten`.
+  Run `bd --help` before concluding a capability does not exist.
+- Use `bd remember` for persistent knowledge — do NOT use MEMORY.md files. **A memory is
+  as public as the repo**: the database syncs to `refs/dolt/data` on the git remote, and
+  deleting a memory does not remove it from history. Nothing private goes in one. Full
+  rule: `~/.claude/rules/beads.md` ("No user-specific data in shareable artifacts").
 
 ## Session Completion
 
