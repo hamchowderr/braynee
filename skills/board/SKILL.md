@@ -4,11 +4,11 @@ description: >
   Build or refresh a repo's beads board — one published Artifact per repo that
   shows the backlog visually: status tiles, open PRs and deploys, epic progress,
   a board per milestone, the build-order diagram, a full record per issue,
-  derived check-ins and a done archive. Every board is identical except its
-  accent colour. Use when the user says "board", "update the board", "show the
-  beads visually", "publish the backlog", "refresh the artifact", or at a
-  check-in in a beads-tracked repo: after seeding, after a PR is opened, after
-  a merge or close.
+  derived check-ins, an activity log of who changed what, and a done archive.
+  Every board is identical except its accent colour. Use when the user says
+  "board", "update the board", "show the beads visually", "publish the
+  backlog", "refresh the artifact", or at a check-in in a beads-tracked repo:
+  after seeding, after a PR is opened, after a merge or close.
 argument-hint: "[repo path] (defaults to the current repo)"
 allowed-tools: Bash(node:*), Bash(bd:*), Bash(gh:*), Bash(git:*)
 ---
@@ -55,6 +55,11 @@ Keep one board per repo for the life of the project. Never publish a second.
      name in title case.
    - `--log <file.json>` merges an older hand-kept log (`[{ "at", "note" }]`)
      into the check-ins. This is only for boards that predate this skill.
+   - `--activity-days <n>` sets the Activity window (default 30); `--no-activity`
+     leaves the view out. bd only gives history per issue, a few seconds each,
+     so only issues touched in the window are read, and the result is cached
+     outside the repo. The first run on a busy repo takes minutes; later runs
+     re-read only issues that changed. `--refresh` ignores the cache.
 
    The script prints one JSON line: issue, PR and deploy counts, lanes,
    milestones, diagram size and output bytes. Check the counts against
@@ -76,6 +81,7 @@ Keep one board per repo for the life of the project. Never publish a second.
 | Issues and build order | A diagram, left to right, where each issue sits one column after its deepest blocker or parent. Solid arrows are `blocks` links, green once the blocker is done. Dashed lines run parent to child. Every box and row opens the issue. |
 | Issue record | Description, design, acceptance, notes, close reason, comments, parent and children, blocked by, unblocks, related links, PRs, execution metadata and dates. |
 | Check-ins | Grouped by day: issues opened and closed, PRs opened, merged or closed, and notes. Days more than 14 days before the latest are collapsed. |
+| Activity | Every change beads recorded in the window, newest first, with who made it: `Claude`, `Claude · <agent type>`, or a person's name. Changes matched to Claude after the fact carry an *inferred* tag with their confidence. PRs opened and merged are included. |
 | Done | Every closed issue, newest first. |
 
 How the data maps:
@@ -96,6 +102,37 @@ How the data maps:
   PR as its preview.
 - **People.** Owner and comment author show only the part before an `@`, since
   boards are often shared by link.
+- **Who did it.** braynee's `beads-actor-sign` hook adds `--actor claude` (or
+  `claude/<agent type>` inside a subagent) to every bd command Claude runs, so
+  bd's audit events carry the real actor. A person running bd themselves is
+  still signed with their git name. Changes bd makes on its own (git-hook
+  imports, other hooks calling bd) are signed with the git name too.
+
+## Signing the past: the attribution backfill
+
+Before the signing hook, every change Claude made was recorded under the
+owner's git name. `scripts/attribution-backfill.mjs` matches those events to
+the bd commands in Claude Code's session transcripts and records each match in
+bd's append-only provenance log, next to the history rather than in it. Dolt
+history is never rewritten, and no session ids are written.
+
+```bash
+node "<skill dir>/scripts/attribution-backfill.mjs" <repo>            # dry run: prints what it would record
+node "<skill dir>/scripts/attribution-backfill.mjs" <repo> --apply    # records it
+```
+
+- Transcripts default to the repo's own folder under `~/.claude/projects/`.
+  Add `--transcripts <dir>` (repeatable) for folders the work also ran from: a
+  moved checkout, or sessions started in another directory.
+- Each match carries a confidence: 0.95 for a bd command running when the
+  event happened, lower for weaker evidence (a nearby command, a script or git
+  command that fires bd, an event stored in local time). Matches under
+  `--min-confidence` (default 0.65) are counted and left out. Two actors in the
+  same window is ambiguous and left out.
+- Events older than the oldest surviving transcript stay as recorded.
+- Re-running is safe: provenance records are idempotent.
+- `--debug <id>` prints one issue's events next to the commands found for it;
+  `--show-unmatched` samples the events nothing matched.
 
 ## Leaving a note in the check-ins
 
@@ -116,5 +153,5 @@ tracking issue.
 - Open the generated file at 375px and at 1280px wide. The page itself must not
   scroll sideways; only the diagram and the done table scroll inside their own
   boxes.
-- Try `#status`, `#board`, `#issues`, `#log`, `#done` and one `#issue-<id>`.
+- Try `#status`, `#board`, `#issues`, `#log`, `#activity`, `#done` and one `#issue-<id>`.
   An unknown hash falls back to Status.
