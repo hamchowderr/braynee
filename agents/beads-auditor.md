@@ -73,7 +73,9 @@ graph integrity. Flag all.
 ```bash
 bd config get validation.on-create
 ```
-If it is not `warn` (or stricter), set it: `bd config set validation.on-create warn`.
+bd honours two values, `warn` and `error`; anything else (unset, `none`, `strict`) is off.
+If it is off, set it: `bd config set validation.on-create error` (refuses an issue missing
+the sections its type needs; chores pass). Leave a repo that chose `warn` as it is.
 This is idempotent repo hygiene — the only change you make without asking. (This is the
 per-repo auto-wire folded over from cp-ci9.1.)
 
@@ -83,7 +85,7 @@ per-repo auto-wire folded over from cp-ci9.1.)
 ## Beads Audit — <repo> — YYYY-MM-DD
 
 ### Stats
-- Issues: X total (X open / X closed) · validation.on-create: <warn|...>
+- Issues: X total (X open / X closed) · validation.on-create: <error|warn|none>
 - Missing sections: X · Decisions w/o rationale: X · Reversed-w/o-supersede: X · Orphans: X · Stale: X
 
 ### Missing acceptance / description (done-ness gaps)
@@ -102,7 +104,7 @@ per-repo auto-wire folded over from cp-ci9.1.)
 - <id> — <broken dep | last activity date>
 
 ### Auto-fixed
-- validation.on-create set to warn (was <prev>)
+- validation.on-create set to error (was <prev>)
 ```
 
 ## Drafting fixes — the standard you hold

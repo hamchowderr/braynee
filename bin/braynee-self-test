@@ -969,6 +969,17 @@ function assertHealth(label, cond) {
   assertHealth('health.py cmd_beads emits a traceability line (cp-ci9.3)', /traceability:/.test(hp));
   assertHealth('health.py hygiene runs lint + orphans + stale + guard',
     /_bd\("lint"\)/.test(hp) && /_bd\("orphans"\)/.test(hp) && /_bd\("stale"\)/.test(hp) && /validation\.on-create/.test(hp));
+  // The guard is repaired, not merely reported, and to `error`. bd honours only
+  // warn and error, so "strict" (once accepted here) must count as off.
+  assertHealth('health.py repairs an off create-time guard to error',
+    /_bd\("config", "set", "validation\.on-create", "error"\)/.test(hp));
+  assertHealth('health.py does not treat "strict" as an active guard',
+    /GUARD_ON = \("warn", "error"\)/.test(hp) && !/"warn", "error", "strict"/.test(hp));
+
+  // A fresh bd init gets the guard on, set to error.
+  const cbi = fs.readFileSync(path.join(PLUGIN_ROOT, 'hooks', 'check-beads-init.js'), 'utf8');
+  assertHealth('check-beads-init turns validation.on-create on at init, as error',
+    /GUARD_VALUE = 'error'/.test(cbi) && /ensureValidationGuard\(codeRoot\)/.test(cbi));
 
   // cp-ccsh.4 / B3: the MEMORY.md tripwire once recommended "run /health or
   // trigger a memory resync" — /braynee:health does not resync, and pre-cp-ccsh.2

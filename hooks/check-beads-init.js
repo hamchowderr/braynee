@@ -142,6 +142,42 @@ function ensureBeadsExportConfig(cwd) {
   return results;
 }
 
+// The create-time section guard. With validation.on-create=error, bd refuses a
+// `bd create` that lacks the sections its type requires (task/feature/story:
+// Acceptance Criteria; bug: + Steps to Reproduce; epic: Success Criteria;
+// decision: Decision/Rationale/Alternatives; spike: Goal/Findings) and lets
+// chores and milestones through untouched. bd leaves it unset (`none`), which is
+// how whole backlogs of title-only issues accumulate.
+//
+// Set on a FRESH init only: an existing repo may have a reason for its value,
+// and /braynee:health is where an existing repo gets it repaired. The key lives
+// in config.yaml, so the read is a file read. "strict" is not a bd value (bd
+// 1.3.0 treats it as none), so only warn and error count as already on.
+const GUARD_VALUE = 'error';
+function validationGuardValue(cfgText) {
+  const m = /^validation\.on-create:[ \t]*["']?([A-Za-z]+)["']?/m.exec(cfgText || '')
+    || /^validation:[ \t]*\n(?:[ \t]+\S.*\n)*?[ \t]+on-create:[ \t]*["']?([A-Za-z]+)["']?/m.exec(cfgText || '');
+  return m ? m[1].toLowerCase() : 'none';
+}
+
+function ensureValidationGuard(cwd) {
+  let cfgText = '';
+  try { cfgText = fs.readFileSync(path.join(cwd, '.beads', 'config.yaml'), 'utf8'); } catch {
+    return { ok: false, error: 'no config.yaml (needs bd init)' };
+  }
+  const current = validationGuardValue(cfgText);
+  if (current === 'warn' || current === 'error') return { ok: true, changed: false, value: current };
+  try {
+    execSync(`bd config set validation.on-create ${GUARD_VALUE}`, {
+      cwd, encoding: 'utf8', timeout: 10_000,
+      stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true,
+    });
+    return { ok: true, changed: true, value: GUARD_VALUE };
+  } catch (err) {
+    return { ok: false, error: (err.stderr?.toString() || err.message || '').split('\n')[0] };
+  }
+}
+
 // Run after a successful `bd init` to leave the project CLEAN in `bd doctor`:
 //   1. `bd hooks install` — installs bd's git hooks (.git/hooks/) that keep
 //      .beads/issues.jsonl synced. Idempotent: bd uses section markers and a
@@ -242,6 +278,10 @@ function finishBdSetup(cwd) {
   return steps;
 }
 
+module.exports = { validationGuardValue, ensureValidationGuard, GUARD_VALUE };
+
+// Only a direct run reads stdin, so the unit test can require the helpers.
+if (require.main === module) {
 let input = '';
 process.stdin.setEncoding('utf8');
 process.stdin.on('data', chunk => { input += chunk; });
@@ -325,6 +365,7 @@ process.stdin.on('end', () => {
       `did not have it initialized. braynee is running:\n\n` +
       `\`\`\`\n` +
       `bd init --shared-server --external -p "${projectName}" --skip-agents --skip-hooks --non-interactive\n` +
+      `bd config set validation.on-create error   # refuse issues missing their sections\n` +
       `bd hooks install            # git hooks that keep .beads/issues.jsonl synced\n` +
       `bd vc commit -m "..."       # commit the initial bd config\n` +
       `\`\`\`\n\n`
@@ -339,6 +380,10 @@ process.stdin.on('end', () => {
         if (c.ok) log.info(HOOK, `export-config ${c.key}: ok${c.changed ? ' (set)' : ''}`);
         else log.warn(HOOK, `export-config ${c.key} failed: ${c.error}`);
       }
+      // Turn the create-time section guard on before the first issue exists.
+      const guard = ensureValidationGuard(codeRoot);
+      if (guard.ok) log.info(HOOK, `validation.on-create: ${guard.value}${guard.changed ? ' (set)' : ''}`);
+      else log.warn(HOOK, `validation.on-create failed: ${guard.error}`);
       // Leave the project CLEAN in `bd doctor`: install bd's git hooks,
       // ensure an agent doc exists, and commit the initial bd config.
       const finish = finishBdSetup(codeRoot);
@@ -351,6 +396,11 @@ process.stdin.on('end', () => {
         `Braynee also installed bd's git hooks (keep \`.beads/issues.jsonl\` synced, ` +
         `preventing merge conflicts on PRs), ensured an agent doc exists, and committed ` +
         `the initial bd config — the project comes up clean in \`bd doctor\`.\n\n` +
+        (guard.ok
+          ? `The create-time guard is on (\`validation.on-create: ${guard.value}\`): \`bd create\` refuses an ` +
+            `issue missing the sections its type needs (Acceptance Criteria for tasks and features), and ` +
+            `chores go through untouched.\n\n`
+          : '') +
         `Use \`bd create\`, \`bd list\`, \`bd update <id> --status in_progress\` to track work. ` +
         `Braynee hooks will sync bd status changes to TaskNotes and the project session note automatically.\n`
       );
@@ -369,3 +419,4 @@ process.stdin.on('end', () => {
     process.exit(0);
   }
 });
+}
