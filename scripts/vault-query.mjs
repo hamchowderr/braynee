@@ -150,8 +150,8 @@ function readNote(filePath) {
 /**
  * The project a note's `project:` frontmatter names, as a bare name.
  *
- * The value may be a bare wikilink (`[[Foreman]]`) or a vault-relative path
- * one (`[[1. Projects/Foreman/Foreman]]`) — hooks/lib/project-resolver.js
+ * The value may be a bare wikilink (`[[Acme App]]`) or a vault-relative path
+ * one (`[[1. Projects/Acme App/Acme App]]`) — hooks/lib/project-resolver.js
  * emits the path form. Comparing the whole stripped value made every
  * path-form note invisible to `context` (cp-8zpc), so always reduce to the
  * last path segment.

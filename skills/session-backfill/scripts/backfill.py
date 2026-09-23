@@ -333,8 +333,8 @@ def kebab_to_wikilink(kebab: str) -> str:
 
     Precedence: an explicit project_map override, then the vault's own project
     note (`folder:` → `name:`), then a capitalised join. The middle step is the
-    one that matters: without it `myrp-build` becomes "Myrp Build" and
-    `savant-os` becomes "Savant Os", neither of which is what the project note
+    one that matters: without it `acme-ui` becomes "Acme Ui" and
+    `api-v2` becomes "Api V2", neither of which is what the project note
     or the live hooks call it, so backfill spawns a second Sessions folder
     beside the real one (cp-3bzk).
     """
