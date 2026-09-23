@@ -36,7 +36,7 @@ it, it's probably TodoWrite, not a bead.
 ## Keep the trace clean
 - **Capture the why** in `--design` as you decide — not just what you did.
 - **Reversed a decision?** `bd supersede <old> --with <new>` — link old → new. Never silently close-and-delete; the trail must show *why it changed*.
-- **Found work mid-task?** `bd create … --deps discovered-from:<current>` — preserve the causal link.
+- **Found work mid-task?** `bd create "…" --design "…" --acceptance "…" --deps discovered-from:<current>` — preserve the causal link.
 - **Close with a reason:** `bd close <id> --reason "…"` — how/why it ended, with evidence.
 
 ## No user-specific data in shareable artifacts
@@ -98,7 +98,7 @@ bd update <id> --set-metadata execution_agent_type=general-purpose \
                --set-metadata execution_mode=autonomous \
                --set-metadata execution_parallel_group=phase2-features
 
-bd create "…" --metadata '{"execution_agent_type":"Explore","execution_suggested_model":"haiku"}'
+bd create "…" --design "…" --acceptance "…" --metadata '{"execution_agent_type":"Explore","execution_suggested_model":"haiku"}'
 ```
 
 **Read** — before dispatch:

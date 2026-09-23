@@ -506,6 +506,44 @@ for (const h of ['commit-cadence-nudge.js', 'beads-claim-to-branch.js',
     /subagent_type: "braynee:beads-enricher"/.test(prdSkill) && /^allowed-tools:.*\bAgent\b/m.test(prdSkill));
 }
 
+// No shipped guidance teaches a bare create. Under validation.on-create=error a
+// `bd create "title"` of a task is refused, and an example without --acceptance is
+// what agents copy. Scans hooks, agents, skills, docs and scripts for a concrete
+// `bd create "..."` / `bd create --title` example; each must carry --acceptance
+// (or be a chore, which needs no sections). Unit tests and this file are fixtures.
+{
+  const roots = ['hooks', 'agents', 'skills', 'docs', 'scripts', 'formulas', 'commands'];
+  const files = [];
+  (function walk(dir) {
+    let ents = [];
+    try { ents = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of ents) {
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) { if (e.name !== 'node_modules') walk(p); continue; }
+      if (/\.test\.(js|mjs)$/.test(e.name)) continue;
+      if (/\.(js|mjs|md|toml|py)$/.test(e.name)) files.push(p);
+    }
+  })(PLUGIN_ROOT);
+  const bare = [];
+  for (const f of files) {
+    const rel = path.relative(PLUGIN_ROOT, f).replace(/\\/g, '/');
+    if (!roots.some((r) => rel.startsWith(r + '/'))) continue;
+    const lines = fs.readFileSync(f, 'utf8').split(/\r?\n/);
+    lines.forEach((line, i) => {
+      if (!/bd create (?:"|--title)/.test(line)) return;
+      // Code comments describe what a parser accepts; they are not examples.
+      if (/\.(js|mjs|py)$/.test(rel) && /^\s*(\/\/|#|\*)/.test(line)) return;
+      // A multi-line example continues with `\`; read it whole.
+      let whole = line, j = i;
+      while (/\\\s*$/.test(lines[j]) && j + 1 < lines.length) whole += ' ' + lines[++j];
+      if (/--acceptance/.test(whole) || /(?:--type[= ]|-t )chore/.test(whole)) return;
+      bare.push(`${rel}:${i + 1}`);
+    });
+  }
+  assertGate(`no shipped example teaches a bd create without --acceptance${bare.length ? ' — ' + bare.join(', ') : ''}`,
+    bare.length === 0);
+}
+
 // secret-exposure-guard.js — DENY value-printing secret commands (exit 2 + stderr),
 // ALLOW injection (`infisical run`) and writes (`secrets set`), stay SILENT on a
 // non-match, and DENY real secrets written into a .env file. Locks the contract
