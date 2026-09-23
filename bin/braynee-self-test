@@ -492,6 +492,20 @@ for (const h of ['commit-cadence-nudge.js', 'beads-claim-to-branch.js',
   try { fs.rmSync(pv, { recursive: true, force: true }); } catch {}
 }
 
+// Seed → enrich. A seeded issue is a stub the claim gate refuses, so the PRD flow
+// is only complete once the enricher has run. Both ends must say so: the script's
+// own output (what an agent reads) and the skill (what dispatches the agent).
+{
+  const seedSrc = fs.readFileSync(path.join(PLUGIN_ROOT, 'scripts', 'prd-seed.mjs'), 'utf8');
+  assertGate('prd-seed ends a successful seed with the enricher as the NEXT STEP',
+    /NEXT STEP \(required\)/.test(seedSrc) && /braynee:beads-enricher/.test(seedSrc) && /nextStepLine\(/.test(seedSrc));
+  assertGate('prd-seed passes --acceptance so a seed survives validation.on-create=error',
+    /--acceptance \$\{JSON\.stringify\(CORE\.seededAcceptance\(item\)\)\}/.test(seedSrc));
+  const prdSkill = fs.readFileSync(path.join(PLUGIN_ROOT, 'skills', 'prd', 'SKILL.md'), 'utf8');
+  assertGate('prd skill dispatches braynee:beads-enricher after a real seed (and may use Agent)',
+    /subagent_type: "braynee:beads-enricher"/.test(prdSkill) && /^allowed-tools:.*\bAgent\b/m.test(prdSkill));
+}
+
 // secret-exposure-guard.js — DENY value-printing secret commands (exit 2 + stderr),
 // ALLOW injection (`infisical run`) and writes (`secrets set`), stay SILENT on a
 // non-match, and DENY real secrets written into a .env file. Locks the contract
