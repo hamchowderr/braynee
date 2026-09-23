@@ -50,6 +50,13 @@ project note under ## Discovery:
 
 `bd gate resolve` this issue once the call is held and findings are written
 down. Downstream is gated on this — don't skip it.
+
+## Acceptance Criteria
+- The discovery call with {{client}} has been held.
+- The {{client}} project note has a ## Discovery section covering goal,
+  constraints, audience, success criteria, and out-of-scope.
+- Open questions left after the call are listed, each with an owner.
+- The discovery gate is resolved with `bd gate resolve`.
 """
 
   # Must be `[steps.gate]` (attaches to the step directly above — discovery).
@@ -78,6 +85,13 @@ criteria.
    Don't move on until they've said yes in writing.
 
 Close with: `bd close <id> --reason "scope confirmed by {{client}} on <date>"`.
+
+## Acceptance Criteria
+- The {{client}} project note has a ## Scope section: the deliverable in
+  one sentence, acceptance criteria as bullets, and explicit non-goals.
+- Each scope bullet is testable by QA without asking {{client}} again.
+- {{client}} has confirmed the scope in writing, and the date is in the
+  close reason.
 """
 
 # -----------------------------------------------------------------------------
@@ -97,6 +111,19 @@ Universal rules:
   no hand-rolled primitives.
 - Agent work follows the Mastra template patterns (mastra-base).
 - Never commit secrets — `infisical run` to inject; placeholders in .env.
+
+## Design
+Build strictly against the confirmed scope. Split larger builds into
+child issues linked with `bd dep add`, so each piece closes on its own
+evidence.
+
+## Acceptance Criteria
+- {{deliverable}} is implemented against every confirmed scope bullet,
+  and nothing outside scope was added.
+- All child issues opened under this step are closed.
+- The project's own checks (lint / typecheck / tests, where they exist)
+  pass on the final commit.
+- No secret value is committed; secrets are injected at runtime.
 """
 
 # -----------------------------------------------------------------------------
@@ -115,6 +142,13 @@ Quality pass BEFORE the client sees anything. Adapt checks to deliverable:
 - Server / deploy: health endpoint, logs sane, no secrets in stdout.
 
 Every AC gets a tick or a written explanation. No silent skips.
+
+## Acceptance Criteria
+- Every scope bullet is marked passed, or carries a written explanation.
+- The checks for this deliverable type (listed above) were run, and the
+  evidence is linked in the close reason.
+- Defects found are fixed, or filed as their own issues and disclosed
+  before the client review.
 """
 
 # -----------------------------------------------------------------------------
@@ -134,6 +168,14 @@ issues — don't invite endless rounds.
 
 `bd gate resolve` this ONLY when {{client}} has signed off in writing.
 No assumed-yes — the ship step is hard to reverse.
+
+## Acceptance Criteria
+- {{client}} has had access to a reviewable version (preview, staging,
+  demo, or test access).
+- Feedback is collected in one batch, and each item is applied or
+  answered.
+- {{client}} has signed off in writing, and the review gate is resolved
+  with `bd gate resolve`.
 """
 
   # `[steps.gate]` attaches to the step directly above (review) — see the discovery
@@ -159,6 +201,13 @@ Take the signed-off thing to production / final home:
 
 Verify it works end-to-end IN production (not just that deploy succeeded).
 Capture the production URL / location in the {{client}} project note.
+
+## Acceptance Criteria
+- The signed-off version runs in production or its final home.
+- It is verified working end to end there â€” a behavior check, not only a
+  successful deploy.
+- The production URL or location is recorded in the {{client}} project
+  note.
 """
 
 # -----------------------------------------------------------------------------
@@ -178,4 +227,12 @@ Wrap the engagement so {{client}} can operate without you:
    happy.
 4. Update the {{client}} project note: status → shipped, add production
    URL / location.
+
+## Acceptance Criteria
+- A handoff doc exists that covers use, content updates, logs, and
+  contacts.
+- Access is transferred, or the reason it stays with you is written down.
+- The handoff doc and the final invoice are sent to {{client}}.
+- The {{client}} project note shows status shipped and the production
+  URL or location.
 """

@@ -80,7 +80,11 @@ The molecule's issues are real beads issues — they work with everything
 beads already does:
 - `bd ready` shows unblocked issues (only the first step + any non-gated
   parallel steps will appear).
-- `bd update <id> --claim` claims one to work on.
+- `bd update <id> --claim` claims one to work on. braynee's claim gate runs
+  `bd lint` first; every shipped formula step carries a `## Acceptance
+  Criteria` heading in its description, so poured steps claim cleanly. A
+  custom formula needs the same heading in each step's `description` — bd
+  drops `acceptance`/`design` step keys at pour.
 - Human gates need `bd gate resolve <id>` when the human checkpoint
   (discovery call held, client signed off, etc.) is done.
 - Timer / `gh:run` gates auto-advance via the braynee `beads-gate-check`
