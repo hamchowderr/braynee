@@ -92,7 +92,7 @@ LAUNCH a live CC session against the source plugin (no cache, no restart):
 
 INSIDE that session, exercise the gated hooks with REAL commands:
 
-  bd create --title="sandbox fire test"      # expect: BEADS-TODO-MIRROR reminder reaches the model
+  bd create --title="sandbox fire test" --acceptance="mirror reminder fires"   # expect: BEADS-TODO-MIRROR reminder reaches the model
   bd update <id> --claim                      # expect: "now in_progress" reminder
   bd close <id>                               # expect: "now closed" reminder
   echo hi                                     # expect: NO reminder (gate stays silent)

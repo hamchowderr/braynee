@@ -63,6 +63,15 @@ bd update <id> --claim
 ```
 If claim fails (race condition, missing issue), loop back to step 1.
 
+If braynee's **claim gate** refuses it ("BLOCKED by braynee claim gate"), the issue has
+no plan: `bd lint` reports missing sections, or its acceptance is still the line
+`prd-seed` wrote. That is not a race and does not count toward the 3-failed-claims stop.
+Author the missing Design / Acceptance from the issue, its PRD and the codebase with
+`bd update <id> --design "..." --acceptance "..."`, then claim again. If they cannot be
+written honestly from what exists, skip the issue, note `needs owner input` on it
+(`bd update <id> --append-notes "..."`), and pick the next ready issue. Never set
+`BRAYNEE_CLAIM_GATE=off` to get past it.
+
 Mirror to TaskCreate immediately (the braynee `beads-todo-reminder` hook will
 also fire a reminder — respect it).
 
@@ -132,6 +141,7 @@ filing a duplicate. Only when it's genuinely new, create it and link it back to
 the issue that surfaced it:
 ```bash
 bd create --title="..." --description="..." --type=task --priority=3 \
+  --design="<how + trade-off>" --acceptance="<verifiable outcomes>" \
   --deps discovered-from:<current-id>
 ```
 (`bd dep add` takes only positional / `--blocked-by` / `--depends-on` — it has

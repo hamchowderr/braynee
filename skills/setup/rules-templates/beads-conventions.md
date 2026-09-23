@@ -36,7 +36,7 @@ it, it's probably TodoWrite, not a bead.
 ## Keep the trace clean
 - **Capture the why** in `--design` as you decide — not just what you did.
 - **Reversed a decision?** `bd supersede <old> --with <new>` — link old → new. Never silently close-and-delete; the trail must show *why it changed*.
-- **Found work mid-task?** `bd create … --deps discovered-from:<current>` — preserve the causal link.
+- **Found work mid-task?** `bd create "…" --design "…" --acceptance "…" --deps discovered-from:<current>` — preserve the causal link.
 - **Close with a reason:** `bd close <id> --reason "…"` — how/why it ended, with evidence.
 
 ## No user-specific data in shareable artifacts
@@ -67,7 +67,8 @@ names, private repos, or internal business context.
 ## Discipline
 - **Before coding** in a beads repo: `bd list --status in_progress` → else `bd ready` → claim atomically (`bd update <id> --claim`). Don't invent work.
 - **Research before you create.** Before filing a new issue — or building it — `bd search "<keywords>"` for existing or duplicate work (and, in a repo with PRs, `gh pr list --search "<keywords>"`). If it already exists, **link** (`--deps discovered-from:`/`related:`) or `bd supersede` instead of filing a duplicate; **abort** work that's already claimed or already has an open PR. (This is the beads "check before you build" discipline.)
-- **Turn on the create-time guard** (once per repo): `bd config set validation.on-create warn` — flags new issues missing Description/Acceptance so quality can't silently drift.
+- **The create-time guard is on** (once per repo): `bd config set validation.on-create error` — `bd create` refuses an issue missing the sections its type needs (Acceptance Criteria for tasks, features and stories; also Steps to Reproduce for bugs; Success Criteria for epics), and chores go through. braynee sets it on `bd init` and `/braynee:health` repairs it when off. Create with the sections: `bd create "Title" --design "<how + trade-off>" --acceptance "<verifiable outcomes>"`.
+- **A claim needs a plan.** braynee's claim gate refuses `bd update <id> --claim` / `--status in_progress` while `bd lint <id>` reports missing sections, or while the acceptance is still the line `prd-seed` wrote. Fill them with `bd update <id> --design ... --acceptance ...` first. `bd mol pour` does not run the create-time guard, so poured steps meet this gate at claim time.
 - `bd lint` finds issues missing sections; `bd prime` recovers context after compaction.
 - **`bd prime` is a subset, not the index.** It lists ~40 commands and omits `query`,
   `graph`, `epic`, `swarm`, `gate`, `provenance`, `federation`, `compact`, `flatten` and
@@ -97,7 +98,7 @@ bd update <id> --set-metadata execution_agent_type=general-purpose \
                --set-metadata execution_mode=autonomous \
                --set-metadata execution_parallel_group=phase2-features
 
-bd create "…" --metadata '{"execution_agent_type":"Explore","execution_suggested_model":"haiku"}'
+bd create "…" --design "…" --acceptance "…" --metadata '{"execution_agent_type":"Explore","execution_suggested_model":"haiku"}'
 ```
 
 **Read** — before dispatch:

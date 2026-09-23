@@ -265,13 +265,26 @@ console.log(`${items.length} acceptance criteria found` +
 
 const prdLabel = `prd:${path.basename(prdPath, '.md')}`;
 
+// Seeded issues are stubs: the PRD line as title, description and acceptance,
+// no Design, no build order. They cannot be claimed until authored (the claim
+// gate refuses them), so the seed is not finished until enrichment runs. Said
+// explicitly on stdout so an agent reading the output does not stop here.
+function nextStepLine(prdName, repo) {
+  return `\nNEXT STEP (required): dispatch the braynee:beads-enricher agent for PRD "${prdName}" ` +
+    `in ${repo}. It writes Design + Acceptance for each seeded stub and wires the build order; ` +
+    `until it runs, braynee's claim gate refuses to start these issues.`;
+}
+
 function buildCreateCmd(item) {
   const labels = [];
   if (item.milestone) labels.push(`milestone:${item.milestone.replace(/\s+/g, '_')}`);
   labels.push(prdLabel);
   const labelArgs = labels.map(l => `-l ${JSON.stringify(l)}`).join(' ');
   const descFlag = item.description ? `-d ${JSON.stringify(item.description)}` : '';
-  return `bd create ${JSON.stringify(item.title)} -p ${PRIORITY_FLAG[item.priority]} ${descFlag} ${labelArgs}`.trim();
+  // Always pass --acceptance: under validation.on-create=error a task without
+  // one is refused, and the PRD line is the criterion (see seededAcceptance).
+  const accFlag = `--acceptance ${JSON.stringify(CORE.seededAcceptance(item))}`;
+  return `bd create ${JSON.stringify(item.title)} -p ${PRIORITY_FLAG[item.priority]} ${descFlag} ${accFlag} ${labelArgs}`.trim();
 }
 
 if (dryRun) {
@@ -338,6 +351,7 @@ if (verifiedCount === items.length) {
   fs.writeFileSync(prdPath, updated, 'utf-8');
   console.log(`\nUpdated PRD: seeded: true, seeded_count: ${verifiedCount} (verified persisted in ${repoDir}).`);
   console.log(`\nDone. ${verifiedCount}/${items.length} issues verified persisted.`);
+  console.log(nextStepLine(path.basename(prdPath, '.md'), repoDir));
   process.exit(0);
 }
 

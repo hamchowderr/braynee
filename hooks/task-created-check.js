@@ -79,7 +79,7 @@ process.stdin.on('end', () => {
       `A Claude Code task "${subject}" was created. ` +
       `beads is the source of truth: it is out of sync unless a beads issue tracks this work. ` +
       `If this task was mirrored from an existing \`bd create\`, no action is needed; ` +
-      `otherwise create the matching beads issue (\`bd create ...\`).`
+      `otherwise create the matching beads issue (\`bd create "<title>" --design "..." --acceptance "..."\`).`
     );
     process.exit(0);
   } catch {

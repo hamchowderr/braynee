@@ -158,7 +158,9 @@ placeholder for the user to run. **Never hardcode a project ID.**
 
 1. Create a Beads issue for the project:
 ```bash
-bd create --title="Project: {name}" --description="New {category} project scaffolded in vault. First task: define goals and requirements in PRD." --type=feature --priority=3
+bd create --title="Project: {name}" --description="New {category} project scaffolded in vault. First task: define goals and requirements in PRD." --type=feature --priority=3 \
+  --design="Goals and requirements go into a PRD under 2. Areas/Product Manager/PRDs/, which is then seeded and enriched into the backlog." \
+  --acceptance="A PRD for {name} exists with MVP Definition and Acceptance Criteria filled in, and prd-audit reports it clean."
 ```
 
 2. Run QMD to check if anything related already existed:

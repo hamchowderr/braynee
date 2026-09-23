@@ -8,7 +8,7 @@ description: >
   Use when user says "new PRD", "draft PRD", "create PRD", "write a PRD",
   "PRD for <X>", "audit PRDs", "seed beads from PRD", "convert PRD to issues".
 argument-hint: "[new <Name> | audit | seed <Name>]"
-allowed-tools: Bash(node:*), Bash(bd:*), Bash(obsidian:*), Read, Write, Edit, AskUserQuestion
+allowed-tools: Bash(node:*), Bash(bd:*), Bash(obsidian:*), Read, Write, Edit, AskUserQuestion, Agent(*)
 ---
 
 # PRD Skill
@@ -35,6 +35,8 @@ node {pluginRoot}/scripts/prd-audit.mjs
 
 # Seed beads issues from a PRD's Acceptance Criteria section
 node {pluginRoot}/scripts/prd-seed.mjs "<Name>" [--dry-run]
+# ...then, after every real (non-dry-run) seed, dispatch the enricher —
+# see "Seed, then enrich" below. The seed is not finished until it has run.
 ```
 
 ## Two shapes: single-file and folder PRDs
@@ -149,6 +151,8 @@ incomplete or the criterion is out of scope.
 - `[Pn]` → priority (P0=critical, P1=high, P2=medium, P3=low)
 - Title before em-dash → bd title
 - Body after em-dash → bd description
+- Title + body → bd acceptance, prefixed `PRD criterion (seeded, not yet enriched): `
+  (the create-time guard refuses a task with no acceptance; the prefix marks the stub)
 - `### Milestone: <name>` → bd label `milestone:<name>`
 - Lines without the `- [ ] **[Pn]**` shape are ignored
 
@@ -192,7 +196,33 @@ anything already filled in the PRD.
 2. **Interview + draft** → run the `new` interview above, then `node prd-new.mjs <Name>` scaffolds and you fill MVP Definition + Acceptance Criteria from the answers (no placeholders left)
 3. **Audit** → `node prd-audit.mjs` confirms schema is clean
 4. **Seed** → `node prd-seed.mjs <Name>` creates bd issues, flips `seeded: true`
-5. **Build** → in the project repo (`<projects-root>/<slug>/`), `bd ready` shows the seeded backlog
+5. **Enrich** → dispatch the `braynee:beads-enricher` agent (see below). Automatic after
+   every real seed; skipped only after `--dry-run`.
+6. **Build** → in the project repo (`<projects-root>/<slug>/`), `bd ready` shows the enriched backlog
+
+## Seed, then enrich (do not stop after the seed)
+
+`prd-seed` is deterministic: each issue it creates is a stub, the PRD line as title,
+description and acceptance, with no Design and no build order. braynee's claim gate
+refuses `bd update <id> --claim` on such a stub, so a seeded backlog cannot be worked
+until it is enriched. The seed prints a `NEXT STEP (required)` line saying so.
+
+After a real seed that exits 0 (not `--dry-run`, not a partial seed that exited 1),
+**immediately dispatch the enricher** with the Agent tool — do not ask first, and do
+not report the seed as done before it returns:
+
+```
+Agent(
+  subagent_type: "braynee:beads-enricher",
+  description: "Enrich seeded <Name> backlog",
+  prompt: "Enrich the issues just seeded from PRD \"<Name>\" in <repo dir>. PRD: 2. Areas/Product Manager/PRDs/<Name>.md. Scope: label prd:<Name>. Author Design + Acceptance for each stub, wire build-order deps, stamp execution metadata, then report bd lint / bd ready before and after."
+)
+```
+
+Run it with the target repo as its working directory (the `Target repo:` line of the
+seed output). Relay its report: stubs enriched, the build-order graph, anything under
+**Needs owner input**, and the before/after `bd lint` and `bd ready` counts. A partial
+seed is re-run first (it creates only the missing issues), then enriched.
 
 ## The `folder:` join key
 
