@@ -271,7 +271,10 @@ function buildCreateCmd(item) {
   labels.push(prdLabel);
   const labelArgs = labels.map(l => `-l ${JSON.stringify(l)}`).join(' ');
   const descFlag = item.description ? `-d ${JSON.stringify(item.description)}` : '';
-  return `bd create ${JSON.stringify(item.title)} -p ${PRIORITY_FLAG[item.priority]} ${descFlag} ${labelArgs}`.trim();
+  // Always pass --acceptance: under validation.on-create=error a task without
+  // one is refused, and the PRD line is the criterion (see seededAcceptance).
+  const accFlag = `--acceptance ${JSON.stringify(CORE.seededAcceptance(item))}`;
+  return `bd create ${JSON.stringify(item.title)} -p ${PRIORITY_FLAG[item.priority]} ${descFlag} ${accFlag} ${labelArgs}`.trim();
 }
 
 if (dryRun) {

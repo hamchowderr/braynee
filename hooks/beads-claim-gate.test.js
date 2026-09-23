@@ -7,7 +7,7 @@
 
 const assert = require('assert');
 const path = require('path');
-const { parseClaims, blockingFindings, blockMessage } = require('./beads-claim-gate.js');
+const { parseClaims, blockingFindings, seededStubFindings, mergeFindings, blockMessage } = require('./beads-claim-gate.js');
 
 const tests = [];
 function test(name, fn) { tests.push({ name, fn }); }
@@ -109,6 +109,37 @@ test('a description carrying the heading satisfies it; a file/stdin description 
   assert.deepStrictEqual(blockingFindings(miss, { description: 'x\n## Steps to Reproduce\n1. go' }), []);
   assert.deepStrictEqual(blockingFindings(miss, { opaqueDescription: true }), []);
   assert.strictEqual(blockingFindings(miss, { description: 'no heading here' }).length, 1);
+});
+
+// ── seededStubFindings / mergeFindings ──────────────────────────────────────
+const { SEEDED_ACCEPTANCE_PREFIX } = require('../scripts/lib/prd-seed-core.js');
+
+test('an issue whose acceptance is still the seeded PRD line blocks, with Design named', () => {
+  const f = seededStubFindings([{ id: 'cp-s', issue_type: 'task', acceptance_criteria: `${SEEDED_ACCEPTANCE_PREFIX}Core — x`, design: '' }]);
+  assert.strictEqual(f.length, 1);
+  assert.strictEqual(f[0].missing[0], 'Design');
+});
+
+test('an enriched issue (prefix gone) and a human-written acceptance do not block', () => {
+  assert.deepStrictEqual(seededStubFindings([
+    { id: 'cp-a', acceptance_criteria: 'tokens persist across sessions', design: '' },
+    { id: 'cp-b', acceptance_criteria: '', design: '' },
+  ]), []);
+});
+
+test('rewriting the acceptance on the claim command itself clears the seeded block', () => {
+  const issues = [{ id: 'cp-s', acceptance_criteria: `${SEEDED_ACCEPTANCE_PREFIX}Core`, design: '' }];
+  assert.deepStrictEqual(seededStubFindings(issues, { acceptance: true }), []);
+});
+
+test('mergeFindings reports each id once with the union of its gaps', () => {
+  const m = mergeFindings([
+    { id: 'cp-1', missing: ['Acceptance Criteria'] },
+    { id: 'cp-1', missing: ['Design', 'Acceptance Criteria'] },
+    { id: 'cp-2', missing: ['Goal'] },
+  ]);
+  assert.strictEqual(m.length, 2);
+  assert.deepStrictEqual(m[0].missing, ['Acceptance Criteria', 'Design']);
 });
 
 // ── blockMessage ─────────────────────────────────────────────────────────────
