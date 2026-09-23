@@ -449,6 +449,22 @@ for (const h of ['commit-cadence-nudge.js', 'beads-claim-to-branch.js',
     r.out.trim() === '' && (r.status === 0 || r.status === 2));
 }
 
+// beads-claim-gate.js — blocks a claim of an issue `bd lint` says is missing its
+// sections. It must FAIL OPEN: a claim it cannot check (bare-marker repo, bd
+// absent, unknown id) is allowed with exit 0, and a command that claims nothing
+// never spawns bd at all. The block decision itself is unit-tested in §7.
+{
+  const noise = runHook('beads-claim-gate.js', 'echo hello world');
+  assertGate('beads-claim-gate stays SILENT + exit 0 on a non-claiming command',
+    noise.out.trim() === '' && noise.status === 0);
+  const other = runHook('beads-claim-gate.js', 'bd update zz-000 --status closed');
+  assertGate('beads-claim-gate stays SILENT + exit 0 on a non-claiming bd update',
+    other.out.trim() === '' && other.status === 0);
+  const unreadable = runHook('beads-claim-gate.js', 'bd update zz-000 --claim');
+  assertGate('beads-claim-gate fails OPEN (exit 0) when the claimed issue cannot be linted',
+    unreadable.out.trim() === '' && unreadable.status === 0);
+}
+
 // prd-seed-gate.js (cp-7jd) — warns when prd-seed runs against a half-scoped PRD.
 // EMIT on a gappy PRD, SILENT on a clean PRD and on a non-prd-seed command. Uses a
 // throwaway BRAYNEE_VAULT fixture so the hook has a PRD to inspect.
