@@ -13,8 +13,30 @@ This doc covers the *why* and the patterns.
 2. **Draft PRD** at `2. Areas/Product Manager/PRDs/<Name>.md` — `node prd-new.mjs <Name>` scaffolds it
 3. **Audit** — `node prd-audit.mjs` confirms schema is clean
 4. **Seed** — `node prd-seed.mjs <Name>` creates one bd issue per acceptance criterion
-5. **Build** — work on the bd backlog in the project repo (`<projects-root>/<slug>/`)
-6. **Evolve** — once MVP ships, ongoing planning moves to `2. Areas/Product Manager/Roadmaps/`. The PRD becomes a historical snapshot.
+5. **Enrich** — the `braynee:beads-enricher` agent writes Design + Acceptance for each seeded issue and wires the build order. `/braynee:prd seed` dispatches it automatically after every real seed
+6. **Build** — work on the bd backlog in the project repo (`<projects-root>/<slug>/`)
+7. **Evolve** — once MVP ships, ongoing planning moves to `2. Areas/Product Manager/Roadmaps/`. The PRD becomes a historical snapshot.
+
+## Why seeding is not the last step
+
+A seeded issue is a stub. `prd-seed` copies the criterion into the title, the
+description and the acceptance field, and nothing else: no Design, no dependency
+edges. It records the criterion as the acceptance because repos braynee
+initialises refuse a task with no acceptance (`validation.on-create: error`), and
+it prefixes it with `PRD criterion (seeded, not yet enriched): ` so the stub stays
+recognisable.
+
+Two things act on that prefix:
+
+- **The enricher** treats any open issue with an empty Design and an empty or
+  still-prefixed acceptance as a stub to author. Its rewrite drops the prefix, so
+  running it twice changes nothing the second time.
+- **The claim gate** refuses `bd update <id> --claim` (or `--status in_progress`)
+  on an issue that still carries the prefix, or that `bd lint` reports as missing
+  sections. A backlog cannot be started until it has been enriched.
+
+`prd-seed` ends a successful run with a `NEXT STEP (required)` line naming the
+enricher, and the `/braynee:prd` skill dispatches it without asking.
 
 ## The MVP Definition gate
 
