@@ -164,6 +164,12 @@
           {
             "type": "command",
             "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/beads-actor-sign.js"],
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "node",
             "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/branch-name-check.js"],
             "timeout": 10
           },

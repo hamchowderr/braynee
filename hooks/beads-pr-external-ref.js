@@ -14,9 +14,10 @@
 // shipped it. Previously only the first direction existed, and only by
 // convention.
 //
-// SCOPE: issue linkage only. The `Executed-By` agent-attribution trailer is
-// beads-native (BEADS_ACTOR + bd's own prepare-commit-msg hook) and belongs to
-// cp-uif3.5 — coordinate, don't duplicate. This hook writes no trailers.
+// SCOPE: issue linkage only. Who ran a bd command is signed by
+// beads-actor-sign.js (`--actor claude` / `claude/<agent_type>` on every bd
+// call); the git `Executed-By` commit trailer is still cp-uif3.5 and unbuilt.
+// This hook writes no trailers.
 //
 // Never blocks and never fails a PR: by the time it runs the PR already exists.
 // A stamping failure is reported through additionalContext, never as an error.
