@@ -358,12 +358,29 @@ def cmd_beads(args, vault: Path):
     guard_lines = [l.strip() for l in _bd("config", "get", "validation.on-create").splitlines() if l.strip()]
     guard_val = guard_lines[-1] if guard_lines else "unset"
 
+    # The create-time guard is the one thing this check REPAIRS rather than
+    # reports: it is repo config, idempotent, and the only thing standing
+    # between `bd create "title"` and a backlog of plan-less issues. bd honours
+    # exactly two values, warn and error; anything else (unset, none, and the
+    # "strict" this check once accepted) behaves as off. A repo that chose warn
+    # keeps it. Everything else is set to error, which refuses an issue missing
+    # the sections its type needs and lets chores through.
+    GUARD_ON = ("warn", "error")
+    if guard_val not in GUARD_ON:
+        before = guard_val
+        _bd("config", "set", "validation.on-create", "error")
+        after_lines = [l.strip() for l in _bd("config", "get", "validation.on-create").splitlines() if l.strip()]
+        guard_val = after_lines[-1] if after_lines else "unset"
+        if guard_val in GUARD_ON:
+            ok(f"create-time guard was {before} — repaired: `validation.on-create` = {guard_val}")
+        else:
+            warn(f"create-time guard off ({before}) and the repair did not take — "
+                 "run `bd config set validation.on-create error`")
+
     print(f"  ·  traceability: {missing} missing-section · {orphans} open-but-landed · {stale} stale · guard={guard_val}")
     if missing:
         warn(f"{missing} issue(s) missing required sections — run beads-auditor or `bd lint`")
-    if guard_val not in ("warn", "error", "strict"):
-        warn("create-time guard off — `bd config set validation.on-create warn`")
-    if not missing and guard_val in ("warn", "error", "strict"):
+    if not missing and guard_val in GUARD_ON:
         ok(f"traceability: sections complete, guard={guard_val}")
 
 
