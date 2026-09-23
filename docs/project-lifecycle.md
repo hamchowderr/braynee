@@ -59,4 +59,4 @@ tracking. Hooks bind them together.
 
 - Vault has a project but no PRD → you skipped step 2. Stop and write one.
 - PRD exists but `seeded: false` and you've already started coding → you skipped step 3. Run `prd-seed`.
-- Lots of edits, no bd issue claimed → you skipped step 4. Either claim something or `bd create` first.
+- Lots of edits, no bd issue claimed → you skipped step 4. Either claim something or `bd create "<title>" --design "..." --acceptance "..."` first.

@@ -246,7 +246,7 @@ function finishBdSetup(cwd) {
         '(`bd hooks install`) for auto-injection.\n\n' +
         '**Quick reference:**\n' +
         '- `bd ready` — Find unblocked work\n' +
-        '- `bd create "Title" --type task --priority 2` — Create issue\n' +
+        '- `bd create "Title" --type task --priority 2 --design "<how + trade-off>" --acceptance "<verifiable outcomes>"` — Create issue (tasks/features need Acceptance; chores need nothing)\n' +
         '- `bd update <id> --claim` — Claim work atomically\n' +
         '- `bd close <id>` — Complete work\n' +
         '- `bd dolt push` — Push beads data to remote\n\n' +
@@ -401,7 +401,7 @@ process.stdin.on('end', () => {
             `issue missing the sections its type needs (Acceptance Criteria for tasks and features), and ` +
             `chores go through untouched.\n\n`
           : '') +
-        `Use \`bd create\`, \`bd list\`, \`bd update <id> --status in_progress\` to track work. ` +
+        `Use \`bd create "Title" --design "..." --acceptance "..."\`, \`bd list\`, \`bd update <id> --claim\` to track work. ` +
         `Braynee hooks will sync bd status changes to TaskNotes and the project session note automatically.\n`
       );
     } else {
