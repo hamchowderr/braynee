@@ -449,6 +449,22 @@ for (const h of ['commit-cadence-nudge.js', 'beads-claim-to-branch.js',
     r.out.trim() === '' && (r.status === 0 || r.status === 2));
 }
 
+// beads-claim-gate.js — blocks a claim of an issue `bd lint` says is missing its
+// sections. It must FAIL OPEN: a claim it cannot check (bare-marker repo, bd
+// absent, unknown id) is allowed with exit 0, and a command that claims nothing
+// never spawns bd at all. The block decision itself is unit-tested in §7.
+{
+  const noise = runHook('beads-claim-gate.js', 'echo hello world');
+  assertGate('beads-claim-gate stays SILENT + exit 0 on a non-claiming command',
+    noise.out.trim() === '' && noise.status === 0);
+  const other = runHook('beads-claim-gate.js', 'bd update zz-000 --status closed');
+  assertGate('beads-claim-gate stays SILENT + exit 0 on a non-claiming bd update',
+    other.out.trim() === '' && other.status === 0);
+  const unreadable = runHook('beads-claim-gate.js', 'bd update zz-000 --claim');
+  assertGate('beads-claim-gate fails OPEN (exit 0) when the claimed issue cannot be linted',
+    unreadable.out.trim() === '' && unreadable.status === 0);
+}
+
 // prd-seed-gate.js (cp-7jd) — warns when prd-seed runs against a half-scoped PRD.
 // EMIT on a gappy PRD, SILENT on a clean PRD and on a non-prd-seed command. Uses a
 // throwaway BRAYNEE_VAULT fixture so the hook has a PRD to inspect.
@@ -474,6 +490,58 @@ for (const h of ['commit-cadence-nudge.js', 'beads-claim-to-branch.js',
   assertGate('prd-seed-gate stays SILENT on a non-prd-seed command',
     (noise.stdout || '').trim() === '' && noise.status === 0);
   try { fs.rmSync(pv, { recursive: true, force: true }); } catch {}
+}
+
+// Seed → enrich. A seeded issue is a stub the claim gate refuses, so the PRD flow
+// is only complete once the enricher has run. Both ends must say so: the script's
+// own output (what an agent reads) and the skill (what dispatches the agent).
+{
+  const seedSrc = fs.readFileSync(path.join(PLUGIN_ROOT, 'scripts', 'prd-seed.mjs'), 'utf8');
+  assertGate('prd-seed ends a successful seed with the enricher as the NEXT STEP',
+    /NEXT STEP \(required\)/.test(seedSrc) && /braynee:beads-enricher/.test(seedSrc) && /nextStepLine\(/.test(seedSrc));
+  assertGate('prd-seed passes --acceptance so a seed survives validation.on-create=error',
+    /--acceptance \$\{JSON\.stringify\(CORE\.seededAcceptance\(item\)\)\}/.test(seedSrc));
+  const prdSkill = fs.readFileSync(path.join(PLUGIN_ROOT, 'skills', 'prd', 'SKILL.md'), 'utf8');
+  assertGate('prd skill dispatches braynee:beads-enricher after a real seed (and may use Agent)',
+    /subagent_type: "braynee:beads-enricher"/.test(prdSkill) && /^allowed-tools:.*\bAgent\b/m.test(prdSkill));
+}
+
+// No shipped guidance teaches a bare create. Under validation.on-create=error a
+// `bd create "title"` of a task is refused, and an example without --acceptance is
+// what agents copy. Scans hooks, agents, skills, docs and scripts for a concrete
+// `bd create "..."` / `bd create --title` example; each must carry --acceptance
+// (or be a chore, which needs no sections). Unit tests and this file are fixtures.
+{
+  const roots = ['hooks', 'agents', 'skills', 'docs', 'scripts', 'formulas', 'commands'];
+  const files = [];
+  (function walk(dir) {
+    let ents = [];
+    try { ents = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of ents) {
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) { if (e.name !== 'node_modules') walk(p); continue; }
+      if (/\.test\.(js|mjs)$/.test(e.name)) continue;
+      if (/\.(js|mjs|md|toml|py)$/.test(e.name)) files.push(p);
+    }
+  })(PLUGIN_ROOT);
+  const bare = [];
+  for (const f of files) {
+    const rel = path.relative(PLUGIN_ROOT, f).replace(/\\/g, '/');
+    if (!roots.some((r) => rel.startsWith(r + '/'))) continue;
+    const lines = fs.readFileSync(f, 'utf8').split(/\r?\n/);
+    lines.forEach((line, i) => {
+      if (!/bd create (?:"|--title)/.test(line)) return;
+      // Code comments describe what a parser accepts; they are not examples.
+      if (/\.(js|mjs|py)$/.test(rel) && /^\s*(\/\/|#|\*)/.test(line)) return;
+      // A multi-line example continues with `\`; read it whole.
+      let whole = line, j = i;
+      while (/\\\s*$/.test(lines[j]) && j + 1 < lines.length) whole += ' ' + lines[++j];
+      if (/--acceptance/.test(whole) || /(?:--type[= ]|-t )chore/.test(whole)) return;
+      bare.push(`${rel}:${i + 1}`);
+    });
+  }
+  assertGate(`no shipped example teaches a bd create without --acceptance${bare.length ? ' — ' + bare.join(', ') : ''}`,
+    bare.length === 0);
 }
 
 // secret-exposure-guard.js — DENY value-printing secret commands (exit 2 + stderr),
@@ -953,6 +1021,17 @@ function assertHealth(label, cond) {
   assertHealth('health.py cmd_beads emits a traceability line (cp-ci9.3)', /traceability:/.test(hp));
   assertHealth('health.py hygiene runs lint + orphans + stale + guard',
     /_bd\("lint"\)/.test(hp) && /_bd\("orphans"\)/.test(hp) && /_bd\("stale"\)/.test(hp) && /validation\.on-create/.test(hp));
+  // The guard is repaired, not merely reported, and to `error`. bd honours only
+  // warn and error, so "strict" (once accepted here) must count as off.
+  assertHealth('health.py repairs an off create-time guard to error',
+    /_bd\("config", "set", "validation\.on-create", "error"\)/.test(hp));
+  assertHealth('health.py does not treat "strict" as an active guard',
+    /GUARD_ON = \("warn", "error"\)/.test(hp) && !/"warn", "error", "strict"/.test(hp));
+
+  // A fresh bd init gets the guard on, set to error.
+  const cbi = fs.readFileSync(path.join(PLUGIN_ROOT, 'hooks', 'check-beads-init.js'), 'utf8');
+  assertHealth('check-beads-init turns validation.on-create on at init, as error',
+    /GUARD_VALUE = 'error'/.test(cbi) && /ensureValidationGuard\(codeRoot\)/.test(cbi));
 
   // cp-ccsh.4 / B3: the MEMORY.md tripwire once recommended "run /health or
   // trigger a memory resync" — /braynee:health does not resync, and pre-cp-ccsh.2

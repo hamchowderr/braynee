@@ -153,14 +153,14 @@ process.stdin.on('end', () => {
       process.stdout.write(
         `## Beads — No Ready Work\n\n` +
         `\`${projectName}\` has no in_progress and no ready issues.\n\n` +
-        `**Before changing any code:** ask the user what to work on. Once they answer, \`bd create "..."\` and \`bd update <id> --claim\`. ` +
+        `**Before changing any code:** ask the user what to work on. Once they answer, \`bd create "<title>" --design "<how + trade-off>" --acceptance "<verifiable outcomes>"\` and \`bd update <id> --claim\`. ` +
         `Do not invent work or start coding without a claimed issue.\n`
       );
       process.stderr.write(banner(
         projectName,
         `Queue empty · ${openCount} open total`,
         [],
-        `What should we work on? bd create "..." then --claim`
+        `What should we work on? bd create "..." --design ... --acceptance ... then --claim`
       ));
     }
 

@@ -114,7 +114,7 @@ process.stdin.on('end', () => {
           `## Beads Reminder (every ${THRESHOLD} prompts)\n\n` +
           `${state.counter} prompts without a claimed beads issue. ` +
           `Before any code change, confirm an \`in_progress\` issue exists (\`bd list --status in_progress\`). ` +
-          `If none, ask the user what to work on, then \`bd create\` and \`bd update <id> --claim\`.\n`
+          `If none, ask the user what to work on, then \`bd create "<title>" --design "<how + trade-off>" --acceptance "<verifiable outcomes>"\` and \`bd update <id> --claim\`.\n`
         );
         log.info(HOOK, `nudged after ${state.counter} prompts (no in_progress)`);
       }

@@ -72,7 +72,7 @@ The same self-test runs in CI on every push to main across Ubuntu, macOS, and Wi
 - No tracked secrets — e.g. a committed `.beads/.beads-credential-key` (AES-256 key)
 - `.gitignore` carries the beads-required patterns (no drift)
 - Surfaces secret/gitignore findings loudly **before** any repo goes public
-- **Traceability hygiene** — issues missing required sections, implemented-but-still-open (`bd orphans`), stale issues, and whether the create-time validation guard (`validation.on-create`) is on. The same checks the `beads-auditor` agent runs.
+- **Traceability hygiene** — issues missing required sections, implemented-but-still-open (`bd orphans`), stale issues, and the create-time validation guard (`validation.on-create`). The same checks the `beads-auditor` agent runs. The guard is the one thing this check **repairs**: when it is off (unset, `none`, or any value bd does not honour) it is set to `error`, which refuses an issue missing the sections its type needs and lets chores through. A repo that chose `warn` keeps it.
 
 **Memory** — Is Claude loaded with current context?
 - `~/.claude/CLAUDE.md` reflects current setup?
