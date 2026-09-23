@@ -44,16 +44,24 @@ is your source for *how*.
 
 ## What counts as a "stub" (idempotency guard)
 A seeded stub is an **open** issue whose structured `design` is empty AND whose
-structured `acceptance_criteria` is empty (the prd-seed shape: title + description
-only). Find them:
+structured `acceptance_criteria` is either empty or still the line prd-seed wrote.
+prd-seed records the PRD criterion as the acceptance, prefixed
+`PRD criterion (seeded, not yet enriched): `, because `validation.on-create=error`
+refuses a task with no acceptance. That prefix is the stub marker. Find them:
 ```bash
 bd list --json --limit 0
 ```
-Filter to `status==open && !design?.trim() && !acceptance_criteria?.trim()`.
-**Never touch an issue that already has a non-empty Design or Acceptance** — that is a
-human (or prior) edit; leave it exactly as-is. A re-run must be a no-op on already
-enriched issues. Scope to the seeded set via the PRD's `milestone:<name>` labels when
-present.
+Filter to `status==open && !design?.trim() && (!acceptance_criteria?.trim() ||
+acceptance_criteria.startsWith("PRD criterion (seeded, not yet enriched): "))`.
+**Never touch an issue that already has a non-empty Design, or an Acceptance that does
+not start with that prefix** — that is a human (or prior) edit; leave it exactly as-is.
+Your rewrite of the acceptance drops the prefix, which is what makes a re-run a no-op
+on already enriched issues. Scope to the seeded set via the PRD's `prd:<Name>` and
+`milestone:<name>` labels when present.
+
+braynee's claim gate refuses `bd update <id> --claim` on an issue that still carries
+the prefix or that `bd lint` reports as missing sections, so an un-enriched stub
+cannot be started until you (or a human) have authored it.
 
 ## Workflow
 

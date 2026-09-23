@@ -18,6 +18,10 @@
 // plus anything a repo adds with `bd config set lint.sections.<type> "..."`.
 // A structured `--acceptance` field satisfies the Acceptance/Success check.
 //
+// One braynee-specific check sits beside lint: an issue whose acceptance is
+// still the PRD line prd-seed wrote (SEEDED_ACCEPTANCE_PREFIX) passes lint but
+// has never been authored, so it is blocked too (`bd show <ids> --json`).
+//
 // Fails OPEN: if bd is missing, errors, times out, prints something that is not
 // JSON, or does not know the id, the claim goes through. This gate exists to stop
 // a plan-less claim, never to stand between the user and a broken bd.
@@ -36,6 +40,7 @@ const { splitSegments, tokenize, baseCmd, stripHeredocBodies } = require(path.jo
 const { toNativePath } = require(path.join(__dirname, 'lib', 'git-command.js'));
 const { runBdSafe } = require(path.join(__dirname, 'lib', 'bd-safe.js'));
 const { makeBudget } = require(path.join(__dirname, 'lib', 'time-budget.js'));
+const { SEEDED_ACCEPTANCE_PREFIX } = require(path.join(__dirname, '..', 'scripts', 'lib', 'prd-seed-core.js'));
 
 const HOOK = 'beads-claim-gate';
 
@@ -187,6 +192,41 @@ function blockingFindings(lint, supplies = {}) {
   return out;
 }
 
+// ── Pure: seeded stubs that lint cannot see ──────────────────────────────────
+//
+// prd-seed records each PRD line as the issue's acceptance so the create passes
+// validation.on-create=error. That satisfies lint, but the issue is still a
+// one-line stub with no Design. The prefix is braynee's own marker for "seeded,
+// not yet enriched" (scripts/lib/prd-seed-core.js), so an issue still carrying
+// it is blocked like any other issue without a plan.
+//
+// `issues` is parsed `bd show <ids> --json`. Returns findings in the
+// blockingFindings shape.
+function seededStubFindings(issues, supplies = {}) {
+  if (supplies.acceptance || supplies.opaqueDescription) return [];
+  const out = [];
+  for (const i of Array.isArray(issues) ? issues : []) {
+    if (!i || !i.id) continue;
+    if (!String(i.acceptance_criteria || '').startsWith(SEEDED_ACCEPTANCE_PREFIX)) continue;
+    const missing = ['Acceptance Criteria (still the seeded PRD line)'];
+    if (!String(i.design || '').trim()) missing.unshift('Design');
+    out.push({ id: i.id, type: i.issue_type || '', title: i.title || '', missing });
+  }
+  return out;
+}
+
+// One finding per id, sections merged, so lint and the seeded check never
+// report the same issue twice.
+function mergeFindings(list) {
+  const byId = new Map();
+  for (const f of list) {
+    const cur = byId.get(f.id);
+    if (!cur) { byId.set(f.id, { ...f, missing: [...f.missing] }); continue; }
+    for (const m of f.missing) if (!cur.missing.includes(m)) cur.missing.push(m);
+  }
+  return [...byId.values()];
+}
+
 // ── Pure: the message the agent sees ─────────────────────────────────────────
 function blockMessage(findings) {
   const lines = ['BLOCKED by braynee claim gate: fill Design/Acceptance before starting work.', ''];
@@ -197,7 +237,7 @@ function blockMessage(findings) {
   const id = findings.length === 1 ? findings[0].id : '<id>';
   lines.push(`Fix: bd update ${id} --design "<how + trade-off>" --acceptance "<verifiable outcomes>"`);
   const other = [...new Set(findings.flatMap((f) => f.missing))]
-    .filter((n) => !/^(acceptance|success) criteria$/i.test(n));
+    .filter((n) => !/^(acceptance|success) criteria\b/i.test(n) && n !== 'Design');
   if (other.length) {
     lines.push(`     ${other.map((n) => `"## ${n}"`).join(', ')} must be a heading in the description ` +
       `(bd update ${id} --description "...").`);
@@ -253,13 +293,16 @@ async function main() {
       }
       if (!ids.every((id) => ID_RE.test(id))) continue;
       const lint = lintIds(ids, cwd, budget);
-      if (!lint) continue;                       // bd errored / timed out: fail open
-      findings.push(...blockingFindings(lint, c.supplies || {}));
+      if (lint) findings.push(...blockingFindings(lint, c.supplies || {}));
+      const shown = bdJson(`bd show ${ids.join(' ')} --json`, cwd, budget);
+      if (shown) findings.push(...seededStubFindings(Array.isArray(shown) ? shown : [shown], c.supplies || {}));
+      // Either call failing (bd errored / timed out) simply contributes nothing: fail open.
     }
 
-    if (!findings.length) process.exit(0);
-    log.warn(HOOK, `blocked claim of ${findings.map((f) => f.id).join(', ')} (missing sections)`);
-    payload.block(blockMessage(findings));
+    const merged = mergeFindings(findings);
+    if (!merged.length) process.exit(0);
+    log.warn(HOOK, `blocked claim of ${merged.map((f) => f.id).join(', ')} (missing sections)`);
+    payload.block(blockMessage(merged));
   } catch (e) {
     log.error(HOOK, `crash: ${e.message}`);
     process.exit(0); // never break the tool call
@@ -268,4 +311,4 @@ async function main() {
 
 if (require.main === module) main();
 
-module.exports = { parseClaims, blockingFindings, blockMessage, ID_RE };
+module.exports = { parseClaims, blockingFindings, seededStubFindings, mergeFindings, blockMessage, ID_RE };

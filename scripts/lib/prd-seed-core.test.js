@@ -9,6 +9,7 @@ const assert = require('assert');
 const {
   DOD_MILESTONE, itemKey, extractAnnotation,
   parseAcceptanceCriteria, buildDodItems, computeDependencyEdges,
+  SEEDED_ACCEPTANCE_PREFIX, seededAcceptance,
 } = require('./prd-seed-core.js');
 
 const tests = [];
@@ -112,6 +113,18 @@ test('computeDependencyEdges dedupes and never self-references', () => {
   const edges = computeDependencyEdges(items);
   assert.ok(!edges.some(e => e.fromTitle === e.toTitle));
   assert.strictEqual(edges.filter(e => e.fromTitle === 'B').length, 1);
+});
+
+// ── seededAcceptance ─────────────────────────────────────────────────────────
+test('seededAcceptance records the PRD line as the acceptance, marked as a stub', () => {
+  const a = seededAcceptance({ title: 'Core engine', description: 'returns a score in <500ms' });
+  assert.ok(a.startsWith(SEEDED_ACCEPTANCE_PREFIX));
+  assert.ok(a.endsWith('Core engine — returns a score in <500ms'));
+});
+
+test('seededAcceptance is never empty, even with no description', () => {
+  const a = seededAcceptance({ title: 'Core engine', description: '' });
+  assert.strictEqual(a, `${SEEDED_ACCEPTANCE_PREFIX}Core engine`);
 });
 
 // ── runner ───────────────────────────────────────────────────────────────────
