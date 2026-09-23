@@ -40,6 +40,14 @@ note (or a code comment if it's that small) covering:
 
 Keep it short. The point is to commit to a definition before you start
 building, not to write a PRD.
+
+## Acceptance Criteria
+- The scope for {{name}} is written down where the project keeps its notes:
+  deliverable, done criteria, and out-of-scope list.
+- Every done criterion is checkable (a command, a test, or an observable
+  result), not a feeling.
+- Expected secret NAMES are recorded, with placeholders only â€” no value
+  appears anywhere.
 """
 
 # -----------------------------------------------------------------------------
@@ -57,6 +65,18 @@ Implement {{deliverable}} against the scope.
   `bd dep add`. Close this issue only when all sub-work is done.
 - Never commit secrets — `infisical run` to inject; placeholders only in
   any `.env` files.
+
+## Design
+Build against the written scope only. Split large work into child issues
+linked with `bd dep add` so each piece can be closed on its own evidence.
+
+## Acceptance Criteria
+- {{deliverable}} is implemented and every scoped done criterion has code
+  or content behind it.
+- All child issues opened under this step are closed.
+- The project's own checks (lint / typecheck / tests, where they exist)
+  pass on the final commit.
+- No secret value is committed.
 """
 
 # -----------------------------------------------------------------------------
@@ -77,6 +97,13 @@ the work:
 - Doc / vault note: read it back end to end, fix any drift.
 
 Every done-criterion gets a tick or a written reason it doesn't apply.
+
+## Acceptance Criteria
+- Every done criterion from the scope is marked passed, or carries a
+  written reason it does not apply.
+- The check matches the work tier above, and the evidence (test output,
+  sandbox log, read-back) is linked in the close reason.
+- Any defect found is fixed or filed as its own issue before this closes.
 """
 
 # -----------------------------------------------------------------------------
@@ -96,4 +123,10 @@ Take {{name}} to its final home:
 
 Verify it works in the final location (not just that deploy succeeded).
 Then close this issue with a note pointing at the result.
+
+## Acceptance Criteria
+- {{name}} is in its final location (deployed, installed, or filed).
+- It is verified working THERE â€” a behavior check, not only a successful
+  deploy or copy.
+- The close reason points at the result (URL, path, version, or commit).
 """

@@ -2911,6 +2911,37 @@ function assertMcCmd(label, cond, detail) {
 }
 log(`  ${results.mccommands.ok} passed | ${results.mccommands.fail} failed`);
 
+// ── Formula steps pass the claim gate ────────────────────────────────────────
+// `bd mol pour` skips validation.on-create and silently drops a step's
+// `acceptance` / `design` keys, so the only place a poured step can carry its
+// Acceptance Criteria is a heading inside `description`. Without it every
+// poured step is refused by hooks/beads-claim-gate.js at claim time.
+log('\n=== Formula steps carry Acceptance Criteria ===');
+results.formulaac = { ok: 0, fail: 0, errors: [] };
+{
+  const dir = path.join(PLUGIN_ROOT, 'formulas');
+  const files = fs.existsSync(dir) ? fs.readdirSync(dir).filter(f => f.endsWith('.formula.toml')) : [];
+  const missing = [];
+  let steps = 0;
+  for (const f of files) {
+    const text = fs.readFileSync(path.join(dir, f), 'utf8').replace(/\r\n/g, '\n');
+    for (const block of text.split(/^\[\[steps\]\]\s*$/m).slice(1)) {
+      steps++;
+      const id = (block.match(/^id\s*=\s*"([^"]+)"/m) || [])[1] || '?';
+      const m = block.match(/^description\s*=\s*"""\n?([\s\S]*?)"""/m) || block.match(/^description\s*=\s*"([^"]*)"/m);
+      if (!m || !/^## Acceptance Criteria\s*$/m.test(m[1])) missing.push(`${f}#${id}`);
+    }
+  }
+  const label = `every formula step description has "## Acceptance Criteria" (${steps} steps)`;
+  if (files.length && steps && !missing.length) { results.formulaac.ok++; log(`  OK: ${label}`); }
+  else {
+    results.formulaac.fail++;
+    results.formulaac.errors.push({ test: label, missing });
+    log(`  FAIL: ${label}${missing.length ? ' — ' + missing.join(', ') : ''}`);
+  }
+}
+log(`  ${results.formulaac.ok} passed | ${results.formulaac.fail} failed`);
+
 // ── Summary ──────────────────────────────────────────────────────────────────
 const totalOk = Object.values(results).reduce((s, r) => s + r.ok, 0);
 const totalFail = Object.values(results).reduce((s, r) => s + r.fail, 0);

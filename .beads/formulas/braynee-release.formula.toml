@@ -32,6 +32,10 @@ Run the headless layer-1 assertions:
 Must end with "N passed, 0 failed". Catches JS/regex regressions across
 hooks. Does NOT exercise the CC↔hooks.json boundary — that's the sandbox
 step below.
+
+## Acceptance Criteria
+- `node bin/braynee-self-test` ends with "N passed, 0 failed".
+- Any failure is fixed in source, not skipped or suppressed.
 """
 
 # -----------------------------------------------------------------------------
@@ -53,6 +57,17 @@ for git hooks, etc.), then verify:
   the relevant tool result.
 
 This is the boundary check that headless tests can't do — exercise it.
+
+## Design
+Headless tests cannot see the hooks.json boundary, so this runs the real
+plugin through `--plugin-dir` and reads both logs for the changed hooks.
+
+## Acceptance Criteria
+- Each hook changed in this release fires in the sandbox run (its line is
+  in the braynee hook log at the run's timestamps).
+- Where a hook injects context, the `--debug-file` JSONL shows the
+  `additionalContext` in the matching tool result.
+- A hook that does not fire is fixed before this closes.
 """
 
 # -----------------------------------------------------------------------------
@@ -71,6 +86,11 @@ take effect on next session start.
 
 This IS the release for braynee — no PR, no GitHub push needed. The marketplace
 + plugin.json bumps below are bookkeeping so the version number matches.
+
+## Acceptance Criteria
+- The live cache dir for {{version}} holds the changed source files.
+- Claude Code was restarted if hooks.json changed.
+- A fresh session loads the plugin without hook errors.
 """
 
 # -----------------------------------------------------------------------------
@@ -86,4 +106,9 @@ a silent no-op for anyone else who installs braynee.
 
 Commit ONLY if the user explicitly asks for it. The cache deploy above is
 the actual release; the version bump is just so future installs match.
+
+## Acceptance Criteria
+- `.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json` both
+  read {{version}}.
+- No commit or push is made unless the user asked for one.
 """

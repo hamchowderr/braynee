@@ -43,19 +43,43 @@ default  = "dotenv"
 [[steps]]
 id = "scope"
 title = "Scope: {{name}}"
-description = "One paragraph: deliverable, done-criteria, explicit non-goals."
+description = """
+One paragraph: deliverable, done-criteria, explicit non-goals.
+
+## Acceptance Criteria
+- One paragraph states the deliverable, the done criteria, and explicit
+  non-goals for {{name}}.
+- Each done criterion is checkable by a command, a test, or a live check.
+"""
 
 [[steps]]
 id = "ci-harness"
 title = "Ensure CI exists: {{name}}"
 needs = ["scope"]
-description = "Confirm .github/workflows/{{ci_workflow}} runs lint+typecheck+test on pull_request. If absent, author it with braynee's generator: `node <braynee-plugin>/scripts/gen-ci-workflow.mjs --name {{ci_workflow}} --branch main` — it detects the package manager + lint/typecheck/test and, if NONE are found, writes a FAILING guard step so the gh:run gate can never go vacuously green. The workflow is named 'CI'; do NOT count the advisory 'Claude Code Review' workflow as the gate."
+description = """
+Confirm .github/workflows/{{ci_workflow}} runs lint+typecheck+test on pull_request. If absent, author it with braynee's generator: `node <braynee-plugin>/scripts/gen-ci-workflow.mjs --name {{ci_workflow}} --branch main` — it detects the package manager + lint/typecheck/test and, if NONE are found, writes a FAILING guard step so the gh:run gate can never go vacuously green. The workflow is named 'CI'; do NOT count the advisory 'Claude Code Review' workflow as the gate.
+
+## Acceptance Criteria
+- .github/workflows/{{ci_workflow}} exists on {{branch}} and runs lint,
+  typecheck, and test on pull_request.
+- A repo with no detectable checks gets the failing guard step, never an
+  empty green workflow.
+- The advisory review workflow is not the gate.
+"""
 
 [[steps]]
 id = "build"
 title = "Build: {{name}}"
 needs = ["ci-harness"]
-description = "Implement against scope. Run {{gate_cmd}} (or lint+typecheck+test if empty). Hard-stop on red."
+description = """
+Implement against scope. Run {{gate_cmd}} (or lint+typecheck+test if empty). Hard-stop on red.
+
+## Acceptance Criteria
+- The scope's done criteria are implemented on {{branch}}.
+- The local gate (the gate_cmd var, or lint + typecheck + test when it is
+  empty) passes on the final commit.
+- No secret value is committed.
+"""
 
 [[steps]]
 id = "open-pr"
@@ -70,12 +94,28 @@ RUNTIME GATE WIRING (gh:pr cannot be declared statically — no PR number exists
 4. bd gate create --type=gh:pr --blocks <SHIP_ISSUE_ID> --await-id "$NUM" -r "wait human merge"
    (get <SHIP_ISSUE_ID> from `bd mol show` after pour)
 5. Report PR URL + preview; bd gate add-waiter; then STOP. NEVER merge.
+
+## Acceptance Criteria
+- {{branch}} is pushed and a PR against main is open.
+- The gh:run gate has its run id filled by `bd gate discover`.
+- A gh:pr gate blocks the ship step and waits on the PR number.
+- The PR URL is reported; the agent did not merge.
 """
 
 [[steps]]
 id = "ci-green"
 title = "CI green: {{name}}"
 needs = ["open-pr"]
+description = """
+Wait for the blocking CI workflow ({{ci_workflow}}) to go green on the PR.
+The gh:run gate on this step resolves on its own; a red run is fixed on
+{{branch}} and pushed again.
+
+## Acceptance Criteria
+- The latest blocking CI run for {{branch}} is green.
+- The gh:run gate is resolved.
+- The advisory review workflow is not counted toward green.
+"""
 
 # Gate MUST use the array-of-tables nested form `[steps.gate]` (attaches to the
 # step directly above) — NOT `[steps.ci-green.gate]`. The `.<id>.` path segment
@@ -91,10 +131,27 @@ timeout  = "2h"
 id = "ship"
 title = "Ship: {{name}} -> {{deploy_target}}"
 needs = ["ci-green"]
-description = "Blocked by the runtime gh:pr gate until a HUMAN merges. Then deploy per {{deploy_target}}; secrets via {{secret_source}} (infisical run / .env). Presence-check CI secrets via `gh secret list` — never read values."
+description = """
+Blocked by the runtime gh:pr gate until a HUMAN merges. Then deploy per {{deploy_target}}; secrets via {{secret_source}} (infisical run / .env). Presence-check CI secrets via `gh secret list` — never read values.
+
+## Acceptance Criteria
+- A human merged the PR; the agent did not merge it.
+- {{name}} is deployed to {{deploy_target}}, with secrets injected from
+  {{secret_source}} and no value printed or committed.
+- The deploy result (URL, version, or release id) is in the close reason.
+"""
 
 [[steps]]
 id = "verify-live"
 title = "Verify {{name}} live"
 needs = ["ship"]
-description = "Behavioral verification — drive the DEPLOYED artifact and prove it works (behavior, not 'deploy succeeded'). WEB: use Playwright (skills/playwright/SKILL.md) — `npx playwright init-agents --loop=claude`, then author/repair an e2e with the Test Agents (Planner/Generator, Healer) or record one via `playwright codegen`, and run it headless with `playwright test`; emit a trace artifact on failure (the gh:run gate runs the suite in CI). ELECTRON: drive it via Playwright `_electron`. CLI/API: a smoke/curl check. Close-evidence MUST cite the trace / test result, never the bare word 'verified'."
+description = """
+Behavioral verification — drive the DEPLOYED artifact and prove it works (behavior, not 'deploy succeeded'). WEB: use Playwright (skills/playwright/SKILL.md) — `npx playwright init-agents --loop=claude`, then author/repair an e2e with the Test Agents (Planner/Generator, Healer) or record one via `playwright codegen`, and run it headless with `playwright test`; emit a trace artifact on failure (the gh:run gate runs the suite in CI). ELECTRON: drive it via Playwright `_electron`. CLI/API: a smoke/curl check. Close-evidence MUST cite the trace / test result, never the bare word 'verified'.
+
+## Acceptance Criteria
+- The deployed artifact passes a behavioral check for the scope's done
+  criteria (e2e test, Electron drive, or smoke/curl check).
+- The close reason cites the test result or trace, not the bare word
+  "verified".
+- A failing check reopens work instead of closing this issue.
+"""
