@@ -48,3 +48,10 @@ __pycache__/
 # Throwaway dashboard build/verify scratch (screenshots, preview HTML, helper scripts)
 mockups/
 skills/session-backfill/scripts/project_map.json
+
+# Empty libSQL file-DB pair (`auth` + its WAL) that a libSQL/Mastra process opens
+# relative to its cwd when started from the repo root (same pair appears in other
+# repos). Per-machine runtime, never versioned; left untracked it blocks
+# `claude plugin tag`, which refuses to tag with uncommitted changes present.
+/auth
+/auth-wal
