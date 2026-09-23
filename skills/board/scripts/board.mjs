@@ -5,7 +5,8 @@
 // build-order diagram, one record per issue, derived check-ins and a done
 // archive. Only the accent colour changes between projects.
 //
-// Read-only: it runs `bd export`, `bd comments`, `gh pr list` and `gh api`
+// Read-only: it runs `bd export`, `bd comments`, `bd history --events`,
+// `bd provenance log`, `gh pr list` and `gh api`
 // inside the repo and writes one file OUTSIDE it. It never writes bd data.
 //
 // Usage:
@@ -17,13 +18,14 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { resolve, basename, dirname, relative, isAbsolute } from 'node:path';
 import { tmpdir } from 'node:os';
+import { loadHistory, backfillFor } from './events.mjs';
 
 // ---- args ---------------------------------------------------------------
 const argv = process.argv.slice(2);
 const flag = (name) => { const i = argv.indexOf(name); return i === -1 ? null : argv[i + 1]; };
 const repoArg = argv.find((a, i) => !a.startsWith('--') && !(i > 0 && argv[i - 1].startsWith('--')));
 if (!repoArg || argv.includes('--help') || argv.includes('-h')) {
-  console.log('usage: node board.mjs <repo> [--out <file>] [--name "<Project>"] [--accent <#hex>] [--from <previous.html>] [--log <legacy.json>]');
+  console.log('usage: node board.mjs <repo> [--out <file>] [--name "<Project>"] [--accent <#hex>] [--from <previous.html>] [--log <legacy.json>] [--activity-days <n>|--no-activity] [--refresh]');
   process.exit(repoArg ? 0 : 1);
 }
 const REPO = resolve(repoArg);
@@ -62,8 +64,10 @@ const originUrl = run('git', ['remote', 'get-url', 'origin'], '').trim();
 const ownerRepo = originUrl.match(/github\.com[:/]([^/]+\/[^/.]+?)(\.git)?$/)?.[1] || '';
 const repoUrl = ownerRepo ? `https://github.com/${ownerRepo}` : '';
 const branch = run('git', ['branch', '--show-current'], '').trim();
-const prs = json(run('gh', ['pr', 'list', '--state', 'all', '--limit', '300', '--json',
-  'number,title,headRefName,url,state,body,isDraft,createdAt,mergedAt,closedAt'], '[]'), []);
+// --repo pins the fork: in a fork with an `upstream` remote, gh otherwise lists
+// the upstream project's pull requests.
+const prs = json(run('gh', ['pr', 'list', ...(ownerRepo ? ['--repo', ownerRepo] : []), '--state', 'all', '--limit', '300', '--json',
+  'number,title,headRefName,url,state,body,isDraft,createdAt,mergedAt,closedAt,author,mergedBy'], '[]'), []);
 
 // Deploys: GitHub deployments from the last 30 days, latest per environment.
 const deploys = [];
@@ -199,6 +203,70 @@ for (const e of legacy) if (e && e.at && e.note) events.push({ at: String(e.at).
 events.sort((a, b) => String(b.at).localeCompare(String(a.at)));
 const days = [];
 for (const e of events) { const d = day(e.at); if (!days.length || days[days.length - 1].d !== d) days.push({ d, items: [] }); days[days.length - 1].items.push(e); }
+
+// Activity: every change beads recorded in the last N days and WHO made it —
+// bd's own audit events (signed `claude`, `claude/<agent type>` or a person's
+// git name), with back-attributions from the transcript backfill laid over
+// events that were recorded under the owner's name before signing existed.
+// bd only gives history per issue, so only issues touched in the window are
+// read, and events.mjs caches them outside the repo.
+const ACTIVITY_DAYS = argv.includes('--no-activity') ? 0 : (Number(flag('--activity-days')) || 30);
+const activity = [];
+if (ACTIVITY_DAYS > 0) {
+  const since = Date.now() - ACTIVITY_DAYS * 864e5;
+  const recent = issues.filter(i => Date.parse(i.updated_at || i.created_at) >= since);
+  if (recent.length) process.stderr.write(`activity: reading history for ${recent.length} issues touched in the last ${ACTIVITY_DAYS} days\n`);
+  const hist = loadHistory(REPO, recent, { prefix: prefix || SLUG, refresh: argv.includes('--refresh') });
+  for (const i of recent) {
+    const h = hist.get(i.id);
+    if (!h) continue;
+    for (const e of h.events) {
+      if (!(Date.parse(e.at) >= since)) continue;
+      const bf = backfillFor(h.provenance, e.id);
+      activity.push({ at: e.at, issue: i, what: describeEvent(e), actor: bf ? bf.actor : e.actor, inferred: bf ? bf.confidence : null, type: e.type });
+    }
+  }
+  for (const p of prs) {
+    const by = p.author && p.author.login ? p.author.login : '';
+    const pr = `<a href="${esc(p.url)}">PR #${p.number}</a> ${esc(short(p.title, 80))}`;
+    if (p.createdAt && Date.parse(p.createdAt) >= since) activity.push({ at: p.createdAt, pr, what: 'opened', actor: by, via: 'GitHub', type: 'pr' });
+    if (p.mergedAt && Date.parse(p.mergedAt) >= since) activity.push({ at: p.mergedAt, pr, what: 'merged', actor: p.mergedBy && p.mergedBy.login ? p.mergedBy.login : '', via: 'GitHub', type: 'merged' });
+  }
+  activity.sort((a, b) => String(b.at).localeCompare(String(a.at)));
+}
+function describeEvent(e) {
+  const val = (s) => { try { return JSON.parse(s); } catch { return null; } };
+  switch (e.type) {
+    case 'created': return 'opened';
+    case 'closed': return 'closed';
+    case 'reopened': return 'reopened';
+    case 'claimed': return 'claimed';
+    case 'status_changed': { const v = val(e.new); return v && v.status ? `moved to ${String(v.status).replace(/_/g, ' ')}` : 'changed status'; }
+    case 'updated': {
+      const v = val(e.new);
+      const NAMES = { acceptance_criteria: 'acceptance', external_ref: 'PR link', issue_type: 'type', estimated_minutes: 'estimate' };
+      const keys = v && typeof v === 'object' ? Object.keys(v).map(k => NAMES[k] || k.replace(/_/g, ' ')) : [];
+      return keys.length ? `edited ${keys.slice(0, 4).join(', ')}` : 'edited';
+    }
+    default: return String(e.type || 'changed').replace(/_/g, ' ');
+  }
+}
+const actorKind = (a) => !a ? 'none' : (a === 'claude' || a.startsWith('claude/')) ? 'claude' : 'person';
+// The owner appears as a git name in bd and as a GitHub login on PRs; treat
+// the two as one person when they differ only in case.
+const GIT_NAME = run('git', ['config', 'user.name'], '').trim();
+function actorLabel(a) {
+  if (!a) return '';
+  if (GIT_NAME && a.toLowerCase() === GIT_NAME.toLowerCase()) return who(GIT_NAME);
+  if (a === 'claude') return 'Claude';
+  if (a.startsWith('claude/')) return `Claude · ${a.slice(7)}`;
+  return who(a);
+}
+const activityDays = [];
+for (const e of activity) { const d = day(e.at); if (!activityDays.length || activityDays[activityDays.length - 1].d !== d) activityDays.push({ d, items: [] }); activityDays[activityDays.length - 1].items.push(e); }
+const actorTotals = {};
+for (const e of activity) if (e.actor) actorTotals[actorLabel(e.actor)] = (actorTotals[actorLabel(e.actor)] || 0) + 1;
+const inferredCount = activity.filter(e => e.inferred != null).length;
 
 // ---- html helpers ---------------------------------------------------------
 function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
@@ -354,6 +422,31 @@ const RECENT_DAYS = 14;
 const cutoff = days.length ? new Date(Date.parse(days[0].d) - RECENT_DAYS * 864e5).toISOString().slice(0, 10) : '';
 const dayHtml = (g) => `<li><time>${esc(g.d)}</time><ul class="events">${g.items.map(e => `<li class="ev ev-${e.kind}">${e.html}</li>`).join('')}</ul></li>`;
 const recentDays = days.filter(g => g.d >= cutoff), olderDays = days.filter(g => g.d < cutoff);
+const actChip = (e) => {
+  if (!e.actor) return `<span class="who who-none">${esc(e.via || '—')}</span>`;
+  const conf = e.inferred != null ? ` <span class="inferred" title="Recorded under the owner's name at the time; matched to Claude afterwards from a session transcript (confidence ${Math.round(e.inferred * 100)}%)">inferred</span>` : '';
+  return `<span class="who who-${actorKind(e.actor)}">${esc(actorLabel(e.actor))}</span>${conf}`;
+};
+const actItem = (e) => {
+  const target = e.issue ? `<a href="#${anchor(e.issue.id)}"><code>${esc(shortId(e.issue.id))}</code></a> <span class="muted">${esc(short(e.issue.title, 80))}</span>` : e.pr;
+  return `<li class="act act-${esc(e.type)}"><time>${esc(String(e.at).slice(11, 16))}</time><div>${actChip(e)} <span class="what">${esc(e.what)}</span> ${target}</div></li>`;
+};
+// A bulk change (an import or a sync touching many issues in the same minute)
+// would bury the day under identical rows, so a run of more than 3 is folded.
+function actRuns(items) {
+  const runs = [];
+  for (const e of items) {
+    const last = runs[runs.length - 1];
+    const key = `${e.actor}|${e.what}|${String(e.at).slice(0, 16)}|${e.inferred != null}`;
+    if (last && last.key === key && e.issue) last.items.push(e); else runs.push({ key, items: [e] });
+  }
+  return runs.map(r => {
+    if (r.items.length <= 3) return r.items.map(actItem).join('');
+    const e = r.items[0];
+    return `<li class="act act-${esc(e.type)}"><time>${esc(String(e.at).slice(11, 16))}</time><div>${actChip(e)} <span class="what">${esc(e.what)}</span> <details class="bulk"><summary>${r.items.length} issues at once</summary>${r.items.map(x => `<a href="#${anchor(x.issue.id)}"><code>${esc(shortId(x.issue.id))}</code></a>`).join(' ')}</details></div></li>`;
+  }).join('');
+}
+const actDayHtml = (g) => `<li><time>${esc(g.d)}</time><ul class="acts">${actRuns(g.items)}</ul></li>`;
 const noteCount = events.filter(e => e.kind === 'note').length;
 const legacyCount = legacy.filter(e => e && e.at && e.note).length;
 
@@ -500,6 +593,16 @@ a:hover .node rect{stroke:var(--accent);stroke-width:2}
 .ev-closed::before{background:var(--ok)} .ev-merged::before{background:var(--review)} .ev-pr::before{background:var(--review);opacity:.5}
 .ev-note{background:var(--accent-soft);border-radius:6px;padding:8px 10px 8px 14px;color:var(--ink)} .ev-note::before{background:var(--accent);top:1.05em;left:4px}
 .note-on{font-size:12px;color:var(--ink-2);margin-bottom:4px} .note-body p{margin:0 0 6px} .note-body p:last-child{margin:0}
+.acts{list-style:none;margin:0;padding:0;display:grid;gap:3px;min-width:0}
+.act{display:grid;grid-template-columns:44px minmax(0,1fr);gap:8px;font-size:13px;color:var(--ink-2);overflow-wrap:anywhere}
+.act time{font-family:var(--mono);font-size:11px;color:var(--ink-3);padding-top:2px}
+.act code{color:var(--ink-3)} .act .what{color:var(--ink)}
+.who{display:inline-block;font-size:11px;font-weight:500;padding:1px 7px;border-radius:99px;background:var(--panel-2);color:var(--ink-2);white-space:nowrap}
+.who-claude{background:var(--accent-soft);color:var(--accent-ink)} .who-person{background:var(--queued-soft);color:var(--ink)}
+.who b{font-family:var(--mono);font-weight:500;margin-left:4px}
+.inferred{font-size:10px;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-3);border:1px dashed var(--line);border-radius:4px;padding:0 4px;cursor:help}
+.actors{display:flex;flex-wrap:wrap;gap:6px 8px;align-items:center;margin:0 0 18px}
+details.bulk{display:inline} details.bulk>summary{display:inline;cursor:pointer;color:var(--ink-2);text-decoration:underline dotted} details.bulk[open]>summary{margin-right:6px}
 details.older{margin-top:16px} details.older>summary{cursor:pointer;color:var(--ink-2);padding:8px 0}
 .foot{margin-top:56px;color:var(--ink-3);font-size:12px;overflow-wrap:anywhere}
 @media (max-width:1100px){.board{grid-template-columns:repeat(3,minmax(0,1fr))}.summary{grid-template-columns:repeat(3,minmax(0,1fr))}.igrid,.twocol{grid-template-columns:1fr}.iside{border-left:0;padding-left:0;border-top:1px solid var(--line);padding-top:12px}}
@@ -526,6 +629,7 @@ details.older{margin-top:16px} details.older>summary{cursor:pointer;color:var(--
         <ol class="issues">${openIssues.map(i => `<li class="lane-${i.lane}"><a href="#${anchor(i.id)}"><code>${esc(shortId(i.id))}</code><span class="t">${esc(i.title)}</span></a></li>`).join('')}</ol>
         ${closedIssues.length ? `<details><summary>${closedIssues.length} closed</summary><ol class="issues">${closedIssues.map(i => `<li class="lane-done"><a href="#${anchor(i.id)}"><code>${esc(shortId(i.id))}</code><span class="t">${esc(i.title)}</span></a></li>`).join('')}</ol></details>` : ''}</li>
       <li class="sec"><a href="#log"><span>Check-ins</span><span class="k">${days.length} days</span></a></li>
+      ${ACTIVITY_DAYS ? `<li class="sec"><a href="#activity"><span>Activity</span><span class="k">${activity.length}</span></a></li>` : ''}
       <li class="sec"><a href="#done"><span>Done</span><span class="k">${closedIssues.length}</span></a></li>
     </ol>
     <div class="stat">
@@ -568,6 +672,12 @@ details.older{margin-top:16px} details.older>summary{cursor:pointer;color:var(--
       <ul class="log">${recentDays.map(dayHtml).join('') || '<li><time>—</time><div class="muted">Nothing recorded yet.</div></li>'}</ul>
       ${olderDays.length ? `<details class="older"><summary>${olderDays.length} earlier days</summary><ul class="log">${olderDays.map(dayHtml).join('')}</ul></details>` : ''}
     </section>
+    ${ACTIVITY_DAYS ? `<section id="view-activity" class="view" hidden>
+      <h2>Activity</h2>
+      <p class="lead">Every change beads recorded in the last ${ACTIVITY_DAYS} days, newest first (times in UTC), and who made it: <b>Claude</b> for the main session, <b>Claude · <i>type</i></b> for a helper agent, or a person's name. Changes made before signing existed were recorded under the owner's name; the ones marked <span class="inferred">inferred</span> were matched to Claude afterwards from session transcripts.</p>
+      ${Object.keys(actorTotals).length ? `<div class="actors">${Object.entries(actorTotals).sort((a, b) => b[1] - a[1]).map(([k, n]) => `<span class="who who-${k.startsWith('Claude') ? 'claude' : 'person'}">${esc(k)} <b>${n}</b></span>`).join('')}${inferredCount ? `<span class="muted small">${inferredCount} inferred</span>` : ''}</div>` : ''}
+      <ul class="log">${activityDays.map(actDayHtml).join('') || '<li><time>—</time><div class="muted">Nothing recorded in this window.</div></li>'}</ul>
+    </section>` : ''}
     <section id="view-done" class="view" hidden>
       <h2>Done</h2>
       <p class="lead">Every closed issue, newest first.</p>
@@ -619,4 +729,4 @@ details.older{margin-top:16px} details.older>summary{cursor:pointer;color:var(--
 
 mkdirSync(dirname(OUT), { recursive: true });
 writeFileSync(OUT, html);
-console.log(JSON.stringify({ out: OUT, name: NAME, accent: ACCENT, issues: issues.length, prs: prs.length, deploys: deploys.length, milestones: usesMilestones ? milestones : [], diagramNodes: diagram.count, checkinDays: days.length, notes: noteCount, lanes: counts, bytes: Buffer.byteLength(html) }));
+console.log(JSON.stringify({ out: OUT, name: NAME, accent: ACCENT, issues: issues.length, prs: prs.length, deploys: deploys.length, milestones: usesMilestones ? milestones : [], diagramNodes: diagram.count, checkinDays: days.length, activity: activity.length, activityInferred: inferredCount, notes: noteCount, lanes: counts, bytes: Buffer.byteLength(html) }));
