@@ -146,7 +146,7 @@ id = "verify-live"
 title = "Verify {{name}} live"
 needs = ["ship"]
 description = """
-Behavioral verification — drive the DEPLOYED artifact and prove it works (behavior, not 'deploy succeeded'). WEB: use Playwright (skills/playwright/SKILL.md) — `npx playwright init-agents --loop=claude`, then author/repair an e2e with the Test Agents (Planner/Generator, Healer) or record one via `playwright codegen`, and run it headless with `playwright test`; emit a trace artifact on failure (the gh:run gate runs the suite in CI). ELECTRON: drive it via Playwright `_electron`. CLI/API: a smoke/curl check. Close-evidence MUST cite the trace / test result, never the bare word 'verified'.
+Behavioral verification — drive the DEPLOYED artifact and prove it works (behavior, not 'deploy succeeded'). WEB: use Playwright — `npx playwright init-agents --loop=claude`, then author/repair an e2e with the Test Agents (Planner/Generator, Healer) or record one via `playwright codegen`, and run it headless with `playwright test`; emit a trace artifact on failure (the gh:run gate runs the suite in CI). ELECTRON: drive it via Playwright `_electron`. CLI/API: a smoke/curl check. Close-evidence MUST cite the trace / test result, never the bare word 'verified'.
 
 ## Acceptance Criteria
 - The deployed artifact passes a behavioral check for the scope's done
