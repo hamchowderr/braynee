@@ -64,8 +64,7 @@ Braynee declares its hooks in the plugin's `hooks/hooks.json` — they run autom
 | **SessionStart** | `ensure-obsidian.js`, `reinject-after-compact.js`, `session-auto-track.js`, `braynee-heartbeat.js`, `check-beads-init.js`, `beads-work-surface.js`, `check-git-init.js`, `check-testing-setup.js` | Launch Obsidian, open/update the session note, write the heartbeat, ensure beads + git are initialized, surface the ready beads queue, flag a missing test stack, and re-inject vault context after a compaction |
 | **UserPromptSubmit** | `memory-reminder.js`, `beads-nudge.js` | Remind Claude to search vault memory before guessing and to keep the beads workflow current |
 | **PreToolUse** | `check-no-main-push.js`, `branch-name-check.js` | Protect `main`/`master`: block pushing to it, committing on it, or `--orphan`-ing onto it (opt out with `BRAYNEE_ALLOW_MAIN_COMMITS=1`), and enforce branch naming |
-| **PostToolUse** | `memory-index-sync.js`, `plan-capture.js`, `session-note-nudge.js`, `statusline-state.js`, `commit-cadence-nudge.js`, `beads-claim-to-branch.js`, `beads-status-sync.js`, `beads-todo-reminder.js`, `beads-dashboard-refresh.js`, `mtn-to-beads-sync.js` | Keep `MEMORY.md` indexed, capture approved plans, nudge session-note updates and commit cadence, branch on `bd … --claim`, and mirror beads ⇄ Claude todos ⇄ TaskNotes |
-| **PostToolBatch** | `beads-batch-reconcile.js` | Reconcile beads state after batched tool calls |
+| **PostToolUse** | `memory-index-sync.js`, `plan-capture.js`, `session-note-nudge.js`, `statusline-state.js`, `commit-cadence-nudge.js`, `beads-claim-to-branch.js`, `beads-status-sync.js`, `beads-todo-reminder.js`, `beads-dashboard-refresh.js` | Keep `MEMORY.md` indexed, capture approved plans, nudge session-note updates and commit cadence, branch on `bd … --claim`, and mirror beads ⇄ Claude todos |
 | **PreCompact** | `pre-compact-snapshot.js` | Snapshot context before a compaction |
 | **PostCompact** | `post-compact.js` | Restore and re-inject context after a compaction |
 | **Stop** | `session-auto-close.js`, `session-export-qmd.js`, `session-stop-check.js`, `beads-stop-check.js`, `stop-task-verify.js` | Close the session, export the transcript and refresh the QMD index, and run the session-close / beads / task checklists |
@@ -82,7 +81,6 @@ Hooks that have stateful side effects detect existing equivalents and never dupl
 ### Obsidian plugins
 `install-obsidian-plugins.py` installs and configures the following plugins into your vault:
 - **Dataview** — query your vault like a database
-- **TaskNotes** — one-file-per-task management, used as the vault-side mirror of beads issues
 - **Templater** — powerful templating for notes and daily pages
 - **Calendar** — daily note calendar navigation
 - **Obsidian Git** — vault backup and version history
@@ -98,7 +96,6 @@ Inbox/                              → captures and incubating ideas
    ├── Product Manager/             → PRDs, Roadmaps, Research, Launches, Metrics
    ├── Development/                 → framework reference (auto-populated by stack)
    ├── Sessions/                    → one note per Claude Code working session
-   ├── TaskNotes/Tasks/             → vault-side mirror of beads issues
    ├── Claude Memory/               → persistent agent memory (MEMORY.md + files)
    └── Excalidraw/                  → drawings
 3. Resources/                       → reference material, Templates/

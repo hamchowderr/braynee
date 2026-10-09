@@ -490,33 +490,8 @@
           {
             "type": "command",
             "command": "node",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/mtn-to-beads-sync.js"],
-            "timeout": 60,
-            "async": true
-          }
-        ]
-      },
-      {
-        "matcher": "Bash|PowerShell",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node",
             "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/beads-pr-external-ref.js"],
             "timeout": 15
-          }
-        ]
-      }
-    ],
-    "PostToolBatch": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/beads-batch-reconcile.js"],
-            "timeout": 60,
-            "async": true
           }
         ]
       }

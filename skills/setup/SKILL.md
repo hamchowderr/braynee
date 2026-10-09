@@ -85,7 +85,6 @@ folder name under `.obsidian/plugins/` and the entry in `community-plugins.json`
 | Plugin | Correct ID | Key settings written |
 |---|---|---|
 | Dataview | `dataview` | inline queries, refresh enabled |
-| TaskNotes | `tasknotes` | `tasksFolder` → `2. Areas/TaskNotes/Tasks`, `taskTag` → `task` (vault-side view of beads) |
 | Templater | `templater-obsidian` | template folder → `3. Resources/Templates` |
 | Calendar | `calendar` | week starts Monday |
 | Obsidian Git | `obsidian-git` | auto-commit every 10min, auto-push, auto-pull on boot |
@@ -140,7 +139,6 @@ This is a one-time step per vault.
 │   │       ├── Research/
 │   │       ├── Transcripts/
 │   │       └── Archive/
-│   ├── TaskNotes/
 │   ├── Sessions/
 │   └── Claude Memory/
 ├── 3. Resources/

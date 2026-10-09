@@ -5,8 +5,8 @@
 //
 //   1. Every bd-id capture used ([\w-]+), and \w excludes `.`, so every dotted
 //      sub-issue id truncated to its PARENT: cp-uif3.3 -> cp-uif3. In
-//      beads-status-sync that id drives the vault TaskNotes mirror, so closing a
-//      SUBTASK marked the parent EPIC's note complete. 50 of 247 issues in this
+//      beads-status-sync that id drove the vault mirror, so closing a
+//      SUBTASK marked the parent EPIC complete. 50 of 247 issues in this
 //      repo (20%) carry a dotted id.
 //   2. The hooks fired on the command TEXT without checking whether it
 //      succeeded. Observed live: `bd close cp-uif3.3 --reason="" --dry-run`

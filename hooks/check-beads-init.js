@@ -402,7 +402,7 @@ process.stdin.on('end', () => {
             `chores go through untouched.\n\n`
           : '') +
         `Use \`bd create "Title" --design "..." --acceptance "..."\`, \`bd list\`, \`bd update <id> --claim\` to track work. ` +
-        `Braynee hooks will sync bd status changes to TaskNotes and the project session note automatically.\n`
+        `Braynee hooks will log bd status changes to the project session note automatically.\n`
       );
     } else {
       log.error(HOOK, `bd init failed: ${result.error?.split('\n')[0] || 'unknown'}`);

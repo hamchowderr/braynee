@@ -1,6 +1,6 @@
 // Hook: TaskCompleted — fires when a task is marked complete.
 // Complement to task-created-check.js. Part of the CC-tasks leg of the
-// beads<->CC-todos<->TaskNotes mirror (cp-dw6).
+// beads<->CC-todos mirror (cp-dw6).
 //
 // This hook CANNOT close the beads issue itself: there is no stable bd<->CC-task
 // id map, so matching is fuzzy and an auto-`bd close` could close the wrong
@@ -64,14 +64,14 @@ process.stdin.on('end', () => {
       emit(
         `The Claude Code task "${taskName}" (id ${taskId || '?'}) was marked completed. ` +
         `It maps to beads issue ${entry.bd_id} — if that issue is still open, close it ` +
-        `(\`bd close ${entry.bd_id} --reason "..."\`) and mark the TaskNote complete. ` +
+        `(\`bd close ${entry.bd_id} --reason "..."\`). ` +
         `beads stays the source of truth.`
       );
     } else {
       emit(
         `The Claude Code task "${taskName}" was marked completed, but no beads issue is mapped to it. ` +
-        `If a beads issue tracks this work, close it (\`bd close <id> --reason "..."\`) and mark the ` +
-        `TaskNote complete; otherwise no close is needed.`
+        `If a beads issue tracks this work, close it (\`bd close <id> --reason "..."\`); ` +
+        `otherwise no close is needed.`
       );
     }
   } catch (e) {

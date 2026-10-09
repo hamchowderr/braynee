@@ -1,21 +1,18 @@
 // beads-status-sync.js
 // Hook: PostToolUse (Bash) — single source of truth for all beads status changes.
-// Replaces beads-claim-to-tasknotes.js (consolidated here).
 //
 // Handles:
-//   bd create "title" ...             → create matching mtn task at planning time (status: open, no timer)
-//   bd update <id> --claim            → in_progress: session note + mtn task + timer + active-issue.json
+//   bd update <id> --claim            → in_progress: session note + active-issue.json
 //   bd update <id> --status in_progress → same as above
-//   bd update <id> --status closed    → session note + stop timer + clear active-issue.json + mtn complete
+//   bd update <id> --status closed    → session note + clear active-issue.json
 //   bd update <id> --status open/blocked → session note only
-//   bd close <id>                     → same as closed (also marks mtn task complete)
+//   bd close <id>                     → same as closed
 
 const { execSync } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { findBeadsRoot } = require(path.join(__dirname, 'lib', 'is-code-context.js'));
-const TN = require(path.join(__dirname, 'lib', 'tasknotes-mirror.js'));
 const log = require(path.join(__dirname, 'lib', 'hook-logger.js'));
 const { bdSucceeded } = require(path.join(__dirname, 'lib', 'bd-command-result.js'));
 const HOOK = 'beads-status-sync';
@@ -62,9 +59,9 @@ function findActiveSession(projectName) {
         else if (entry.isFile() && entry.name.endsWith('.md')) results.push(path.join(dir, entry.name));
       }
     } catch (e) {
-      // Partial results are returned, so a failed walk makes task notes look
+      // Partial results are returned, so a failed walk makes session notes look
       // absent and the status sync silently skips them.
-      log.debug(HOOK, `task-note walk failed under ${dir}: ${e && e.message}`);
+      log.debug(HOOK, `session-note walk failed under ${dir}: ${e && e.message}`);
     }
     return results;
   }
@@ -121,10 +118,6 @@ function getIssueDetails(issueId, cwd) {
   } catch { return { title: issueId, priority: 'medium' }; }
 }
 
-// TaskNotes mirror helpers live in lib/tasknotes-mirror.js (shared with
-// prd-seed.mjs — cp-8ru). Aliased so the call sites below read unchanged.
-const { findMtnTaskByIssueId, completeMtnTaskByIssueId, ensureMtnTask } = TN;
-
 // ─── Main ────────────────────────────────────────────────────────────────────
 let input = '';
 process.stdin.setEncoding('utf8');
@@ -144,61 +137,10 @@ process.stdin.on('end', () => {
     if (!beadsRoot) process.exit(0);
     const cwd = beadsRoot;
 
-    // cp-snh2: this hook writes the vault TaskNotes mirror, the session note, and
-    // beads-active-issue.json. Doing that for a bd command that FAILED records an
-    // event with no counterpart in beads — mirror drift manufactured by the very
-    // hook meant to prevent it. Suppresses only on visible failure.
+    // cp-snh2: this hook writes the session note and beads-active-issue.json. Doing that for a bd command that FAILED records an
+    // event with no counterpart in beads. Suppresses only on visible failure.
     if (!bdSucceeded(data)) {
-      log.debug(HOOK, `bd command did not succeed — no mirror written: ${cmd.slice(0, 80)}`);
-      process.exit(0);
-    }
-
-    // ─── bd create: mirror new issue to mtn at planning time ─────────
-    if (/^bd\s+create\s/.test(cmd)) {
-      // The new issue ID is in the bd create response. Real beads output is
-      // `✓ Created issue: <workspace-prefixed-id> — <title>`, so we can't
-      // assume a literal `bd-` prefix; the prefix is whatever the workspace
-      // is configured to use. Fall back to the legacy `bd-...` form for
-      // older installs.
-      const stdout = data.tool_response?.stdout || data.tool_response?.output || '';
-      const idMatch = stdout.match(/Created\s+issue:?\s*([A-Za-z][\w.-]+)/i)
-                   || stdout.match(/\b(bd-[\w.-]+)\b/);
-
-      // Title can be supplied as either a positional argument
-      // (`bd create "Title"`) or as a --title flag
-      // (`bd create --title="Title"` / `bd create --title Title`).
-      // Try the flag form first since that's what newer beads + agents use.
-      let title = '';
-      const flagDouble = cmd.match(/--title\s*=\s*"([^"]+)"/);
-      const flagSingle = cmd.match(/--title\s*=\s*'([^']+)'/);
-      const flagBare   = cmd.match(/--title\s*=\s*([^\s"'][^\s"']*)/);
-      const flagSpaceDouble = cmd.match(/--title\s+"([^"]+)"/);
-      const flagSpaceSingle = cmd.match(/--title\s+'([^']+)'/);
-      if (flagDouble) title = flagDouble[1];
-      else if (flagSingle) title = flagSingle[1];
-      else if (flagSpaceDouble) title = flagSpaceDouble[1];
-      else if (flagSpaceSingle) title = flagSpaceSingle[1];
-      else if (flagBare) title = flagBare[1];
-      else {
-        const posArg = cmd.match(/bd\s+create\s+(?:"([^"]+)"|'([^']+)')/);
-        if (posArg) title = posArg[1] || posArg[2] || '';
-      }
-      title = title.trim();
-
-      const prioMatch = cmd.match(/(?:--priority\s*=\s*|-p\s+)(P[0-4]|critical|high|medium|low|[0-4])/i);
-      const prioRaw = prioMatch ? prioMatch[1] : null;
-      const priority = prioRaw
-        ? (/^[0-4]$/.test(prioRaw) ? PRIORITY_MAP[parseInt(prioRaw)]
-           : /^P[0-4]$/i.test(prioRaw) ? (PRIORITY_MAP[parseInt(prioRaw.replace(/^P/i, ''))] || 'medium')
-           : prioRaw.toLowerCase())
-        : 'medium';
-      if (idMatch && title) {
-        const folderName = path.basename(cwd);
-        const projectName = findProjectName(folderName);
-        const projectSlug = (projectName || folderName)
-          .split(/[-_\s]/).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join('-');
-        ensureMtnTask(idMatch[1], title, priority, projectSlug);
-      }
+      log.debug(HOOK, `bd command did not succeed — nothing written: ${cmd.slice(0, 80)}`);
       process.exit(0);
     }
 
@@ -214,8 +156,6 @@ process.stdin.on('end', () => {
 
     const folderName = path.basename(cwd);
     const projectName = findProjectName(folderName);
-    const projectSlug = (projectName || folderName)
-      .split(/[-_\s]/).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join('-');
 
     const issue = getIssueDetails(issueId, cwd);
 
@@ -228,35 +168,18 @@ process.stdin.on('end', () => {
       }
     }
 
-    // ─── 2. TaskNotes + timer sync ───────────────────────────────────
+    // ─── 2. Active-issue state ───────────────────────────────────────
     if (newStatus === 'in_progress') {
-      const mtnTitle = ensureMtnTask(issueId, issue.title, issue.priority, projectSlug);
-
-      // Stop any currently running timer before starting a new one
-      run('mtn timer stop');
-
-      // Start timer for this task
-      run(`mtn timer start ${JSON.stringify(mtnTitle)}`);
-
       // Write active issue state for dashboard
       fs.writeFileSync(ACTIVE_ISSUE_FILE, JSON.stringify({
         id: issueId,
         title: issue.title,
-        mtnTitle,
         priority: issue.priority,
         startedAt: new Date().toISOString(),
         project: projectName || folderName,
       }), 'utf-8');
 
     } else if (newStatus === 'closed') {
-      // Stop running timer
-      run('mtn timer stop');
-
-      // Mark the linked mtn task complete (gated to avoid no-op churn).
-      // The reverse listener (mtn-to-beads-sync.js) is guarded against re-entry
-      // because by the time it runs, bd will already be in 'closed' status.
-      if (findMtnTaskByIssueId(issueId)) completeMtnTaskByIssueId(issueId);
-
       // Clear active issue if it was this one
       try {
         const active = JSON.parse(fs.readFileSync(ACTIVE_ISSUE_FILE, 'utf-8'));

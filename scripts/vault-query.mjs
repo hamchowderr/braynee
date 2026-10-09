@@ -9,7 +9,7 @@
  * Commands:
  *   query <folder>       Query notes by frontmatter fields
  *   read <path>          Read a note's frontmatter + body preview
- *   context <project>    Load full project context (project + sessions + tasks)
+ *   context <project>    Load full project context (project + sessions)
  *   session start        Create a new session note
  *   session close        Close an active session
  *   session list         List sessions with filters
@@ -38,7 +38,6 @@ const FOLDERS = {
   // the cp-3hc5 bug. `projects` is the one that must always recurse.
   dashboards: join(VAULT, '2. Areas', 'Views'),
   bases:      join(VAULT, '2. Areas', 'Bases'),
-  tasks:      join(VAULT, '2. Areas', 'TaskNotes', 'Tasks'),
 };
 
 // ─── Frontmatter Parser ─────────────────────────────────────────────────────

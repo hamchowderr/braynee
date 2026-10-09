@@ -813,7 +813,6 @@ process.stdin.on('end', () => {
           project: projectName,
           cwd,
           sessionFile: session.filename,
-          activeTimer: null,   // timer filled in later by statusline-state.js async hook
           updatedAt: new Date().toISOString(),
         }));
       } catch (e) {

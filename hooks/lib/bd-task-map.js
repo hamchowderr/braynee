@@ -1,7 +1,7 @@
 'use strict';
 // bd-task-map.js — a stable bd-issue <-> CC-task id map (cp-ydy).
 //
-// The three-way mirror (beads <-> CC tasks <-> TaskNotes) back-props by fuzzy
+// The beads <-> CC tasks mirror back-props by fuzzy
 // title matching today, which risks closing/creating the wrong issue. This
 // persists a durable map under `.beads/cc-task-map.json` so the back-prop hooks
 // can resolve a stable `bd_id` for a CC task by id (exact) — falling back to a

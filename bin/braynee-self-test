@@ -7,7 +7,7 @@
 //   3. Frontmatter check on every SKILL.md and agents/*.md
 //   4. Mock-stdin execution of every hook (verify no crashes)
 //   5. Boot-only test of every monitor (3s timeout — checks startup, not loop)
-//   6. Bundled scripts dispatch (qmd-wrapper, vault-query, tasknotes, beads-dashboard)
+//   6. Bundled scripts dispatch (qmd-wrapper, vault-query, beads-dashboard)
 //
 // Cross-platform: works on Windows, macOS, Linux. Pure Node, no shell deps.
 // Usage:
@@ -379,7 +379,7 @@ for (const tf of testFiles) {
 // ── 8. Gated-hook output assertions (cp-068 / cp-cpp) ────────────────────────
 // The Claude Code hook `if` field proved version-unreliable (CC 2.1.143 never
 // fires an if-gated hook; older CC ignores `if` and fires it on every Bash). So
-// every beads/mtn Bash hook now registers WITHOUT `if` and MUST self-gate in JS.
+// every beads Bash hook now registers WITHOUT `if` and MUST self-gate in JS.
 // Step 4 only proves "doesn't crash"; these assertions prove the gate actually
 // works — emit on a matching command, stay SILENT on a non-matching one. A
 // regression here is exactly the bug class that silently broke the task mirror.
@@ -428,11 +428,11 @@ function assertGate(label, cond) {
     noise.out.trim() === '' && (noise.status === 0 || noise.status === 2));
 }
 
-// The remaining gated Bash hooks side-effect on a match (timers, branches,
-// session notes), so only assert the property we now depend on: a non-matching
+// The remaining gated Bash hooks side-effect on a match (branches, session
+// notes), so only assert the property we now depend on: a non-matching
 // command produces no stdout and a clean exit (the self-gate fires first).
 for (const h of ['commit-cadence-nudge.js', 'beads-claim-to-branch.js',
-                 'beads-status-sync.js', 'beads-dashboard-refresh.js', 'mtn-to-beads-sync.js',
+                 'beads-status-sync.js', 'beads-dashboard-refresh.js',
                  'beads-close-gate.js', 'commit-format-check.js']) {
   const noise = runHook(h, 'echo hello world');
   assertGate(`${h} stays SILENT + exit 0 on a non-matching command`,
@@ -1458,7 +1458,7 @@ results.projlookup = { ok: 0, fail: 0, errors: [] };
 log(`  ${results.projlookup.ok} passed | ${results.projlookup.fail} failed`);
 
 // ── 17. Hook CLI timeouts fit inside the hook's own budget (cp-szoa) ──────────
-// A hook gets ONE timeout from hooks.json, but these hooks shell out to bd/mtn/
+// A hook gets ONE timeout from hooks.json, but these hooks shell out to bd/
 // git several times, each with its own generous per-call cap. When the caps
 // exceed the hook's allowance, Claude Code kills the hook mid-run and it emits
 // NOTHING — no error, no partial output, just a dead process. That is how

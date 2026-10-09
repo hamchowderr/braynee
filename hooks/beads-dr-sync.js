@@ -22,8 +22,7 @@
 //
 // SessionStart, throttled to once a day, in a DETACHED child. The sweep walks
 // ~36 repos and shells out to bd for each, which is far too heavy to run inline
-// on a hook that fires whenever a session opens: the same reasoning that moved
-// the mirror fleet sweep out of beads-batch-reconcile after it blew its budget.
+// on a hook that fires whenever a session opens.
 // The hook returns immediately; the child owns its own clock.
 
 const fs = require('fs');
