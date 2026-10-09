@@ -201,7 +201,6 @@ def claude_md(name: str, company: str, projects: list[dict],
 
         - Email: {email}
         - Calendar: {calendar}
-        - Tasks: `/tasks`
         - Search: `/query` or `qmd search "query"` (qmd is in PATH via braynee plugin)
         - Sessions: `/sessions`
         - Recap: `/recap yesterday`
@@ -262,7 +261,6 @@ def claude_md(name: str, company: str, projects: list[dict],
 
         ## Rules
 
-        - Tasks: always use `/tasks` — never create task files manually
         - Captures: new ideas go to `Inbox/` first
         - Sessions: logged automatically in `2. Areas/Sessions/`
         - Decisions: append to decisions log, never delete history
@@ -357,7 +355,6 @@ def main():
     mkdirs(
         vault / "Inbox",
         vault / "1. Projects",
-        vault / "2. Areas" / "TaskNotes",
         vault / "2. Areas" / "Sessions",
         vault / "2. Areas" / "Claude Memory",
         vault / "2. Areas" / "context",

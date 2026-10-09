@@ -90,24 +90,6 @@ function emit() {
     out.push(`Active session: ${snapshot.sessionNoteFilename} (file not found)`);
   }
 
-  // Active timers
-  if (Array.isArray(snapshot.activeTimers) && snapshot.activeTimers.length > 0) {
-    out.push('');
-    out.push('Active timers:');
-    for (const t of snapshot.activeTimers) {
-      out.push(`  - ${t.taskTitle} (ID: ${t.taskId}, ${t.elapsed}m elapsed)`);
-    }
-  }
-
-  // In-progress tasks
-  if (Array.isArray(snapshot.inProgressTasks) && snapshot.inProgressTasks.length > 0) {
-    out.push('');
-    out.push('In-progress tasks:');
-    for (const t of snapshot.inProgressTasks) {
-      out.push(`  - ${t.title} (ID: ${t.id})`);
-    }
-  }
-
   // Vault project context
   if (snapshot.vaultContext && snapshot.vaultContextProject) {
     out.push('');

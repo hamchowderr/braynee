@@ -3,10 +3,9 @@
 // state-change commands telling the assistant to mirror the change to the
 // Claude Code todo list (TodoWrite).
 //
-// Three-way task mirror:
+// Task mirror:
 //   beads     = source of truth (agent reads + writes)
 //   TodoWrite = live terminal view (user verifies in real time)
-//   TaskNotes = vault audit trail (auto-synced by beads-status-sync.js)
 //
 // TodoWrite is an assistant-only tool — hooks cannot call it directly. So
 // this hook surfaces a reminder on the matching tool result. The assistant
@@ -28,7 +27,7 @@ const HOOK = 'beads-todo-reminder';
 // FACTUAL statement, not an imperative "do X NOW" wrapped in a fake
 // <system-reminder> tag: per the reference, out-of-band command phrasing trips
 // Claude's prompt-injection defenses and gets surfaced to the user instead of
-// acted on — the likely real cause of the missing TodoWrite/TaskNotes mirror.
+// acted on — the likely real cause of the missing TodoWrite mirror.
 function emit(text) {
   process.stdout.write(JSON.stringify({
     hookSpecificOutput: {
@@ -95,7 +94,7 @@ process.stdin.on('end', () => {
         }
         emit(
           `beads issue ${idMatch[1]} was created ("${title}"). ` +
-          `The Claude Code todo list and the TaskNotes vault mirror are out of sync with beads for this issue until the todo list includes it as a pending item ` +
+          `The Claude Code todo list is out of sync with beads for this issue until it includes it as a pending item ` +
           `(content "${title}", a present-continuous activeForm, status pending).`
         );
       }

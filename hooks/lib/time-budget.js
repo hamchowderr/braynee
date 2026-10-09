@@ -4,7 +4,7 @@
 // cp-szoa.
 //
 // Why this exists: a Claude Code hook gets a single timeout from hooks.json, but
-// hooks here call `bd`/`mtn`/`git` several times in sequence, each with its OWN
+// hooks here call `bd`/`git` several times in sequence, each with its OWN
 // generous per-call timeout. Those per-call caps sum to far more than the hook is
 // allowed, so a couple of slow calls get the whole hook killed mid-run — and a
 // killed hook emits NOTHING, with no trace beyond the process dying. Measured

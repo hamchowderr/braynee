@@ -159,7 +159,6 @@ try {
       ['lib/dolt-guard.js', /\.debug\('dolt-guard'/],
       ['lib/ignore-folders.js', /\.debug\('ignore-folders'/],
       ['lib/session-report-state.js', /log\.debug\(/],
-      ['lib/tasknotes-mirror.js', /log\.debug\(/],
     ];
     for (const [rel, re] of instrumented) {
       const src = fs.readFileSync(path.join(HOOKS, rel), 'utf8');

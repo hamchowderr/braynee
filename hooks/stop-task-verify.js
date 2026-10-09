@@ -2,10 +2,9 @@
 // Hook: Stop — Cross-verifies tracking layers at session end.
 //
 // Checks:
-//   1. mtn timer status (CLI)
-//   2. beads-active-issue.json (state file written by beads-status-sync)
-//   3. Beads in_progress issues (bd list --json)
-//   4. Cross-verifies: timer ↔ active-issue ↔ beads in_progress
+//   1. beads-active-issue.json (state file written by beads-status-sync)
+//   2. Beads in_progress issues (bd list --json)
+//   3. Cross-verifies: active-issue ↔ beads in_progress
 //
 // Never hard-blocks (exit 0 always). Surfaces discrepancies via systemMessage
 // so Claude can prompt the user to wrap up before stopping.
@@ -26,8 +25,8 @@ const HOME = os.homedir();
 const ACTIVE_ISSUE_FILE = path.join(HOME, '.claude', 'beads-active-issue.json');
 
 // cp-szoa: this hook is registered with a 15s timeout in hooks.json, but it makes
-// up to THREE sequential CLI calls — `mtn timer status`, `bd show`, `bd list` —
-// and each was allowed its own 8s. Worst case 24s. When two of them ran slow,
+// sequential CLI calls — `bd show`, `bd list` — and each was allowed its own
+// 8s. When two of them ran slow,
 // Claude Code killed the hook part-way and its verification emitted NOTHING, with
 // no trace beyond the process dying. Found when the self-test timed it out twice
 // in a row (30s) during a 20-run soak; the old reporting called that a "CRASH".
@@ -65,14 +64,7 @@ process.stdin.on('end', () => {
     const currentProject = path.basename(cwd).toLowerCase();
     const hasBeadsDir = fs.existsSync(path.join(cwd, '.beads'));
 
-    // ── 1. mtn timer ──────────────────────────────────────────────────
-    const timerStatus = run('mtn timer status');
-    const timerRunning = timerStatus && !/no.*(active|running|timer)|not running|stopped/i.test(timerStatus);
-    if (timerRunning) {
-      warnings.push(`mtn timer is still running: ${timerStatus.split('\n')[0]}`);
-    }
-
-    // ── 2. beads-active-issue.json ────────────────────────────────────
+    // ── 1. beads-active-issue.json ────────────────────────────────────
     let activeIssue = null;
     try {
       if (fs.existsSync(ACTIVE_ISSUE_FILE)) {
@@ -105,7 +97,7 @@ process.stdin.on('end', () => {
       warnings.push(`Active issue not closed: [${activeIssue.id}] ${activeIssue.title}`);
     }
 
-    // ── 3. Beads in_progress (if in a beads project) ──────────────────
+    // ── 2. Beads in_progress (if in a beads project) ──────────────────
     // cp-awg/HD-2.2: NEVER use `--all`. On the shared Dolt server `--all`
     // overrides the default per-repo filter and spans EVERY project's
     // namespace, so this Stop hook would surface (and raise SYNC-MISMATCH
@@ -133,16 +125,13 @@ process.stdin.on('end', () => {
       }
     }
 
-    // ── 4. Cross-verification ─────────────────────────────────────────
+    // ── 3. Cross-verification ─────────────────────────────────────────
 
     if (activeIssue && activeIsCurrentProject && inProgressIssues.length > 0 && !inProgressIssues.find(i => i.id === activeIssue.id)) {
       warnings.push(`SYNC MISMATCH: active-issue.json points to [${activeIssue.id}] but that issue is NOT in_progress in beads`);
     }
     if (!activeIssue && inProgressIssues.length > 0) {
       warnings.push(`SYNC MISMATCH: beads has in_progress issue(s) but active-issue.json is missing — beads-status-sync may not have fired`);
-    }
-    if (timerRunning && !activeIssue && inProgressIssues.length === 0) {
-      warnings.push(`ORPHANED TIMER: mtn timer is running but no active beads issue — stop the timer with \`mtn timer stop\``);
     }
 
     // A skipped check is not a clean bill of health — say so rather than let the
@@ -161,7 +150,6 @@ process.stdin.on('end', () => {
       ...warnings.map(w => `• ${w}`),
       '',
       'To close: `bd close <id>` or `bd update <id> --status blocked`',
-      'Timer will be auto-stopped by auto-stop-timers hook.',
     ].join('\n');
 
     process.stdout.write(JSON.stringify({ systemMessage: msg }));

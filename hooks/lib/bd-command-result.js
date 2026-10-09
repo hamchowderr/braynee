@@ -5,13 +5,12 @@
 //
 // The beads hooks fire on PostToolUse and, until this module, keyed purely off
 // the command TEXT. A `bd close` that ERRORED still emitted "beads issue <id> is
-// now closed" into the model's context and still drove the vault TaskNotes
-// mirror. Observed live: a malformed `bd close cp-uif3.3 --reason="" --dry-run`
+// now closed" into the model's context and still wrote the session note. Observed live: a malformed `bd close cp-uif3.3 --reason="" --dry-run`
 // closed nothing (invalid flag, non-zero exit) yet announced a closure.
 //
 // That is worse than a missing reminder: it tells the model a state change
-// happened that did not, so the model stops tracking real work and the mirror
-// records an event with no counterpart in beads.
+// happened that did not, so the model stops tracking real work and the session
+// note records an event with no counterpart in beads.
 //
 // Deliberately CONSERVATIVE. It suppresses only when failure is positively
 // visible, and emits whenever the outcome cannot be determined. The mirror is

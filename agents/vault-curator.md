@@ -31,7 +31,6 @@ Inbox/                    → Unprocessed captures, raw ideas (temporary staging
    Development/           → Framework reference docs
    Sessions/              → One note per working session (YYYY-MM-DD.md)
    Claude Memory/         → Persistent agent memory (MEMORY.md index + files)
-   TaskNotes/             → Task management
 3. Resources/             → Reference material, Templates/
 4. Archives/              → Completed/retired items
 Zettelkasten/             → Atomic permanent notes with dense backlinks

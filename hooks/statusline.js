@@ -9,11 +9,10 @@
 //
 // Reads two inputs and degrades gracefully if either is absent:
 //   • Claude Code's status JSON on stdin (model, context, cost, worktree, …)
-//   • braynee's live state at ~/.claude/statusline-live.json (goal, timer,
-//     beads) written by statusline-state.js + session-auto-track.js, and
+//   • braynee's live state at ~/.claude/statusline-live.json (goal, beads) written by statusline-state.js + session-auto-track.js, and
 //     ~/.claude/beads-active-issue.json written by the beads claim hook.
 //
-// Line 1 (WHAT):  🎯 session goal  │  ⏱ active timer task (Xm)  │  📋 beads  │  [session-name]
+// Line 1 (WHAT):  🎯 session goal  │  📋 beads  │  [session-name]
 // Line 2 (WHERE): [Model] 🧠 medium │ 📁 folder │ 🌿 branch [wt:name] │ 🔗 repo │ 🤖 agent
 // Line 3 (COST):  ▓▓░░ 42% │ 💰 $0.56 │ ⏱️ 1h4m (12m API)
 // Line 4 (USAGE): 🔤 3.3k↓ 1.7k↑ 💾cache │ 5h:23% 7d:41%
@@ -223,23 +222,17 @@ process.stdin.on('end', () => {
 
   // ── Line 1: WHAT ─────────────────────────────────────────────────
   const goalStr = live.goal ? `${BOLD}🎯 ${truncate(live.goal, 68)}${RESET}` : '';
-  let timerStr = '';
-  if (live.activeTimer?.title) {
-    const elapsed = live.activeTimer.elapsedMinutes;
-    const elapsedStr = elapsed > 0 ? ` ${DIM}(${elapsed}m)${RESET}` : '';
-    timerStr = `${YELLOW}⏱${RESET} ${truncate(live.activeTimer.title, 40)}${elapsedStr}`;
-  }
   let beadsStr = '';
   const activeIssue = getActiveBeadsIssue(currentDir);
   if (activeIssue?.id) {
-    const label = activeIssue.mtnTitle || activeIssue.title || activeIssue.id;
+    const label = activeIssue.title || activeIssue.id;
     beadsStr = `${CYAN}📋 ${DIM}${activeIssue.id}${RESET} ${CYAN}${truncate(label, 40)}${RESET}`;
   } else if (live.beads?.openCount != null) {
     beadsStr = `${CYAN}📋 ${live.beads.openCount} open${RESET}`;
   }
   const nameStr = sessionName ? `${DIM}[${sessionName}]${RESET}` : '';
 
-  const line1Parts = [goalStr, timerStr, beadsStr, nameStr].filter(Boolean);
+  const line1Parts = [goalStr, beadsStr, nameStr].filter(Boolean);
   const line1 = line1Parts.join(`  ${SEP}  `);
 
   // ── Line 2: WHERE ────────────────────────────────────────────────

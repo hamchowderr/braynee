@@ -4,9 +4,8 @@
 // Fails when shipping code has changed since the last released tag but
 // plugin.json's version has NOT moved. Without this, a change can land on
 // master at the same version, never get re-released, and the installed
-// plugin silently lags source (cp-e2s: the dead TaskNotes HTTP-API skill
-// stayed in the installed 2.0.0 because deletion commit 67703bd bumped
-// nothing). See cp-9v9.
+// plugin silently lags source (cp-e2s: a deleted skill stayed in the
+// installed 2.0.0 because deletion commit 67703bd bumped nothing). See cp-9v9.
 //
 // Logic:
 //   1. Find the most recent `braynee--v*` tag (the last release).

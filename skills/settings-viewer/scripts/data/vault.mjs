@@ -18,7 +18,7 @@ export async function loadVaultStats() {
 
   try {
     // Fetch vault stats via Obsidian's in-app API (requires Obsidian to be running).
-    // Counts inbox, sessions, TaskNotes, and the four PARA buckets in one pass.
+    // Counts inbox, sessions, and the four PARA buckets in one pass.
     const jsCode = [
       `(async () => {`,
       `  const {writeFileSync} = require('fs');`,
@@ -27,7 +27,6 @@ export async function loadVaultStats() {
       `  writeFileSync('${tempPath}', JSON.stringify({`,
       `    inboxCount: sw('Inbox/'),`,
       `    sessionCount: sw('2. Areas/Sessions/'),`,
-      `    taskCount: sw('2. Areas/TaskNotes/Tasks/'),`,
       `    para: { projects: sw('1. Projects/'), areas: sw('2. Areas/'), resources: sw('3. Resources/'), archives: sw('4. Archives/') },`,
       `  }));`,
       `})()`,
@@ -37,13 +36,12 @@ export async function loadVaultStats() {
     return {
       inboxCount: data.inboxCount || 0,
       sessionCount: data.sessionCount || 0,
-      taskCount: data.taskCount || 0,
       para: data.para || { projects: 0, areas: 0, resources: 0, archives: 0 },
       vaultPath: vaultRoot,
     };
   } catch {
     // Fallback: direct filesystem reads if Obsidian is not running (cp-dgu.2: the
-    // dashboard must surface tasks + folder counts even with Obsidian closed).
+    // dashboard must surface folder counts even with Obsidian closed).
     const { readdirSync } = await import('fs');
     const vaultPath = vaultRoot;
 
@@ -72,13 +70,12 @@ export async function loadVaultStats() {
       }
       sessionCount += countDir(sessDir); // sessions filed directly under Sessions/
     } catch {}
-    const taskCount = countDir(join(vaultPath, '2. Areas', 'TaskNotes', 'Tasks'));
     const para = {
       projects: countMdRec(join(vaultPath, '1. Projects')),
       areas: countMdRec(join(vaultPath, '2. Areas')),
       resources: countMdRec(join(vaultPath, '3. Resources')),
       archives: countMdRec(join(vaultPath, '4. Archives')),
     };
-    return { inboxCount, sessionCount, taskCount, para, vaultPath };
+    return { inboxCount, sessionCount, para, vaultPath };
   }
 }

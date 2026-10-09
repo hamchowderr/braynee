@@ -3,15 +3,14 @@
 // (rate_limit / authentication_failed / billing_error / server_error / ...).
 //
 // HD-2.9 / cp-9kw: on an API error the turn ends via StopFailure, NOT Stop or
-// SessionEnd. All of Braynee's session-note close + mtn-timer-stop logic lives
-// on Stop/SessionEnd, so an API-error end leaves the session note status:active
-// and the mtn timer running until the next SessionStart sweep (cp-re1). This
-// hook performs the same close + timer-stop as session-end.js (shared via
-// lib/session-close.js) so the failure is healed at the failure, not a session
-// later.
+// SessionEnd. All of Braynee's session-note close logic lives on
+// Stop/SessionEnd, so an API-error end leaves the session note status:active
+// until the next SessionStart sweep (cp-re1). This hook performs the same close
+// as session-end.js (shared via lib/session-close.js) so the failure is healed
+// at the failure, not a session later.
 //
 // Per the hooks reference, StopFailure output and exit code are IGNORED — this
-// hook is side-effect only (note write + timer stop + log). It emits nothing
+// hook is side-effect only (note write + log). It emits nothing
 // to stdout.
 
 'use strict';
@@ -33,12 +32,11 @@ process.stdin.on('end', () => {
     }
     const errType = data.error_type || data.reason || 'unknown';
 
-    // stopTimer:true — Stop's timer-stop hooks never ran on this path.
-    const r = closeActiveSession(data, { stopTimer: true });
+    const r = closeActiveSession(data);
     if (r.closed) {
-      log.info(HOOK, `API error (${errType}) — closed session ${r.file} for ${r.project}, stopped timer`);
+      log.info(HOOK, `API error (${errType}) — closed session ${r.file} for ${r.project}`);
     } else {
-      log.info(HOOK, `API error (${errType}) — no active session to close (timer stop attempted)`);
+      log.info(HOOK, `API error (${errType}) — no active session to close`);
     }
   } catch (e) {
     try { log.error(HOOK, `crash: ${e.message}`); } catch { /* logging must never break the hook */ }

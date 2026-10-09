@@ -1,11 +1,10 @@
 // project-resolver.js — map a cwd/repo slug or bd project name to the real vault
 // project note under "1. Projects/" (or "4. Archives/Projects/"), so sessions,
-// transcripts, and task notes carry a graph-visible [[...]] link instead of a
+// and transcripts carry a graph-visible [[...]] link instead of a
 // non-resolving slug.
 //
 // Used by:
 //   - session-export-qmd.js  (transcript `project:` frontmatter)
-//   - tasknotes-mirror.js     (repoint mtn's [[projects/<slug>]] to the real note)
 //
 // Matching order: explicit alias from runtime config (codenames / repo-slugs
 // that don't match the note name) -> alphanumeric-normalized exact -> safe

@@ -66,7 +66,7 @@ process.stdin.on('end', () => {
         additionalContext:
           `The working directory moved into a different recognized project. ` +
           `This session is anchored to "${anchoredName}" (${anchoredRoot}); the current directory resolves to "${newName}" (${newRoot}). ` +
-          `Braynee's session note, beads scope, and timer remain attributed to "${anchoredName}" — work done here under "${newName}" will be recorded against "${anchoredName}" unless a new session is started for "${newName}".`,
+          `Braynee's session note and beads scope remain attributed to "${anchoredName}" — work done here under "${newName}" will be recorded against "${anchoredName}" unless a new session is started for "${newName}".`,
       },
     }));
   } catch (e) {

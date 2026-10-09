@@ -35,15 +35,6 @@ function controlDir() {
 const LOCK_FILE = path.join(controlDir(), '.braynee-qmd-reindex.lock');
 const STAMP_FILE = path.join(controlDir(), '.braynee-qmd-embed.stamp');
 
-// Beads → TaskNote body sync (see scripts/beads-body-sync.js). Beads issue
-// description/close_reason live in hidden .beads/issues.jsonl dirs that QMD's
-// walker refuses to index, so we copy them into the (already-indexed) vault
-// TaskNote bodies before each keyword reindex. Throttled by a stamp so it
-// doesn't re-scan every repo on every single Stop — freshness of tens of
-// minutes is plenty for decision recall.
-const BODY_SYNC_STAMP = path.join(controlDir(), '.braynee-beads-body-sync.stamp');
-const BODY_SYNC_INTERVAL_MS = 30 * 60 * 1000; // 30 min
-
 // Ceiling for the synchronous keyword update on the Stop path. It was 30s,
 // against a run measured at 18s on a 10.6k-document index — 1.6x headroom on a
 // number that only grows, and `qmd update` re-walks EVERY collection (it takes
@@ -169,46 +160,12 @@ function releaseLock() {
   try { fs.unlinkSync(LOCK_FILE); } catch { /* already gone */ }
 }
 
-// Throttled, best-effort refresh of TaskNote bodies from beads issue data.
-// Idempotent (writes only the notes whose issue description/close_reason
-// changed), so after the initial backfill each run touches just the churn.
-// Never throws — a failure here must not block the vault reindex.
-function syncBeadsBodies() {
-  try {
-    const last = Number(fs.readFileSync(BODY_SYNC_STAMP, 'utf8').trim()) || 0;
-    if (Date.now() - last < BODY_SYNC_INTERVAL_MS) return { ran: false, reason: 'throttled' };
-  } catch { /* no stamp yet → run */ }
-  try {
-    const script = path.join(__dirname, '..', '..', 'scripts', 'beads-body-sync.js');
-    execSync(`"${process.execPath}" "${script}" --write`, {
-      stdio: ['pipe', 'pipe', 'ignore'],
-      timeout: 30000,
-      windowsHide: true,
-    });
-    try { fs.writeFileSync(BODY_SYNC_STAMP, String(Date.now())); }
-    catch (e) {
-      // The stamp is the throttle. Without it the body sync re-runs on every
-      // single invocation instead of once per interval — expensive and silent.
-      log.debug(LOG_NAME, `could not write body-sync stamp: ${e && e.message}`);
-    }
-    return { ran: true };
-  } catch (e) {
-    // `reason: 'error'` told the caller nothing about WHAT failed. A permanently
-    // failing body sync silently stops beads reasoning reaching QMD (cp-ccsh.11).
-    log.debug(LOG_NAME, `beads body sync failed: ${e && e.message}`);
-    return { ran: false, reason: 'error' }; // notes catch up on the next run
-  }
-}
-
 // Synchronous, non-blocking-on-error BM25 reindex. Skips entirely if a
 // reindex (e.g. a detached embed) is already in flight — keyword staleness
 // for one session is acceptable; index corruption is not.
 function runKeywordUpdate(qmdWrapper) {
   if (!acquireLock('update')) return { ran: false, reason: 'locked' };
   try {
-    // Freshen beads-derived TaskNote bodies before indexing so the vault
-    // picks up issue reasoning that QMD can't read from hidden .beads/ dirs.
-    syncBeadsBodies();
     // `qmd update` takes no arguments — `case "update": await updateCollections()`
     // — so the `-c vault` this used to pass was silently ignored and every
     // collection was re-walked anyway. Passing a flag the CLI drops is worse

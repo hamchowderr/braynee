@@ -44,9 +44,8 @@ export function renderBrayneePanel(d) {
       ${kpi(vaultStats.sessionCount, 'Sessions Logged', 'var(--blue)')}
       ${kpi(totalHours ?? '—', 'Hours Tracked', 'var(--green)', totalHours && totalHours !== '—' ? 'h' : '')}
     </div>
-    <div class="stats" style="grid-template-columns:repeat(4,1fr)">
+    <div class="stats" style="grid-template-columns:repeat(3,1fr)">
       ${kpi(vaultStats.inboxCount, 'Inbox Items', vaultStats.inboxCount > 0 ? 'var(--amber)' : 'var(--green)')}
-      ${kpi(vaultStats.taskCount ?? 0, 'Open Tasks', 'var(--purple)')}
       ${kpi(totalProjects, 'Projects', 'var(--blue)')}
       ${kpi(totalSpend > 0 ? '$' + totalSpend.toFixed(2) : '—', 'Recent Spend', 'var(--green)')}
     </div>
@@ -94,7 +93,6 @@ export function renderBrayneePanel(d) {
         <div class="card-body"><table class="kv">
           <tr><td class="prop">path</td><td class="val-cell"><span class="scalar" style="font-size:10px;color:var(--ink-3)">${esc(vaultStats.vaultPath || '(unresolved)')}</span></td></tr>
           <tr><td class="prop">inbox</td><td class="val-cell"><span class="scalar" style="${vaultStats.inboxCount > 0 ? 'color:var(--amber)' : 'color:var(--green)'}">${vaultStats.inboxCount} item${vaultStats.inboxCount !== 1 ? 's' : ''}</span></td></tr>
-          <tr><td class="prop">tasks</td><td class="val-cell"><span class="scalar">${vaultStats.taskCount ?? 0}</span></td></tr>
           <tr><td class="prop">PARA notes</td><td class="val-cell"><span class="scalar" style="font-size:11px">Projects ${para.projects} · Areas ${para.areas} · Resources ${para.resources} · Archives ${para.archives}</span></td></tr>
         </table></div>
       </div>
@@ -107,7 +105,6 @@ export function renderBrayneePanel(d) {
           ${[
             ['/setup',        'Onboarding wizard — vault scaffolding + hook install'],
             ['/daily',        'Open or create today\'s daily note'],
-            ['/tasks',        'Task management via TaskNotes'],
             ['/clients',      'Client CRM — context, logs, call prep'],
             ['/recap',        'Search past sessions via QMD'],
             ['/sessions',     'Export current session to Obsidian'],

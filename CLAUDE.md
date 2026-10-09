@@ -21,7 +21,7 @@ not be used. Verified live on 2026-05-24 (cp-068):
 inside the hook's JS — match the command with a regex and `process.exit(0)` early
 on a non-match, before any side effect. Every gated hook here already does this
 (`beads-todo-reminder`, `beads-status-sync`, `commit-cadence-nudge`,
-`beads-claim-to-branch`, `beads-dashboard-refresh`, `mtn-to-beads-sync`,
+`beads-claim-to-branch`, `beads-dashboard-refresh`,
 `check-no-main-push`, `branch-name-check`).
 
 ## Testing hooks — two layers

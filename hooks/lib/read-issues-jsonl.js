@@ -2,7 +2,7 @@
 // Repo-scoped, server-free reader for a project's beads issues.
 //
 // WHY (cp-6j5 / dolt-guard): braynee runs read-only hooks on routine events
-// (Stop, PostToolBatch, PostToolUse). When those query the live Dolt server via
+// (Stop, PostToolUse). When those query the live Dolt server via
 // `bd list`/`bd stats`, many CONCURRENT Claude Code sessions (different
 // terminals/projects) hammer the single shared server at once; its handshakes
 // flap and bd auto-spawns throwaway dolt sql-servers that orphan and pile up.

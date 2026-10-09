@@ -98,7 +98,7 @@ process.stdin.on('end', () => {
     log.info(HOOK, `new root registered: ${addedName} (beads=${hasBeads}) anchored=${anchoredRoot ? path.basename(anchoredRoot) : 'none'}`);
 
     const anchorClause = anchoredRoot
-      ? `This session is anchored to "${path.basename(anchoredRoot)}" (${anchoredRoot}), and braynee's session note, beads scope and timer stay attributed there — work done under "${addedName}" will be recorded against "${path.basename(anchoredRoot)}" unless a new session is started for it.`
+      ? `This session is anchored to "${path.basename(anchoredRoot)}" (${anchoredRoot}), and braynee's session note and beads scope stay attributed there — work done under "${addedName}" will be recorded against "${path.basename(anchoredRoot)}" unless a new session is started for it.`
       : `This session has no anchored project, so nothing is currently attributed to "${addedName}".`;
 
     const beadsClause = hasBeads

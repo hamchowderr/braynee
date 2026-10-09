@@ -3,8 +3,7 @@
 // Extracted from session-end.js so the SessionEnd hook AND the StopFailure
 // hook (cp-9kw) use ONE implementation. An API-error turn-end fires
 // StopFailure, not SessionEnd/Stop — so without this the session note is left
-// status:active and the mtn timer keeps running until the next SessionStart
-// sweep (cp-re1). Reusing this from both events closes that gap at the
+// status:active until the next SessionStart sweep (cp-re1). Reusing this from both events closes that gap at the
 // failure, not one session later.
 //
 // Behavior is byte-for-byte the close logic that shipped in session-end.js;
@@ -13,7 +12,6 @@
 
 'use strict';
 
-const { execSync } = require('child_process');
 const path = require('path');
 const os = require('os');
 const fs = require('fs');
@@ -119,15 +117,13 @@ function closeSessionFile(filepath, content) {
 
 /**
  * Close the active session note for the session's anchored code project.
- * Optionally stops a dangling mtn timer (the StopFailure path needs this;
- * SessionEnd's prior behavior left timer-stop to the Stop hooks that never ran
- * on an API error). Does NOT run `bd prime` — see note in the body.
+ * Does NOT run `bd prime` — see note in the body.
  *
  * `data` is the parsed hook stdin ({ session_id, cwd, ... }).
  * Returns { closed: bool, project, file } describing what (if anything) it did.
  * Never throws — callers exit 0 regardless.
  */
-function closeActiveSession(data, { stopTimer = false } = {}) {
+function closeActiveSession(data) {
   const result = { closed: false, project: null, file: null };
   try {
     const codeRoot = findCodeRoot(sessionDir(data));
@@ -138,17 +134,6 @@ function closeActiveSession(data, { stopTimer = false } = {}) {
     // ignored at quit there is no agent to receive this output anyway. It only
     // added up-to-5s of blocking to a post-action hook CC won't wait for,
     // which is what triggered "Hook cancelled" at quit (cp-15f).
-
-    if (stopTimer) {
-      // An unclean end (API error) never ran the Stop timer-stop hooks.
-      try {
-        execSync('mtn timer stop', { encoding: 'utf8', timeout: 8000, stdio: ['pipe', 'pipe', 'ignore'], windowsHide: true });
-      } catch (e) {
-        // A swallowed failure here leaves the timer RUNNING after an unclean
-        // end — the tracked hours keep accruing with nothing to show for it.
-        log.debug(LOG_NAME, `mtn timer stop failed: ${e && e.message}`);
-      }
-    }
 
     if (!codeRoot || folderName.toLowerCase() === 'workspace') return result;
 
