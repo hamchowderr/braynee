@@ -4,5 +4,6 @@
   "dolt_mode": "embedded",
   "dolt_database": "cp",
   "project_id": "064d7d6c-c461-42f4-bd7c-4640404c49e0",
-  "last_bd_version": "1.0.4"
+  "last_bd_version": "1.0.4",
+  "braynee_seen_bd_version": "1.3.0"
 }
