@@ -104,6 +104,32 @@ function appendToSessionProgress(filepath, content, line) {
   fs.writeFileSync(filepath, updated.replace(/\r\n/g, '\n'), 'utf-8');
 }
 
+// The status change a command makes, or null. beads-actor-sign rewrites every
+// bd to `bd --actor claude …` before it runs, and this PostToolUse hook sees the
+// rewritten command, so match each bd invocation (also after `cd x;` or `&&`)
+// with its global flags removed rather than anchoring on `^bd update`.
+const { commandsIn, baseCmd } = require(path.join(__dirname, 'lib', 'shell-parse.js'));
+const GLOBAL_VALUE_FLAGS = new Set(['--actor', '-C', '--directory', '--db']);
+function parseStatusChange(cmd) {
+  for (const argv of commandsIn(cmd || '')) {
+    if (baseCmd(argv[0]).toLowerCase() !== 'bd') continue;
+    const rest = [];
+    for (let i = 1; i < argv.length; i++) {
+      if (GLOBAL_VALUE_FLAGS.has(argv[i])) { i++; continue; }
+      if (/^(--actor|-C|--directory|--db)=/.test(argv[i])) continue;
+      rest.push(argv[i]);
+    }
+    const line = ['bd', ...rest].join(' ');
+    const claim = line.match(/^bd\s+update\s+([\w.-]+).*--claim/);
+    if (claim) return { issueId: claim[1], newStatus: 'in_progress' };
+    const status = line.match(/^bd\s+update\s+([\w.-]+).*--status[\s=](in_progress|open|blocked|closed)/);
+    if (status) return { issueId: status[1], newStatus: status[2] };
+    const close = line.match(/^bd\s+close\s+([\w.-]+)/);
+    if (close) return { issueId: close[1], newStatus: 'closed' };
+  }
+  return null;
+}
+
 function getIssueDetails(issueId, cwd) {
   try {
     const out = run(`bd show ${issueId}`, { cwd });
@@ -118,7 +144,10 @@ function getIssueDetails(issueId, cwd) {
   } catch { return { title: issueId, priority: 'medium' }; }
 }
 
+module.exports = { parseStatusChange };
+
 // ─── Main ────────────────────────────────────────────────────────────────────
+if (require.main === module) {
 let input = '';
 process.stdin.setEncoding('utf8');
 process.stdin.on('data', c => { input += c; });
@@ -144,15 +173,9 @@ process.stdin.on('end', () => {
       process.exit(0);
     }
 
-    // Detect all bd status-change patterns
-    const claimMatch  = cmd.match(/^bd\s+update\s+([\w.-]+).*--claim/);
-    const statusMatch = !claimMatch && cmd.match(/^bd\s+update\s+([\w.-]+).*--status\s+(in_progress|open|blocked|closed)/);
-    const closeMatch  = !claimMatch && !statusMatch && cmd.match(/^bd\s+close\s+([\w.-]+)/);
-
-    if (!claimMatch && !statusMatch && !closeMatch) process.exit(0);
-
-    const issueId = (claimMatch || statusMatch || closeMatch)[1];
-    const newStatus = claimMatch ? 'in_progress' : statusMatch ? statusMatch[2] : 'closed';
+    const change = parseStatusChange(cmd);
+    if (!change) process.exit(0);
+    const { issueId, newStatus } = change;
 
     const folderName = path.basename(cwd);
     const projectName = findProjectName(folderName);
@@ -197,3 +220,4 @@ process.stdin.on('end', () => {
     process.exit(0);
   }
 });
+}
