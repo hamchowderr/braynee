@@ -18,15 +18,13 @@ process.stdin.on('end', () => emit());
 if (process.stdin.isTTY) emit();
 
 function emit() {
-  // Static reminders that always apply
+  // Static reminders that always apply. cp-paj9: never restate the user's own
+  // rules here — a copy injected after compaction is the newest instruction in
+  // context and overrides the real file when the two drift apart.
   process.stdout.write(`REMINDERS AFTER COMPACTION:
-- NEVER push to main/master. Always feature branch + PR.
+- CLAUDE.md, rules and memory still apply. When a rule matters, re-read its file instead of trusting the summary.
 - Do ONLY what was explicitly asked. Don't expand scope.
-- For API/CLI/SDK integration: check latest docs via WebFetch FIRST.
 - Destructive commands (rm -rf, git reset --hard, DROP TABLE, etc.): explain and confirm before executing.
-- curl requests: follow logical API order (auth -> parent resource -> child resource -> verify).
-- Check for existing skills/plugins before building from scratch.
-- Show diffs and wait for approval after each fix.
 - When working on tasks: use beads (bd ready / bd update / bd close) — beads is the source of truth.
 - Keep updating the active session note (Decisions, Progress, Blockers) as you work.
 `);
