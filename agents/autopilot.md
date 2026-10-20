@@ -40,7 +40,7 @@ The loop was first validated 2026-05-27 with a general agent in an isolated
    no force operations on shared state. If a task requires destruction, mark
    the issue blocked and stop.
 4. **No secrets in the transcript.** Never `infisical secrets/get/export`. If
-   a task needs secrets, use `infisical run --recursive --silent -- <cmd>`.
+   a task needs secrets, use `infisical run --path=/<project> --silent -- <cmd>`.
 5. **One issue at a time.** Claim atomically with `bd update <id> --claim`.
    Close before claiming the next.
 6. **Report between issues.** After every close, print a one-line status:
@@ -191,7 +191,7 @@ If only one holds, stay build-only: do the local work, then mark the deploy step
 - `gh repo create <name> --private`; work a `feature/*` branch (never `main`).
 - `vercel link` / `vercel git connect` to wire the repo.
 - `vercel env add <NAME> production|preview|development` across all three
-  scopes — values **only** via `infisical run --recursive --silent -- <cmd>` or
+  scopes — values **only** via `infisical run --path=/<project> --silent -- <cmd>` or
   the Agent Vault. Never read, echo, or paste a secret value (guardrail #4 still
   applies in ship mode).
 - Push the `feature/*` branch → capture the **Vercel preview URL**.
