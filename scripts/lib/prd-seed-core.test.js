@@ -10,7 +10,7 @@ const {
   DOD_MILESTONE, itemKey, extractAnnotation,
   parseAcceptanceCriteria, buildDodItems, computeDependencyEdges,
   SEEDED_ACCEPTANCE_PREFIX, seededAcceptance,
-  parseFrontmatterValue, sameMilestone,
+  parseFrontmatterValue, sameMilestone, findShippingRule,
 } = require('./prd-seed-core.js');
 
 const tests = [];
@@ -69,13 +69,27 @@ test('itemKey slugifies titles deterministically', () => {
 });
 
 // ── buildDodItems (cp-9f2.4) ─────────────────────────────────────────────────
-test('buildDodItems returns [] when the ship-pipeline rule is absent', () => {
+test('findShippingRule prefers shipping.md', () => {
+  const found = findShippingRule('/rules', p => /shipping.md$|ship-pipeline.md$/.test(p));
+  assert.ok(/shipping.md$/.test(found));
+});
+
+test('findShippingRule falls back to ship-pipeline.md', () => {
+  const found = findShippingRule('/rules', p => /ship-pipeline.md$/.test(p));
+  assert.ok(/ship-pipeline.md$/.test(found));
+});
+
+test('findShippingRule returns null when neither rule exists', () => {
+  assert.strictEqual(findShippingRule('/rules', () => false), null);
+});
+
+test('buildDodItems returns [] when the shipping rule is absent', () => {
   const items = buildDodItems({ shipPipelinePath: '/no/such/rule.md', exists: () => false });
   assert.strictEqual(items.length, 0);
 });
 
 test('buildDodItems returns the standard milestone when the rule exists', () => {
-  const items = buildDodItems({ shipPipelinePath: '/rules/ship-pipeline.md', exists: () => true });
+  const items = buildDodItems({ shipPipelinePath: '/rules/shipping.md', exists: () => true });
   assert.ok(items.length >= 5);
   assert.ok(items.every(i => i.milestone === DOD_MILESTONE));
   assert.ok(items.some(i => /biome/i.test(i.title)));

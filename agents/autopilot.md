@@ -18,7 +18,7 @@ the same model the orchestrator is on — so a build-to-ship run gets a capable
 model (e.g. Opus 4.8), not the old hardcoded Haiku. To pin a fixed tier
 instead, set `model:` to `haiku`, `sonnet`, or `opus` in the frontmatter. Haiku
 is fine for shallow doc/queue chores but underpowered for serious code or a
-full ship-pipeline run — prefer `inherit` (or `opus`) for those.
+full build-to-ship run — prefer `inherit` (or `opus`) for those.
 
 When an orchestrator launches autopilot to drain a **specific** issue, it should read that
 issue's `execution_suggested_model` / `execution_reasoning_effort` **first** and launch
@@ -106,12 +106,12 @@ run (see `beads-conventions` → "Execution metadata"). You act on it in step 4.
   fanned out, but you still work one at a time (guardrail #5). Treat it as info.
 
 - **For code / build tasks:** make the change, then run the **local quality
-  gate** before treating it as done — this is ship-pipeline phases 1–2
-  (`~/.claude/rules/ship-pipeline.md`):
+  gate** before treating it as done — this is shipping-rule phases 1–2
+  (`~/.claude/rules/shipping.md`):
   1. **Lint/format** — `biome check` (or the repo's configured linter; check
      `biome.json` / `package.json` scripts). Must be clean.
   2. **Tier-1 tests** — the repo's `npm test`: Vitest + Supertest, fully mocked,
-     with **AIMock** at the LLM boundary (`~/.claude/rules/testing-tiers.md`).
+     with **AIMock** at the LLM boundary (`~/.claude/rules/testing.md`).
      For the **braynee plugin repo itself**, the Tier-1 gate is
      `node bin/braynee-self-test`.
   A **red gate is a hard stop.** Fix it; if you can't, mark the issue `blocked`
@@ -122,7 +122,7 @@ run (see `beads-conventions` → "Execution metadata"). You act on it in step 4.
 - For investigation tasks: do the research, save findings into the issue
   notes with `bd update <id> --append-notes "..."`.
 
-Keep ship-pipeline order (`~/.claude/rules/ship-pipeline.md`): local build →
+Keep the shipping rule's order (`~/.claude/rules/shipping.md`): local build →
 local test gate → commit on a `feature/*` branch → and **only in ship mode**
 (below) preview deploy → live CI tiers. Never reorder around a red gate.
 
@@ -175,19 +175,19 @@ unblocked downstream work.
 
 By default autopilot is **build-only**: it works code/doc issues, commits on a
 `feature/*` branch, and marks any deploy/credential step `blocked`. Ship mode
-lets it run the **deploy half** of `~/.claude/rules/ship-pipeline.md` — but only
+lets it run the **deploy half** of `~/.claude/rules/shipping.md` — but only
 under a **double opt-in**, and it **never** promotes to production.
 
 **Enabled only when BOTH are true:**
 1. **The run** was launched in ship mode — the orchestrator/user explicitly said
    "ship mode" / "deploy" when invoking autopilot (it is never the default); and
 2. **The issue** authorizes it — it carries a `ship` label, or its acceptance
-   criteria explicitly reference the ship-pipeline / a preview deploy.
+   criteria explicitly reference the shipping rule / a preview deploy.
 
 If only one holds, stay build-only: do the local work, then mark the deploy step
 `blocked --append-notes "ship mode not authorized for <id>"`.
 
-**What ship mode may do (ship-pipeline phases 3–8, in order):**
+**What ship mode may do (shipping-rule phases 3–8, in order):**
 - `gh repo create <name> --private`; work a `feature/*` branch (never `main`).
 - `vercel link` / `vercel git connect` to wire the repo.
 - `vercel env add <NAME> production|preview|development` across all three

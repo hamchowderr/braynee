@@ -198,15 +198,16 @@ if (items.length === 0) {
 
 // cp-9f2.4: append the standard Quality & Deploy (DoD) milestone so the
 // definition-of-done becomes beads on every project, sourced from the global
-// ship-pipeline rule. Skipped via --no-dod, `dod: false` in PRD frontmatter, if
+// shipping rule. Skipped via --no-dod, `dod: false` in PRD frontmatter, if
 // the rule file is absent, or if the PRD already authored that milestone.
-const shipPipelinePath = path.join(os.homedir(), '.claude', 'rules', 'ship-pipeline.md');
+const rulesDir = path.join(os.homedir(), '.claude', 'rules');
+const shipPipelinePath = CORE.findShippingRule(rulesDir);
 if (noDod || fm.dod === false) {
   console.log('DoD milestone: skipped (--no-dod or `dod: false`).');
 } else {
   const dodItems = CORE.buildDodItems({ shipPipelinePath });
   if (dodItems.length === 0) {
-    console.log(`DoD milestone: skipped — ship-pipeline rule not found at ${shipPipelinePath}.`);
+    console.log(`DoD milestone: skipped — no shipping rule in ${rulesDir} (looked for ${CORE.SHIPPING_RULE_NAMES.join(', ')}).`);
   } else if (items.some(i => CORE.sameMilestone(i.milestone, CORE.DOD_MILESTONE))) {
     console.log(`DoD milestone: PRD already defines "${CORE.DOD_MILESTONE}" — not injecting.`);
   } else {
