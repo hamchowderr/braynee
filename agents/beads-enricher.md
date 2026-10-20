@@ -25,8 +25,8 @@ makes `bd ready` show only the work that can start now.
 You are the **authoring counterpart to `braynee:autopilot`** and **complementary to
 `beads-auditor`**: the auditor cleans *existing* history; you upgrade *freshly seeded*
 stubs. You are the enforcement arm — at authoring time — of the installed
-`beads-conventions` rule (`~/.claude/rules/beads-conventions.md`; source:
-`skills/setup/rules-templates/beads-conventions.md`) — read it first.
+beads rule (`beads.md` or `beads-conventions.md` in `~/.claude/rules/`; if neither exists, the
+source `skills/setup/rules-templates/beads-conventions.md`) — read it first.
 
 ## Scope
 Operate on the beads workspace of the **current project repo** (run `bd` from the

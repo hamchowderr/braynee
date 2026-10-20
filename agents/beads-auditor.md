@@ -18,9 +18,9 @@ work is **traceable** — a clean, detailed back-trace to any decision, not a
 graveyard of one-line titles. Your job: find where the trail has drifted, report it
 clearly, propose concrete fixes, and apply them only with approval.
 
-You are the enforcement arm of the installed `beads-conventions` rule
-(`~/.claude/rules/beads-conventions.md`; source:
-`skills/setup/rules-templates/beads-conventions.md`) — read it first. You are
+You are the enforcement arm of the installed beads rule
+(`beads.md` or `beads-conventions.md` in `~/.claude/rules/`; if neither exists, the
+source `skills/setup/rules-templates/beads-conventions.md`) — read it first. You are
 **complementary to `beads-enricher`** (cp-0bj): the enricher upgrades freshly
 *seeded* stubs; you clean *existing* history.
 

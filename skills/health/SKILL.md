@@ -1,21 +1,21 @@
 ---
 name: health
 description: >
-  Run a Brain Check — audit your second brain across Setup, Connections, Beads, Memory, and Inbox.
+  Run a Brain Check — audit your second brain across Setup, Connections, Beads, Memory, Rules, and Inbox.
   Use when user says "brain check", "health check", "system status", "what's broken",
   "what needs attention", "check connections", "what's backed up".
-argument-hint: "[check | setup | connections | beads | memory | inbox | self-test]"
+argument-hint: "[check | setup | connections | beads | memory | rules | inbox | self-test]"
 allowed-tools: Bash(python3:*), Bash(node:*), Bash(curl:*), Bash(braynee-self-test:*)
 ---
 
 # Health Skill — Brain Check
 
-Audits the Braynee system across five areas and surfaces what's broken or backed up right now.
+Audits the Braynee system across six areas and surfaces what's broken or backed up right now.
 
 ## Commands
 
 ```bash
-# Full Brain Check (all five areas)
+# Full Brain Check (all six areas)
 python3 {baseDir}/scripts/health.py check
 
 # Check tools and plugin scripts are installed
@@ -30,6 +30,9 @@ python3 {baseDir}/scripts/health.py beads
 
 # Check Claude's context is current
 python3 {baseDir}/scripts/health.py memory
+
+# Check the instruction layers: budgets, dead references, skipped AGENTS.md, copies
+python3 {baseDir}/scripts/health.py rules [--verbose]
 
 # Surface what's backed up or unprocessed
 python3 {baseDir}/scripts/health.py inbox
@@ -78,6 +81,13 @@ The same self-test runs in CI on every push to main across Ubuntu, macOS, and Wi
 - `~/.claude/CLAUDE.md` reflects current setup?
 - Vault CLAUDE.md up to date?
 - Priorities reflecting actual focus?
+
+**Rules** — Are the instruction layers loading, within budget and consistent? Report-only; it never edits.
+- User `CLAUDE.md` under 5 KB; always-on total (CLAUDE.md + rules without `paths:`) under 40 KB
+- `paths:` globs are project-relative (an absolute glob never matches)
+- No references to rule files, braynee skills or agents, or vault notes that don't exist, in your CLAUDE.md, rules, agents and braynee's shipped text
+- Repos under `BRAYNEE_PROJECTS_DIR` (default `~/code`): AGENTS.md that Claude Code skips because CLAUDE.md lacks `@AGENTS.md`, CLAUDE.md identical to AGENTS.md, CLAUDE.md copied between repos, instruction files over 5 KB
+- MEMORY.md under 200 lines with entries of 150 characters or fewer; feedback memories and untyped memories naming a rule (a correction belongs in the rule's own file)
 
 **Inbox** — What's backed up or unprocessed right now?
 - Inbox items waiting in `Inbox/`
