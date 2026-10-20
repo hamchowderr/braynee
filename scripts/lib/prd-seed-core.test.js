@@ -10,6 +10,7 @@ const {
   DOD_MILESTONE, itemKey, extractAnnotation,
   parseAcceptanceCriteria, buildDodItems, computeDependencyEdges,
   SEEDED_ACCEPTANCE_PREFIX, seededAcceptance,
+  parseFrontmatterValue, sameMilestone,
 } = require('./prd-seed-core.js');
 
 const tests = [];
@@ -125,6 +126,29 @@ test('seededAcceptance records the PRD line as the acceptance, marked as a stub'
 test('seededAcceptance is never empty, even with no description', () => {
   const a = seededAcceptance({ title: 'Core engine', description: '' });
   assert.strictEqual(a, `${SEEDED_ACCEPTANCE_PREFIX}Core engine`);
+});
+
+// ── parseFrontmatterValue / sameMilestone (cp-wgne) ─────────────────────────
+test('an inline comment after false is dropped', () => {
+  assert.strictEqual(parseFrontmatterValue('false  # PRD authors its own DoD'), false);
+  assert.strictEqual(parseFrontmatterValue('true # note'), true);
+  assert.strictEqual(parseFrontmatterValue('3 # three'), 3);
+});
+
+test('a # inside a quoted value is kept', () => {
+  assert.strictEqual(parseFrontmatterValue('"issue #12"'), 'issue #12');
+  assert.strictEqual(parseFrontmatterValue('C#'), 'C#');
+});
+
+test('plain values still coerce', () => {
+  assert.strictEqual(parseFrontmatterValue(' false '), false);
+  assert.strictEqual(parseFrontmatterValue("'acme'"), 'acme');
+});
+
+test('"Quality & Deploy" counts as the DoD milestone', () => {
+  assert.ok(sameMilestone('Quality & Deploy', DOD_MILESTONE));
+  assert.ok(sameMilestone('quality and deploy', DOD_MILESTONE));
+  assert.ok(!sameMilestone('Deploy', DOD_MILESTONE));
 });
 
 // ── runner ───────────────────────────────────────────────────────────────────
