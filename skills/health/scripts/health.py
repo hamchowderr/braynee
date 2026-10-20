@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Brain Check — Setup, Connections, Beads, Memory, Inbox.
+Brain Check — Setup, Connections, Beads, Memory, Rules, Inbox.
 """
 
 import os
@@ -111,6 +111,8 @@ def cmd_check(args, vault: Path):
     cmd_beads(args, vault)
     print()
     cmd_memory(args, vault)
+    print()
+    cmd_rules(args, vault)
     print()
     cmd_inbox(args, vault)
     print()
@@ -479,6 +481,33 @@ def cmd_memory(args, vault: Path):
             warn("Auto memory — no project memory directories found")
 
 
+def memory_dir_for(vault: Path) -> Path:
+    """autoMemoryDirectory from user settings, else the vault's Claude Memory folder."""
+    settings = Path.home() / ".claude" / "settings.json"
+    try:
+        configured = json.loads(settings.read_text(encoding="utf-8")).get("autoMemoryDirectory")
+    except (OSError, ValueError):
+        configured = None
+    return Path(configured).expanduser() if configured else vault / "2. Areas" / "Claude Memory"
+
+
+def cmd_rules(args, vault: Path):
+    print("Rules — Are the instruction layers loading, within budget and consistent?\n")
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import rules_check
+    claude_dir = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude").expanduser()
+    projects_dir = Path(os.environ.get("BRAYNEE_PROJECTS_DIR") or Path.home() / "code").expanduser()
+    rules_check.report(
+        ok, warn,
+        claude_dir=claude_dir,
+        vault=vault,
+        projects_dir=projects_dir,
+        memory_dir=memory_dir_for(vault),
+        plugin_root=Path(__file__).resolve().parents[3],
+        verbose=getattr(args, "verbose", False),
+    )
+
+
 def cmd_inbox(args, vault: Path):
     print("Inbox — What's backed up or unprocessed?\n")
 
@@ -528,6 +557,8 @@ def main():
     sub.add_parser("connections")
     sub.add_parser("beads")
     sub.add_parser("memory")
+    rules_p = sub.add_parser("rules")
+    rules_p.add_argument("--verbose", action="store_true", help="List every finding, not the first 5")
     sub.add_parser("inbox")
 
     args = parser.parse_args()
@@ -547,6 +578,8 @@ def main():
         cmd_beads(args, vault)
     elif args.cmd == "memory":
         cmd_memory(args, vault)
+    elif args.cmd == "rules":
+        cmd_rules(args, vault)
     elif args.cmd == "inbox":
         cmd_inbox(args, vault)
     else:

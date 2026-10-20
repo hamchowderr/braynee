@@ -1047,6 +1047,21 @@ function assertHealth(label, cond) {
     /description:/.test(tripwire) && /name:/.test(tripwire));
   assertHealth('MEMORY.md advice does not tell the user to run /health to resync (cp-ccsh.4)',
     !/run \/health/.test(tripwire));
+
+  // cp-3ocm: the rules check has real unit tests against temp folders; run them.
+  const scriptsDir = path.join(PLUGIN_ROOT, 'skills', 'health', 'scripts');
+  let ut = null;
+  for (const py of ['python3', 'python']) {
+    const { r } = spawnRetry(py, ['-m', 'unittest', 'discover', '-s', scriptsDir, '-p', 'test_*.py'],
+      { encoding: 'utf8', timeout: 60000, cwd: scriptsDir });
+    if (r.error && r.error.code === 'ENOENT') continue;
+    ut = r;
+    break;
+  }
+  assertHealth('health.py wires the rules check into check and the rules subcommand (cp-3ocm)',
+    /cmd_rules\(args, vault\)/.test(hp) && /sub\.add_parser\("rules"\)/.test(hp));
+  assertHealth('rules_check unit tests pass (cp-3ocm)' + (ut ? '' : ' — no python found'),
+    !!ut && ut.status === 0 && /\nOK/.test(ut.stderr || ''));
 }
 log(`  ${results.health.ok} passed | ${results.health.fail} failed`);
 
