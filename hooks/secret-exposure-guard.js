@@ -126,7 +126,7 @@ process.stdin.on('end', () => {
         log.warn(HOOK, `blocked value-printing command: ${hit}`);
         process.stderr.write(
           `BLOCKED: \`${hit}\` prints secret VALUES to stdout — they would land in the transcript, defeating the secrets manager. ` +
-          `Inject at runtime instead (e.g. \`infisical run --recursive --silent -- <cmd>\`). ` +
+          `Inject at runtime instead (e.g. \`infisical run --path=/<project> --silent -- <cmd>\`). ` +
           `To confirm a secret exists, print a MASK only. Set BRAYNEE_ALLOW_SECRET_READS=1 for a deliberate one-off.`
         );
         process.exit(2);
