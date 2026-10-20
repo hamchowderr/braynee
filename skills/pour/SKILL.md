@@ -90,6 +90,22 @@ beads already does:
 - Timer / `gh:run` gates auto-advance via the braynee `beads-gate-check`
   Stop hook — no manual polling.
 
+## Gates in a custom formula
+
+- Write the gate as `[steps.gate]` directly under the `[[steps]]` block it
+  guards. `[steps.<id>.gate]` is silently dropped: cook exits 0 and no gate
+  exists. Check with `bd gate list` after a real `bd mol pour`, not
+  `--dry-run`. A malformed `timeout` duration is dropped the same way.
+- `gh:run` (CI): pour with an empty or non-numeric `await_id` (a workflow
+  filename such as `"ci.yml"` works as a hint). Run `bd gate discover` from
+  the repo, on the branch, soon after `git push`; it matches runs from the
+  last 30 minutes by commit, branch and time.
+- `gh:pr` (merge): `await_id` must be the PR number, so create the gate after
+  the PR exists:
+  `bd gate create --type=gh:pr --blocks <id> --await-id <n>`. With an empty
+  `await_id` it never resolves and reports nothing.
+- `bd gate check` resolves both through an authenticated `gh`.
+
 ## Var quoting reminders
 
 PowerShell and bash both expand differently. The pattern that works

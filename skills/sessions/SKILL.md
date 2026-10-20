@@ -62,6 +62,31 @@ comments: |
 - `## My Notes` section
 - `comments`, `tags`, `rating`, `status` frontmatter fields
 
+## Moving vault-run sessions to a project
+
+Sessions started from the vault for work on a code project are filed under
+the vault, not the project. To move them:
+- **Transcripts** go to `~/.claude/projects/<encoded repo path>/`: the
+  `<id>.jsonl` and its `<id>/` folder (`subagents/*.jsonl`). Find them by
+  scanning the vault project's `.jsonl` files for the repo name. Move the
+  files unchanged; never rewrite `cwd` or anything else inside a transcript.
+- **A still-open session can't be moved**, and Claude Code refuses to delete
+  or overwrite transcript files from inside a session. Copy now and give the
+  user the final `Move-Item -Force` to run after the session closes.
+- **Session notes** go to `Sessions/<Project Name>/`. `session-backfill` skips
+  transcripts whose `cwd` is the vault, so write those notes yourself in the
+  backfill format and link them from the project note's `## Sessions`.
+- If the repo's derived slug doesn't match the project note's `folder:`, add
+  an override in `<vault>/.braynee/project_map.json`
+  (`"my-repo": { "wikilink": "My Repo", "folder": "My Repo" }`). A repo nested
+  one level deeper in `code/` derives a slug that matches nothing.
+- The Stop hooks write a `type: transcript` note to `Sessions/Transcripts/`
+  for vault-run sessions; move it and fix `project` / `project_folder` after
+  the session closes, or the hook recreates it.
+
+Start project sessions from the repo folder so the hooks file them under the
+project from the start.
+
 ## Auto-Sync Hook
 
 Your `~/.claude/settings.json` already has `session-export-qmd.js` and `session-auto-close.js`
