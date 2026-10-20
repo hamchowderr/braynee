@@ -61,6 +61,27 @@ bd close <id>         # Complete work
   deleting a memory does not remove it from history. Nothing private goes in one. Full
   rule: `~/.claude/rules/beads.md` ("No user-specific data in shareable artifacts").
 
+## No user data in shipped code
+
+braynee installs for any user, so a skill works against their clients, channels and
+inboxes. The owner's real client names, contacts, Slack channel or DM IDs and email
+domains are cases to design against, never defaults in code, skills, tests or docs.
+- A per-user value is discovered: read from the user's vault frontmatter (for example
+  `slack_channel:` on a client note), asked once and saved to the note or config, or
+  scanned from a known location.
+- Sample data uses obvious placeholders: `acme-corp`, `jane@example.com`, `CXXXXXXXX`.
+- The same holds for tools: no dependency on a paid service the owner happens to use.
+
+## Dashboard server keeps the code it started with
+
+In server mode the settings-viewer runs one `node server.mjs` on `127.0.0.1:7717`. It
+loads `render.mjs` and the panels once at start and refreshes only data, so after
+deploying changed dashboard code a browser reload still shows the old UI. Restart it:
+find the PID with `Get-NetTCPConnection -LocalPort 7717 -State Listen`, confirm it is
+`node ... server.mjs`, stop it, relaunch `server.mjs` from the installed version's
+`skills/settings-viewer/scripts/` with `-WindowStyle Hidden`, then check the new markup
+with `curl -s http://127.0.0.1:7717`. File mode needs only a hard reload.
+
 ## Session Completion
 
 **When ending a work session**, you MUST complete ALL steps below. Work is NOT complete until `git push` succeeds.
