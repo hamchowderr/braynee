@@ -1,7 +1,7 @@
 // beads-close-gate.js
 // Hook: PreToolUse (Bash) — verify-before-close gate (cp-9f2.5).
 //
-// Per ~/.claude/rules/testing-tiers.md ("verify behavior, not just logic"), a
+// Per ~/.claude/rules/testing.md ("verify behavior, not just logic"), a
 // code/build issue should not be closed on logic-green alone. This intercepts
 // `bd close <id...>` (and `bd update <id> --status closed`) and checks each
 // target issue for a recorded VERIFY step — evidence in the issue NOTES, or
@@ -113,7 +113,7 @@ function main() {
     if (MODE === 'block') {
       log.warn(HOOK, `blocked close without verify evidence: ${ids}`);
       process.stderr.write(
-        `BLOCKED: closing ${ids} without a recorded verify step. Per testing-tiers.md, ` +
+        `BLOCKED: closing ${ids} without a recorded verify step. Per testing.md, ` +
         `record behavior-verify evidence first: \`bd update <id> --append-notes "VERIFY: <what ran + result>"\`, ` +
         `or put it in the close reason (\`--reason "... ; tests green / sandbox-verified"\`). ` +
         `Use \`bd close <id> --force\` to override, or set BRAYNEE_CLOSE_GATE=off to disable this gate.`
@@ -129,7 +129,7 @@ function main() {
         hookEventName: 'PreToolUse',
         additionalContext:
           `beads close-gate: ${ids} ${flagged.length > 1 ? 'are' : 'is'} being closed without a recorded ` +
-          `verify step (no verify evidence in the issue notes or the close --reason). testing-tiers.md asks ` +
+          `verify step (no verify evidence in the issue notes or the close --reason). testing.md asks ` +
           `that behavior — not just logic — be verified before close. If it was verified, record it with ` +
           `\`bd update <id> --append-notes "VERIFY: <what ran + observed result>"\` before closing; if not, ` +
           `the close may be premature. (Set BRAYNEE_CLOSE_GATE=block to hard-block, or =off to silence.)`,
