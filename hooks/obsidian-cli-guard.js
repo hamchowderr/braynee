@@ -22,7 +22,7 @@
 // indistinguishable from success. That is what makes it worth a PreToolUse gate
 // rather than a post-hoc check.
 //
-// SIX rules, in order of how much damage they prevent:
+// SIX blocking rules, in order of how much damage they prevent:
 //
 //   (1) COMMAND SUBSTITUTION inside content=. `content="$(cat note.md)"` is SHORT
 //       as typed and only explodes after the shell expands it — which happens
@@ -51,6 +51,12 @@
 //       line of output is lost. Bash-only; PowerShell resolves the .com fine.
 //       Listed last but checked FIRST, because losing stdout makes every other
 //       failure here undiagnosable.
+//
+// One NOTICE, never a block:
+//   (7) A note DELETE — `delete`, or eval code calling vault.trash / vault.delete
+//       / adapter.remove — gets additionalContext saying to repoint inbound
+//       wikilinks in the same operation. Not blocked: the guard cannot tell
+//       whether the links were already handled.
 //
 // Deliberately NOT enforced: the "at most one .then" rule. A nested .then fails
 // silently too, but detecting nesting needs a JS parser, and a regex that guesses
@@ -290,6 +296,18 @@ function blockReason(cmd, tool) {
   return null;
 }
 
+function noticeReason(cmd) {
+  for (const { toks } of obsidianSegments(cmd)) {
+    const sub = toks[1] ? String(toks[1]).toLowerCase() : '';
+    const code = argValue(toks, 'code');
+    if (sub === 'delete' || (code !== null && /\b(vault\.(trash|delete)|adapter\.remove)\s*\(/.test(code))) {
+      return 'This deletes a vault note. Repoint every inbound wikilink in the same operation: list them first ' +
+        '(`backlinks`, or app.metadataCache.resolvedLinks in eval), then re-check that none are left broken. See the vault rule.';
+    }
+  }
+  return null;
+}
+
 function denyMessage(rule, detail) {
   if (rule === 'bare-obsidian-in-bash') {
     return (
@@ -423,6 +441,12 @@ process.stdin.on('end', () => {
       process.stderr.write(denyMessage(reason.rule, reason.detail));
       process.exit(2);
     }
+    const notice = noticeReason(ti.command);
+    if (notice) {
+      process.stdout.write(JSON.stringify({
+        hookSpecificOutput: { hookEventName: 'PreToolUse', additionalContext: notice },
+      }));
+    }
     process.exit(0);
   } catch (e) {
     log.error(HOOK, `crash: ${e.message}`);
@@ -430,4 +454,4 @@ process.stdin.on('end', () => {
   }
 });
 
-module.exports = { blockReason, obsidianSegments, SAFE_LIMIT, HARD_LIMIT };
+module.exports = { blockReason, noticeReason, obsidianSegments, SAFE_LIMIT, HARD_LIMIT };

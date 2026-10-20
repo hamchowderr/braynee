@@ -38,7 +38,7 @@ function run(command, tool) {
     windowsHide: true,
     env: { ...process.env, BRAYNEE_ALLOW_OBSIDIAN_CLI: '' },
   });
-  return { code: r.status, err: r.stderr || '' };
+  return { code: r.status, err: r.stderr || '', out: r.stdout || '' };
 }
 
 const blocks = (cmd, tool) => run(cmd, tool).code === 2;
@@ -227,6 +227,19 @@ ok('allows a staging copy that mentions no CLI at all',
     env: { ...process.env, BRAYNEE_ALLOW_OBSIDIAN_CLI: '' },
   });
   ok('fails open on unparseable payload', r.status === 0);
+}
+
+// ── (7) note delete — a notice, never a block ───────────────────────────────
+{
+  const notices = (cmd) => { const r = run(cmd); return r.code === 0 && r.out.includes('inbound wikilink'); };
+  ok('delete command gets the wikilink notice and is allowed',
+    notices(`${OBS} delete path="a/b.md"`));
+  ok('eval calling vault.trash gets the notice',
+    notices(`${OBS} eval code="app.vault.trash(app.vault.getAbstractFileByPath('a.md'),true)"`));
+  ok('eval calling adapter.remove gets the notice',
+    notices(`${OBS} eval code="app.vault.adapter.remove('a.md')"`));
+  ok('create prints nothing', run(`${OBS} create path="a/b.md" content="hi"`).out === '');
+  ok('plain eval prints nothing', run(`${OBS} eval code="1+1"`).out === '');
 }
 
 console.log(`obsidian-cli-guard: ${pass} passed, ${fail} failed`);
