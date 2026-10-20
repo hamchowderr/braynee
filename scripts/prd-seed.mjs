@@ -66,12 +66,7 @@ function parseFrontmatter(content) {
   for (const line of fmRaw.split('\n')) {
     const kv = line.match(/^(\w[\w-]*)\s*:\s*(.*)$/);
     if (!kv) continue;
-    let [, k, v] = kv;
-    v = v.trim().replace(/^["'](.*)["']$/, '$1');
-    if (v === 'true') v = true;
-    else if (v === 'false') v = false;
-    else if (/^\d+$/.test(v)) v = parseInt(v);
-    fm[k] = v;
+    fm[kv[1]] = CORE.parseFrontmatterValue(kv[2]);
   }
   return { fm, fmRaw, body: normalized.slice(m[0].length) };
 }
@@ -212,7 +207,7 @@ if (noDod || fm.dod === false) {
   const dodItems = CORE.buildDodItems({ shipPipelinePath });
   if (dodItems.length === 0) {
     console.log(`DoD milestone: skipped — ship-pipeline rule not found at ${shipPipelinePath}.`);
-  } else if (items.some(i => i.milestone === CORE.DOD_MILESTONE)) {
+  } else if (items.some(i => CORE.sameMilestone(i.milestone, CORE.DOD_MILESTONE))) {
     console.log(`DoD milestone: PRD already defines "${CORE.DOD_MILESTONE}" — not injecting.`);
   } else {
     items.push(...dodItems);
