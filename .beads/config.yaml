@@ -93,4 +93,4 @@ validation.on-create: "warn"
 export:
     auto: true
 sync:
-    remote: "git+https://github.com/hamchowderr/braynee.git"
+    remote: chowderr/braynee
