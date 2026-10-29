@@ -1,0 +1,9 @@
+{
+  "name": "toolkit",
+  "description": "General-purpose skills: clean up stuck dev servers and orphaned Node processes, rewrite prose into plain Simplified Technical English with a linter, craft Higgsfield image and video prompts, and grade résumés against a sourced 100-point rubric.",
+  "author": { "name": "Otaku Solutions", "url": "https://otakusolutions.io" },
+  "homepage": "https://github.com/hamchowderr/braynee",
+  "repository": "https://github.com/hamchowderr/braynee",
+  "license": "MIT",
+  "keywords": ["dev-server", "windows", "writing", "ste100", "higgsfield", "resume"]
+}

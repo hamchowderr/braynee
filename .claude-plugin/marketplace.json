@@ -16,7 +16,32 @@
       },
       "repository": "https://github.com/hamchowderr/braynee",
       "license": "MIT",
-      "keywords": ["second-brain", "obsidian", "PARA", "vault", "knowledge-management", "daily-notes", "zettelkasten", "excalidraw"]
+      "keywords": [
+        "second-brain",
+        "obsidian",
+        "PARA",
+        "vault",
+        "knowledge-management",
+        "daily-notes",
+        "zettelkasten",
+        "excalidraw"
+      ]
+    },
+    {
+      "name": "toolkit",
+      "source": "./plugins/toolkit",
+      "description": "General-purpose skills: dev-server cleanup, Simplified Technical English rewriting, Higgsfield prompt craft and résumé grading.",
+      "author": {
+        "name": "Otaku Solutions"
+      },
+      "repository": "https://github.com/hamchowderr/braynee",
+      "license": "MIT",
+      "keywords": [
+        "dev-server",
+        "writing",
+        "higgsfield",
+        "resume"
+      ]
     }
   ]
 }
