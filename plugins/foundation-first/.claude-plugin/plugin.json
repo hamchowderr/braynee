@@ -1,0 +1,10 @@
+{
+  "name": "foundation-first",
+  "version": "1.0.0",
+  "description": "Plain-language skills for building on what already exists: find the foundation, look under the hood, read every source, build on it instead of from scratch, test for free locally, use official libraries, write your rules down, track every job and research again.",
+  "author": { "name": "Otaku Solutions", "url": "https://otakusolutions.io" },
+  "homepage": "https://github.com/hamchowderr/braynee",
+  "repository": "https://github.com/hamchowderr/braynee",
+  "license": "MIT",
+  "keywords": ["foundations", "open-source", "research", "testing", "sdk", "beginners"]
+}

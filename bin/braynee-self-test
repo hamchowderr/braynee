@@ -1159,7 +1159,10 @@ results.ownerdata = { ok: 0, fail: 0, errors: [] };
 
   const offenders = [];
   for (const rel of shipped) {
-    if (SKIP_FILES.has(rel) || !TEXT_RE.test(rel)) continue;
+    // Bundled plugins (plugins/<name>/) carry their own README and plugin.json:
+    // the same authorship exclusion applies to them as to the root ones.
+    const relInPlugin = rel.replace(/^plugins\/[^/]+\//, '');
+    if (SKIP_FILES.has(rel) || SKIP_FILES.has(relInPlugin) || !TEXT_RE.test(rel)) continue;
     if (exportIgnored.some(p => rel === p || rel.startsWith(p + '/'))) continue;
     let text;
     try { text = fs.readFileSync(path.join(PLUGIN_ROOT, rel), 'utf8'); } catch { continue; }
