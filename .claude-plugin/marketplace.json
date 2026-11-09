@@ -42,6 +42,23 @@
         "higgsfield",
         "resume"
       ]
+    },
+    {
+      "name": "foundation-first",
+      "source": "./plugins/foundation-first",
+      "description": "Plain-language skills for building on what already exists: find the foundation, read every source, test for free locally, use official libraries, and more.",
+      "author": {
+        "name": "Otaku Solutions"
+      },
+      "repository": "https://github.com/hamchowderr/braynee",
+      "license": "MIT",
+      "keywords": [
+        "foundations",
+        "open-source",
+        "research",
+        "testing",
+        "sdk"
+      ]
     }
   ]
 }
