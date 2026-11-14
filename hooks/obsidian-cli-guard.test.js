@@ -103,6 +103,14 @@ ok('catches it after && in a chain',
   blocks(`cp a b && ${OBS} create path="a/b.md" content="$(cat note.md)"`));
 ok('catches it on the PowerShell tool too',
   blocks(`${OBS} create path="a/b.md" content="$(cat note.md)"`, 'PowerShell'));
+ok('catches a bare PowerShell variable in content=',
+  blocks(`obsidian create path="a/b.md" content="$c"`, 'PowerShell'));
+ok('catches a variable inside a quoted content= token',
+  blocks(`obsidian create path="a/b.md" "content=$c"`, 'PowerShell'));
+ok('catches a bare bash variable in content=',
+  blocks(`${OBS} create path="a/b.md" content="$NOTE"`));
+ok('allows a literal dollar amount in content=',
+  allows(`${OBS} append path="a/b.md" content="costs $5 a month"`));
 
 // ── ordinary CLI usage is untouched ─────────────────────────────────────────
 ok('allows obsidian help', allows(`${OBS} help`));
