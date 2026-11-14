@@ -133,7 +133,9 @@ function tokenize(segment) {
 
 // Command substitution that the shell expands AFTER this hook has run, so its
 // real size is unknowable here. `timeout 25` is a wrapper, not a substitution.
-const SUBSTITUTION = /\$\(|`|\$\{[A-Za-z_]/;
+// A bare variable counts too: PowerShell `content="$c"` (and bash `"$NOTE"`)
+// expands to the whole note after this hook runs. `$5` (a digit) is left alone.
+const SUBSTITUTION = /\$\(|`|\$\{?[A-Za-z_]/;
 
 // Each pipeline segment that invokes the Obsidian CLI, with its raw text.
 // `||`, `&&`, `;` and `|` all start a new command, so a `cat x | obsidian ...`
@@ -238,7 +240,7 @@ function blockReason(cmd, tool) {
     if (content !== null && SUBSTITUTION.test(content)) {
       return {
         rule: 'substitution-in-content',
-        detail: 'this `content=` is built by shell substitution ($(...), backticks or ${VAR})',
+        detail: 'this `content=` is built by shell substitution ($(...), backticks, $VAR or ${VAR})',
       };
     }
 
