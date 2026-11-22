@@ -16,6 +16,7 @@ const fs = require('fs');
 const { findSessionViaQmd } = require('./lib/qmd-search');
 const log = require(path.join(__dirname, 'lib', 'hook-logger.js'));
 const { findCodeRoot, sessionDir } = require(path.join(__dirname, 'lib', 'is-code-context.js'));
+const { mainRepoRoot } = require(path.join(__dirname, 'lib', 'worktree-root.js'));
 const { isIgnoredFolder } = require(path.join(__dirname, 'lib', 'ignore-folders.js'));
 // cp-7kfh / cp-3hc5: the ONE shared project lookup. findProjectName is aliased
 // to lookupProjectName — matching the other eight consumers — because this file
@@ -548,7 +549,9 @@ process.stdin.on('end', () => {
     // In code mode, derive the project folder + git cwd from the detected
     // code root, not a possibly-nested transient cwd.
     const cwd = codeRoot || eventCwd;
-    const folderName = path.basename(cwd);
+    // A worktree belongs to its main repository's project (cp-4kcp); `cwd`
+    // stays the worktree so the branch below is the worktree's own.
+    const folderName = path.basename(codeRoot ? mainRepoRoot(codeRoot) : cwd);
     const isWorkspace = folderName.toLowerCase() === 'workspace';
     const isVault = norm(eventCwd).startsWith(norm(VAULT_DIR));
 
