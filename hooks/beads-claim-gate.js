@@ -22,6 +22,12 @@
 // still the PRD line prd-seed wrote (SEEDED_ACCEPTANCE_PREFIX) passes lint but
 // has never been authored, so it is blocked too (`bd show <ids> --json`).
 //
+// Execution metadata (cp-hffh): every issue, chores and epics included, must carry
+// the four dispatch keys in REQUIRED_METADATA before it is claimed, because a
+// subagent can't change its model or effort once launched. Keys the claiming
+// command sets itself (--set-metadata k=v, --metadata '{...}') count. A
+// `bd create` without them gets a non-blocking reminder, not a block.
+//
 // Fails OPEN: if bd is missing, errors, times out, prints something that is not
 // JSON, or does not know the id, the claim goes through. This gate exists to stop
 // a plan-less claim, never to stand between the user and a broken bd.
@@ -43,6 +49,22 @@ const { makeBudget } = require(path.join(__dirname, 'lib', 'time-budget.js'));
 const { SEEDED_ACCEPTANCE_PREFIX } = require(path.join(__dirname, '..', 'scripts', 'lib', 'prd-seed-core.js'));
 
 const HOOK = 'beads-claim-gate';
+
+const REQUIRED_METADATA = ['execution_agent_type', 'execution_suggested_model', 'execution_reasoning_effort', 'execution_mode'];
+
+// Metadata keys a command writes itself: every --set-metadata k=v, plus the keys
+// of a --metadata JSON object. An unparsable --metadata value supplies nothing.
+function suppliedMetadata(setList, metadataJson) {
+  const keys = new Set();
+  for (const kv of setList) { const k = String(kv).split('=')[0].trim(); if (k) keys.add(k); }
+  if (typeof metadataJson === 'string' && metadataJson.trim()) {
+    try {
+      const o = JSON.parse(metadataJson);
+      if (o && typeof o === 'object') for (const [k, v] of Object.entries(o)) if (v !== '' && v != null) keys.add(k);
+    } catch { /* unparsable --metadata supplies no keys; the gate then names them all */ }
+  }
+  return keys;
+}
 
 // A bd id: prefix, then one or more -segments, then optional .child suffixes.
 // Tokens that merely look like one (a hyphenated --title value) are harmless:
@@ -119,11 +141,13 @@ function parseClaims(command, cwd) {
     const ids = [];
     const flags = {};
     const positional = [];
+    const setMeta = [];
     for (let k = 0; k < rest.length; k++) {
       const t = rest[k];
       if (t.startsWith('-') && t.length > 1) {
         const m = /^(--?[^=]+)=(.*)$/s.exec(t);
-        if (m) { flags[m[1]] = m[2]; continue; }
+        if (m) { if (m[1] === '--set-metadata') setMeta.push(m[2]); flags[m[1]] = m[2]; continue; }
+        if (t === '--set-metadata') { setMeta.push(rest[k + 1] || ''); k++; continue; }
         if (DIR_FLAGS.has(t)) { segDir = path.resolve(dir || cwd || process.cwd(), toNativePath(rest[k + 1] || '.')); k++; continue; }
         if (BOOL_FLAGS.has(t)) { flags[t] = true; continue; }
         flags[t] = rest[k + 1] === undefined ? '' : rest[k + 1];
@@ -150,6 +174,7 @@ function parseClaims(command, cwd) {
           // A description from a file or stdin cannot be read here — trust it.
           opaqueDescription: flags['--body-file'] !== undefined || flags['--stdin'] === true,
           description: typeof desc === 'string' ? desc : '',
+          metadata: suppliedMetadata(setMeta, flags['--metadata']),
         },
       });
     } else if (flags['--claim'] === true) {
@@ -215,6 +240,48 @@ function seededStubFindings(issues, supplies = {}) {
   return out;
 }
 
+// ── Pure: execution metadata the issue lacks ─────────────────────────────────
+//
+// `issues` is parsed `bd show <ids> --json`. A key counts when the issue already
+// has a non-empty value or the claiming command sets it.
+function metadataFindings(issues, supplies = {}) {
+  const given = supplies.metadata instanceof Set ? supplies.metadata : new Set();
+  const out = [];
+  for (const i of Array.isArray(issues) ? issues : []) {
+    if (!i || !i.id) continue;
+    const md = (i.metadata && typeof i.metadata === 'object') ? i.metadata : {};
+    const lacking = REQUIRED_METADATA.filter((k) => !given.has(k) && (md[k] === undefined || md[k] === null || String(md[k]).trim() === ''));
+    if (lacking.length) out.push({ id: i.id, type: i.issue_type || '', title: i.title || '', missing: lacking.map((k) => `metadata ${k}`) });
+  }
+  return out;
+}
+
+// Pure: does this command create an issue without the required metadata? Returns
+// the missing keys ([] when none are missing or the command creates nothing).
+function createMissingMetadata(command) {
+  if (!command || !/\bbd(?:\.exe)?\b/i.test(command)) return [];
+  const parts = splitSegments(stripHeredocBodies(command));
+  for (let p = 0; p < parts.length; p += 2) {
+    const argv = tokenize(String(parts[p]).trim());
+    let i = 0;
+    while (i < argv.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(argv[i])) i++;
+    if (baseCmd(argv[i] || '').toLowerCase() !== 'bd' || String(argv[i + 1] || '').toLowerCase() !== 'create') continue;
+    const setMeta = [];
+    let mdJson;
+    for (let k = i + 2; k < argv.length; k++) {
+      const t = argv[k];
+      const m = /^(--set-metadata|--metadata)=(.*)$/s.exec(t);
+      if (m) { if (m[1] === '--metadata') mdJson = m[2]; else setMeta.push(m[2]); continue; }
+      if (t === '--metadata') { mdJson = argv[k + 1]; k++; continue; }
+      if (t === '--set-metadata') { setMeta.push(argv[k + 1] || ''); k++; }
+    }
+    const have = suppliedMetadata(setMeta, mdJson);
+    const lacking = REQUIRED_METADATA.filter((key) => !have.has(key));
+    if (lacking.length) return lacking;
+  }
+  return [];
+}
+
 // One finding per id, sections merged, so lint and the seeded check never
 // report the same issue twice.
 function mergeFindings(list) {
@@ -229,21 +296,29 @@ function mergeFindings(list) {
 
 // ── Pure: the message the agent sees ─────────────────────────────────────────
 function blockMessage(findings) {
-  const lines = ['BLOCKED by braynee claim gate: fill Design/Acceptance before starting work.', ''];
+  const all = [...new Set(findings.flatMap((f) => f.missing))];
+  const sections = all.filter((n) => !n.startsWith('metadata '));
+  const lines = [sections.length
+    ? 'BLOCKED by braynee claim gate: fill Design/Acceptance before starting work.'
+    : 'BLOCKED by braynee claim gate: set the execution metadata before starting work.', ''];
   for (const f of findings) {
     lines.push(`${f.id}${f.type ? ` [${f.type}]` : ''}${f.title ? ` "${f.title}"` : ''} is missing: ${f.missing.join(', ')}`);
   }
   lines.push('');
   const id = findings.length === 1 ? findings[0].id : '<id>';
-  lines.push(`Fix: bd update ${id} --design "<how + trade-off>" --acceptance "<verifiable outcomes>"`);
-  const other = [...new Set(findings.flatMap((f) => f.missing))]
-    .filter((n) => !/^(acceptance|success) criteria\b/i.test(n) && n !== 'Design');
+  if (sections.length) lines.push(`Fix: bd update ${id} --design "<how + trade-off>" --acceptance "<verifiable outcomes>"`);
+  const other = sections.filter((n) => !/^(acceptance|success) criteria\b/i.test(n) && n !== 'Design');
   if (other.length) {
     lines.push(`     ${other.map((n) => `"## ${n}"`).join(', ')} must be a heading in the description ` +
       `(bd update ${id} --description "...").`);
   }
+  const metaLacking = [...new Set(findings.flatMap((f) => f.missing).filter((n) => n.startsWith('metadata ')).map((n) => n.slice(9)))];
+  if (metaLacking.length) {
+    lines.push(`Metadata: bd update ${id} ${metaLacking.map((k) => `--set-metadata ${k}=<value>`).join(' ')}`);
+    lines.push('     (agent type, opus|sonnet|haiku, low|medium|high, autonomous|review|plan: see the beads-ops rule)');
+  }
   lines.push('Then run the claim again. For a whole seeded backlog, dispatch the braynee:beads-enricher agent.');
-  lines.push('Chores need no sections. To disable this gate: BRAYNEE_CLAIM_GATE=off.');
+  lines.push('Chores need no sections, but every issue needs the metadata. To disable this gate: BRAYNEE_CLAIM_GATE=off.');
   return lines.join('\n');
 }
 
@@ -278,8 +353,14 @@ async function main() {
     const p = await payload.read();
     if (p.tool && p.tool !== 'Bash' && p.tool !== 'PowerShell') process.exit(0);
     const command = String(p.toolInput.command || '');
+    const createLacking = createMissingMetadata(command);
     const claims = parseClaims(command, p.cwd);
-    if (!claims.length) process.exit(0);
+    if (!claims.length) {
+      if (createLacking.length) {
+        payload.emitContext(`braynee: this bd create sets no ${createLacking.join(', ')}. Every issue needs the four execution metadata keys (beads-ops rule); add --metadata '{...}' now, or the claim gate will refuse the claim.`, 'PreToolUse');
+      }
+      process.exit(0);
+    }
 
     const budget = makeBudget(BUDGET_MS);
     const findings = [];
@@ -295,13 +376,17 @@ async function main() {
       const lint = lintIds(ids, cwd, budget);
       if (lint) findings.push(...blockingFindings(lint, c.supplies || {}));
       const shown = bdJson(`bd show ${ids.join(' ')} --json`, cwd, budget);
-      if (shown) findings.push(...seededStubFindings(Array.isArray(shown) ? shown : [shown], c.supplies || {}));
+      if (shown) {
+        const list = Array.isArray(shown) ? shown : [shown];
+        findings.push(...seededStubFindings(list, c.supplies || {}));
+        findings.push(...metadataFindings(list, c.supplies || {}));
+      }
       // Either call failing (bd errored / timed out) simply contributes nothing: fail open.
     }
 
     const merged = mergeFindings(findings);
     if (!merged.length) process.exit(0);
-    log.warn(HOOK, `blocked claim of ${merged.map((f) => f.id).join(', ')} (missing sections)`);
+    log.warn(HOOK, `blocked claim of ${merged.map((f) => f.id).join(', ')} (missing sections or metadata)`);
     payload.block(blockMessage(merged));
   } catch (e) {
     log.error(HOOK, `crash: ${e.message}`);
@@ -311,4 +396,5 @@ async function main() {
 
 if (require.main === module) main();
 
-module.exports = { parseClaims, blockingFindings, seededStubFindings, mergeFindings, blockMessage, ID_RE };
+module.exports = { parseClaims, blockingFindings, seededStubFindings, metadataFindings, createMissingMetadata,
+  suppliedMetadata, mergeFindings, blockMessage, ID_RE, REQUIRED_METADATA };

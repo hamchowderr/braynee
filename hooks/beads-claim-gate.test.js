@@ -157,6 +157,53 @@ test('description-only sections are explained as headings', () => {
   assert.ok(m.includes('"## Steps to Reproduce"'));
 });
 
+// ── cp-hffh: execution metadata ─────────────────────────────────────────────
+const { metadataFindings, createMissingMetadata, REQUIRED_METADATA } = require('./beads-claim-gate.js');
+const FULL = { execution_agent_type: 'general-purpose', execution_suggested_model: 'sonnet', execution_reasoning_effort: 'medium', execution_mode: 'review' };
+
+test('an issue missing metadata keys is blocked, naming each key', () => {
+  const f = metadataFindings([{ id: 'cp-1', issue_type: 'chore', metadata: { execution_agent_type: 'Explore' } }]);
+  assert.strictEqual(f.length, 1);
+  assert.deepStrictEqual(f[0].missing, ['metadata execution_suggested_model', 'metadata execution_reasoning_effort', 'metadata execution_mode']);
+});
+
+test('an issue with all four keys passes, chores and epics alike', () => {
+  assert.deepStrictEqual(metadataFindings([{ id: 'cp-1', issue_type: 'chore', metadata: FULL }, { id: 'cp-2', issue_type: 'epic', metadata: FULL }]), []);
+});
+
+test('an issue with no metadata at all lists all four keys', () => {
+  const f = metadataFindings([{ id: 'cp-1', issue_type: 'task' }]);
+  assert.strictEqual(f[0].missing.length, REQUIRED_METADATA.length);
+});
+
+test('keys the claiming command sets with --set-metadata count', () => {
+  const cmd = 'bd update cp-1 --claim --set-metadata execution_agent_type=Explore --set-metadata execution_suggested_model=haiku --set-metadata=execution_reasoning_effort=low --set-metadata execution_mode=plan';
+  const c = parseClaims(cmd, CWD);
+  assert.deepStrictEqual(metadataFindings([{ id: 'cp-1', metadata: {} }], c[0].supplies), []);
+});
+
+test('keys in a --metadata JSON on the claim count; a partial set still blocks the rest', () => {
+  const c = parseClaims('bd update cp-1 --claim --metadata \'{"execution_agent_type":"Explore","execution_mode":"plan"}\'', CWD);
+  const f = metadataFindings([{ id: 'cp-1', metadata: {} }], c[0].supplies);
+  assert.deepStrictEqual(f[0].missing, ['metadata execution_suggested_model', 'metadata execution_reasoning_effort']);
+});
+
+test('the block message tells how to set the missing keys', () => {
+  const msg = blockMessage(metadataFindings([{ id: 'cp-1', issue_type: 'chore', metadata: {} }]));
+  assert.ok(msg.includes('--set-metadata execution_agent_type=<value>'), msg);
+  assert.ok(msg.includes('every issue needs the metadata'), msg);
+  assert.ok(!msg.includes('## metadata'), msg);
+  assert.ok(!msg.includes('--design'), msg);
+});
+
+test('bd create without metadata is reported; with all four it is not', () => {
+  assert.deepStrictEqual(createMissingMetadata('bd create "X" --type chore'), REQUIRED_METADATA);
+  const full = JSON.stringify(FULL);
+  assert.deepStrictEqual(createMissingMetadata(`bd create "X" --type chore --metadata '${full}'`), []);
+  assert.deepStrictEqual(createMissingMetadata('bd show cp-1'), []);
+  assert.deepStrictEqual(createMissingMetadata('echo bd create x'), []);
+});
+
 // ── runner ───────────────────────────────────────────────────────────────────
 let passed = 0, failed = 0;
 for (const { name, fn } of tests) {
