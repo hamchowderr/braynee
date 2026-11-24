@@ -4,8 +4,10 @@
 //
 // Usage: node gen-pr-standards.mjs                 write .github/workflows/pr-standards.yml in braynee
 //        node gen-pr-standards.mjs --check         exit 1 if the committed file is out of date
-//        node gen-pr-standards.mjs --caller "<prefix> [<prefix> ...]" [--from owner/repo] [--ref pr-standards-v1]
-//                                                  --from defaults to this plugin checkout's GitHub origin
+//        node gen-pr-standards.mjs --caller "<prefix> [<prefix> ...]" [--from owner/repo] [--ref <tag or sha>]
+//                                                  --from defaults to this plugin checkout's GitHub origin;
+//                                                  --ref defaults to the full commit SHA of tag pr-standards-v1
+//                                                  (a tag can be moved; a SHA can't, and some repos' tests require it)
 //                                                  print a repo's caller workflow to stdout
 
 import fs from 'node:fs';
@@ -25,7 +27,9 @@ if (args.includes('--caller')) {
     const url = execFileSync('git', ['-C', path.join(import.meta.dirname, '..'), 'remote', 'get-url', 'origin'], { encoding: 'utf8' }).trim();
     from = url.replace(/^.*github\.com[:/]/, '').replace(/\.git$/, '');
   }
-  process.stdout.write(callerWorkflow(opt('--caller'), from, opt('--ref', 'pr-standards-v1')));
+  let ref = opt('--ref');
+  if (!ref) ref = execFileSync('git', ['-C', path.join(import.meta.dirname, '..'), 'rev-parse', 'pr-standards-v1^{commit}'], { encoding: 'utf8' }).trim();
+  process.stdout.write(callerWorkflow(opt('--caller'), from, ref));
   process.exit(0);
 }
 
