@@ -1,6 +1,7 @@
 # Dolt database (managed by Dolt, not git)
 dolt/
 embeddeddolt/
+proxieddb/
 
 # Runtime files
 bd.sock
@@ -9,15 +10,8 @@ sync-state.json
 last-touched
 .exclusive-lock
 
-# bd<->CC-task id map (braynee back-prop, cp-ydy) — per-machine runtime state
-cc-task-map.json
-cc-task-map.json.tmp
-
 # Daemon runtime (lock, log, pid)
 daemon.*
-
-# Interactions log (runtime, not versioned)
-interactions.jsonl
 
 # Push state (runtime, per-machine)
 push-state.json
@@ -31,6 +25,8 @@ push-state.json
 # Local version tracking (prevents upgrade notification spam after git ops)
 .local_version
 
+proxied_server_client_info.json
+
 # Worktree redirect file (contains relative path to main repo's .beads/)
 # Must not be committed as paths would be wrong in other clones
 redirect
@@ -38,8 +34,13 @@ redirect
 # Sync state (local-only, per-machine)
 # These files are machine-specific and should not be shared across clones
 .sync.lock
+
+# Workspace operation gate (internal/workspacegate): physical-root gate
+# files live beside the guarded root inside .beads (e.g. dolt.gate.lock)
+*.gate.lock*
 export-state/
 export-state.json
+last_pull
 
 # Ephemeral store (SQLite - wisps/molecules, intentionally not versioned)
 ephemeral.sqlite3
@@ -48,17 +49,15 @@ ephemeral.sqlite3-wal
 ephemeral.sqlite3-shm
 
 # Dolt server management (auto-started by bd)
-dolt-config.log
 dolt-server.pid
 dolt-server.log
 dolt-server.lock
 dolt-server.port
 dolt-server.activity
+dolt-server-config.yaml
 
-# Proxied / shared-server runtime state (per-machine, not versioned) — cp-uif3.3
-last_pull
-proxieddb/
-proxied_server_client_info.json
+# Debug-mode pprof artifacts (written when dolt.debug: true in config.yaml)
+dolt-pprof/
 
 # Corrupt backup directories (created by bd doctor --fix recovery)
 *.corrupt.backup/
@@ -82,6 +81,13 @@ bd.db
 # Config files (metadata.json, config.yaml) are tracked by git by default
 # since no pattern above ignores them.
 
-# Added by bd (missing required patterns)
-*.gate.lock*
-dolt-server-config.yaml
+# Local-only files bd and its tooling write (not part of bd init's template)
+dolt-backup*.json
+.~issues.jsonl.*
+.auto-import-issues.jsonl
+cc-task-map.json
+interactions.jsonl.lock
+# Repo-specific entries kept from the previous file
+cc-task-map.json.tmp
+interactions.jsonl
+dolt-config.log
