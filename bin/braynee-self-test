@@ -652,6 +652,35 @@ function runGuard(payload) {
     (rv.stdout || '').trim() === '' && (rv.status === 0 || rv.status === 2));
 }
 
+// beads-commit-actor.js — SessionStart, writes `export BD_ACTOR=claude` into
+// $CLAUDE_ENV_FILE so bd's prepare-commit-msg hook adds `Executed-By: claude`
+// to agent commits (cp-uif3.5). Contract: write once into a given env file,
+// never on a second run, never over a user-set actor, silent on stdout always.
+{
+  const envDir = fs.mkdtempSync(path.join(os.tmpdir(), 'braynee-envfile-'));
+  const envFile = path.join(envDir, 'env.sh');
+  fs.writeFileSync(envFile, '');
+  const runActor = (extra = {}) => {
+    const env = { ...process.env, CLAUDE_ENV_FILE: envFile, ...extra };
+    delete env.BD_ACTOR; delete env.BEADS_ACTOR; delete env.MASTRA_HOOK_EVENT;
+    Object.assign(env, extra);
+    return spawnSync(process.execPath, [path.join(PLUGIN_ROOT, 'hooks', 'beads-commit-actor.js')], {
+      input: JSON.stringify({ cwd: gateCwd, source: 'startup' }), encoding: 'utf8', timeout: 15_000, env,
+    });
+  };
+  const first = runActor();
+  assertGate('beads-commit-actor writes `export BD_ACTOR=claude` to CLAUDE_ENV_FILE, silently',
+    first.status === 0 && (first.stdout || '') === '' && fs.readFileSync(envFile, 'utf8') === 'export BD_ACTOR=claude\n');
+  runActor();
+  assertGate('beads-commit-actor does not write the line twice (resume/compact)',
+    fs.readFileSync(envFile, 'utf8') === 'export BD_ACTOR=claude\n');
+  fs.writeFileSync(envFile, '');
+  runActor({ BEADS_ACTOR: 'owner' });
+  assertGate('beads-commit-actor leaves a user-set actor alone',
+    fs.readFileSync(envFile, 'utf8') === '');
+  try { fs.rmSync(envDir, { recursive: true, force: true }); } catch {}
+}
+
 // agent-notification-check.js — Notification hook for `claude agents` background
 // sessions (cp-hdpr.1). The hooks.json matcher already filters, but the hook
 // self-gates in JS too, per this repo's rule that config-level gating is never

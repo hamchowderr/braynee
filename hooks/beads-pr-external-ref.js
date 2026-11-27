@@ -16,7 +16,8 @@
 //
 // SCOPE: issue linkage only. Who ran a bd command is signed by
 // beads-actor-sign.js (`--actor claude` / `claude/<agent_type>` on every bd
-// call); the git `Executed-By` commit trailer is still cp-uif3.5 and unbuilt.
+// call); the git `Executed-By` commit trailer comes from bd's own
+// prepare-commit-msg hook, fed BD_ACTOR by beads-commit-actor.js (cp-uif3.5).
 // This hook writes no trailers.
 //
 // Never blocks and never fails a PR: by the time it runs the PR already exists.

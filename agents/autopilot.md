@@ -50,8 +50,11 @@ The loop was first validated 2026-05-27 with a general agent in an isolated
 
 ### 1. Find ready work
 ```bash
-bd ready --json --limit 5
+bd ready --json --limit 5 --exclude-label gt:slot
 ```
+`gt:slot` is the merge slot (step 4, "Serialize conflict-prone steps"): a P0
+coordination bead, not work. Without the exclusion it tops the ready list and you
+would claim the lock as if it were a task.
 Pick the highest-priority issue (lowest priority number — P0 is highest, P4
 lowest). Tie-break by oldest `created_at`.
 
@@ -125,6 +128,29 @@ run (see `beads-conventions` → "Execution metadata"). You act on it in step 4.
 Keep the shipping rule's order (`~/.claude/rules/shipping.md`): local build →
 local test gate → commit on a `feature/*` branch → and **only in ship mode**
 (below) preview deploy → live CI tiers. Never reorder around a red gate.
+
+**Serialize conflict-prone steps with the merge slot.** Several autopilots can run
+at once on one repo (separate worktrees, cloud sessions). The step where they
+collide is bringing `main` into a feature branch and resolving conflicts: two
+agents resolving overlapping conflicts at once produce cascading ones. Hold the
+repo's merge slot around exactly that step, and nothing else:
+```bash
+bd merge-slot create >/dev/null                          # idempotent; makes <prefix>-merge-slot
+bd merge-slot acquire --holder "autopilot:<id>" --wait  # exit 0 = yours; exit 1 = queued
+git fetch origin main && git rebase origin/main         # resolve, re-run the gate
+bd merge-slot release --holder "autopilot:<id>"         # same holder string, ALWAYS
+```
+Behaviour verified on bd 1.3.4: `bd merge-slot check` exits 0 even when no slot
+exists, so don't use it as an existence test; `create` is safe to repeat. Exit 1
+from `acquire --wait` means the slot is held and you were added to the waiters
+list, NOT that you hold it. Release does not hand the slot to the next waiter:
+it just frees it, so a queued agent re-runs `acquire`. When queued, work another
+ready issue and retry later, rather than waiting in-process. `release` refuses a
+holder string that doesn't match the one that acquired. Never resolve conflicts without
+the slot, and never hold it across anything but the rebase and its gate run. If
+you stop with it held (a red gate you can't fix), release it before marking the
+issue `blocked`. A single autopilot on a repo still takes the slot: it is cheap
+and it is what makes a second one safe.
 
 When you commit, **sign it**: keep the `(<issue-id>)` in the subject (so `bd doctor`
 links commit → issue) and add the `Agent-Signature:` trailer with your runtime/model/

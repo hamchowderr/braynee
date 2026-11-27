@@ -124,6 +124,16 @@
           {
             "type": "command",
             "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/beads-commit-actor.js"],
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
             "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/beads-work-surface.js"],
             "timeout": 20,
             "statusMessage": "Surfacing beads work queue..."
