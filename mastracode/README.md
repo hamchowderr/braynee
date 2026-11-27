@@ -8,7 +8,7 @@ hosts cannot drift apart.
 
 ```bash
 mastracode
-/plugins        # Install new plugin -> Local path -> C:/Users/HamCh/code/braynee
+/plugins        # Install new plugin -> Local path -> <path to your braynee checkout>
 ```
 
 Point it at the **repo root**, not this folder. That is deliberate — see below.
@@ -56,12 +56,15 @@ package into `node_modules/` automatically whenever it loads or installs the plu
 running `npm install` here removes that link — re-run Mastra Code (or re-create the link) before
 typechecking, otherwise `tsc` reports `Cannot find module 'mastracode/plugin'`.
 
-## Not yet ported
+## Hooks and agents
 
-- **Hooks** — still configured by hand in `~/.mastracode/hooks.json`; plugins cannot contribute
-  hooks. Tracked in `cp-3o3g.3`, which also retires the interim translation shim.
-- **Agents** — braynee's `agents/*.md` have no declarative analog; Mastra Code has three fixed
-  subagent types (`explore`/`plan`/`execute`). They will become plugin tools declaring
-  `render: { type: 'subagent' }`. Tracked in `cp-3o3g.4`.
+- **Hooks** are wired by hand in `~/.mastracode/hooks.json`: Mastra Code plugins cannot
+  contribute hooks. The scripts read either host's payload, so they are called directly.
+  See [docs/install-mastracode.md](../docs/install-mastracode.md) for the config and a
+  starting set.
+- **Agents** are reached through `/braynee:<agent>` commands that delegate to Mastra Code's
+  built-in subagent tool; custom subagent types are not possible in the shipped SDK.
+
+Install, hooks and coexistence with Claude Code: [docs/install-mastracode.md](../docs/install-mastracode.md).
 
 Full harness reference: the vault note `2. Areas/Development/AI/Mastra/Mastra Code.md`.
