@@ -385,6 +385,17 @@ def cmd_beads(args, vault: Path):
     if not missing and guard_val in GUARD_ON:
         ok(f"traceability: sections complete, guard={guard_val}")
 
+    # ── Off-machine copy (cp-3tk) ────────────────────────────────────────────
+    # Informational only, never a warning: braynee is local-first and a DoltHub
+    # remote is opt-in. A repo with none is healthy.
+    rm = re.search(r"^\s*origin\s+(\S+)", _bd("dolt", "remote", "list"), re.M)
+    if rm:
+        auto = (_bd("config", "get", "dolt.auto-push").strip().splitlines() or [""])[-1]
+        auto_on = auto.strip().lower() in ("true", "1", "yes")
+        print(f"  ·  off-machine copy: {rm.group(1)}{' · auto-push on' if auto_on else ''}")
+    else:
+        print("  ·  off-machine copy: none (optional: braynee scripts/beads-dolthub.mjs)")
+
 
 def cmd_memory(args, vault: Path):
     print("Memory — Is Claude loaded with current context?\n")

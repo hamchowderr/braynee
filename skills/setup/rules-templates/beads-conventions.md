@@ -176,6 +176,14 @@ Survives DB corruption and unclean-shutdown journal damage. **Does not survive
 losing the disk** — the backup sits on the same drive. Off-machine protection
 needs a Dolt remote, which stays opt-in per project rather than mandatory.
 
+For that tier, braynee's `scripts/beads-dolthub.mjs` wires chosen repos to
+DoltHub, one database per repo under an owner you name: it creates the database
+(with `DOLTHUB_API_TOKEN`), runs `bd dolt remote add origin` and the first
+`bd dolt push`, and `--auto-push` turns on bd's own `dolt.auto-push`, which is
+safe only with one writer per database. It never runs unless invoked, skips
+repos with `dolt.local-only`, and never overwrites an existing origin. `/health
+beads` reports which repos have an off-machine copy; none is not a fault.
+
 A backup you have never restored is a hypothesis. Verify with
 `scripts/beads-dr-verify.mjs`, which restores into a throwaway directory and
 compares issue counts. It refuses to report success unless the probe is provably
