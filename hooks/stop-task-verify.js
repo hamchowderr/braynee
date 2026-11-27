@@ -15,6 +15,7 @@
 const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const bdJsonLib = require(path.join(__dirname, 'lib', 'bd-json.js'));
 const os = require('os');
 const log = require(path.join(__dirname, 'lib', 'hook-logger.js'));
 const { makeBudget } = require(path.join(__dirname, 'lib', 'time-budget.js'));
@@ -81,7 +82,9 @@ process.stdin.on('end', () => {
       if (hasBeadsDir) {
         const showJson = run(`bd show ${activeIssue.id} --json`, { cwd });
         if (showJson) {
-          try { bdSaysClosed = JSON.parse(showJson).status === 'closed'; } catch { /* unparseable bd output — leave bdSaysClosed false */ }
+          // bd show --json is a one-element list; `.status` on the array was
+          // always undefined, so a closed issue never cleared the marker.
+          try { const s = bdJsonLib.parse(showJson); bdSaysClosed = (Array.isArray(s) ? s[0] : s)?.status === 'closed'; } catch { /* unparseable bd output — leave bdSaysClosed false */ }
         }
       }
       if (isOld || bdSaysClosed) {
@@ -111,7 +114,7 @@ process.stdin.on('end', () => {
       const raw = run('bd list --json --status in_progress', { cwd });
       if (raw) {
         try {
-          const issues = JSON.parse(raw);
+          const issues = bdJsonLib.parseList(raw);
           inProgressIssues = issues.filter(i => i.status === 'in_progress');
           if (inProgressIssues.length > 0) {
             const list = inProgressIssues.map(i => `    [${i.id}] ${i.title}`).join('\n');

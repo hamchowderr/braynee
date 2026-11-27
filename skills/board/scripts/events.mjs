@@ -15,6 +15,9 @@ import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 
+// bd's v2.0 JSON envelope ({schema_version, data}) or the legacy bare payload (cp-uif3.6).
+const unwrapBd = (v) => (v && typeof v === 'object' && !Array.isArray(v) && 'schema_version' in v && 'data' in v ? v.data : v);
+
 export const CACHE_VERSION = 1;
 
 export function cachePath(prefix) {
@@ -42,7 +45,7 @@ function bdJson(repo, args) {
       cwd: repo, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'],
       maxBuffer: 64 * 1024 * 1024, env: { ...process.env, BD_EXPORT_AUTO: 'false' },
     });
-    const v = JSON.parse(out);
+    const v = unwrapBd(JSON.parse(out));
     return Array.isArray(v) ? v : [];
   } catch {
     return [];

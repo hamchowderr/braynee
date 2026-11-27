@@ -20,6 +20,7 @@
 const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const bdJsonLib = require(path.join(__dirname, 'lib', 'bd-json.js'));
 const log = require(path.join(__dirname, 'lib', 'hook-logger.js'));
 const { makeBudget } = require(path.join(__dirname, 'lib', 'time-budget.js'));
 
@@ -67,7 +68,7 @@ function showIssue(id, cwd) {
     const out = execSync(`bd show ${id} --json`, {
       cwd, encoding: 'utf8', timeout, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true,
     });
-    let j = JSON.parse(out.trim() || 'null');
+    let j = bdJsonLib.parse(out.trim() || 'null');
     if (Array.isArray(j)) j = j[0];
     return j || null;
   } catch { return null; }

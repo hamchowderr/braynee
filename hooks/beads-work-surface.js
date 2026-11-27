@@ -10,11 +10,21 @@
 // ask the user before invoking the beads task-agent or claiming work.
 
 const path = require('path');
+const bdJsonLib = require(path.join(__dirname, 'lib', 'bd-json.js'));
 const { execSync } = require('child_process');
 const log = require(path.join(__dirname, 'lib', 'hook-logger.js'));
 const { findCodeRoot, findBeadsRoot, sessionDir } = require(path.join(__dirname, 'lib', 'is-code-context.js'));
 
 const HOOK = 'beads-work-surface';
+
+// Coordination beads are not work. `bd merge-slot create` makes a P0 task
+// labelled `gt:slot`: it shows in `bd ready` while free and as in_progress while
+// held, so without this filter it would top the ready list and read as a
+// claimed issue (cp-uif3.5). Filtered in JS, not with `--exclude-label`, so an
+// older bd without that flag still gets a surface.
+function isWorkIssue(i) {
+  return !!i && !(Array.isArray(i.labels) && i.labels.includes('gt:slot'));
+}
 
 function run(cmd, opts = {}) {
   try {
@@ -76,8 +86,8 @@ process.stdin.on('end', () => {
     const openRaw = run('bd list --status open --json', { cwd: beadsRoot });
     if (openRaw) {
       try {
-        const open = JSON.parse(openRaw);
-        if (Array.isArray(open)) openCount = open.length;
+        const open = bdJsonLib.parse(openRaw);
+        if (Array.isArray(open)) openCount = open.filter(isWorkIssue).length;
       } catch (e) { log.debug(HOOK, `open-count parse failed: ${e && e.message}`); }
     }
 
@@ -85,7 +95,7 @@ process.stdin.on('end', () => {
     const inProgressRaw = run('bd list --status in_progress --json', { cwd: beadsRoot });
     if (inProgressRaw) {
       try {
-        const inProgress = JSON.parse(inProgressRaw);
+        const inProgress = bdJsonLib.parseList(inProgressRaw).filter(isWorkIssue);
         if (Array.isArray(inProgress) && inProgress.length > 0) {
           const list = inProgress.map(i => `  [${i.id}] ${i.title}`).join('\n');
           process.stdout.write(
@@ -120,7 +130,7 @@ process.stdin.on('end', () => {
     let topReady = null;
     if (readyRaw) {
       try {
-        const ready = JSON.parse(readyRaw);
+        const ready = bdJsonLib.parseList(readyRaw).filter(isWorkIssue);
         if (Array.isArray(ready) && ready.length > 0) {
           readyCount = ready.length;
           topReady = ready[0];
@@ -140,7 +150,7 @@ process.stdin.on('end', () => {
         `Claim atomically with \`bd update <id> --claim\`. Do not start coding without a claimed issue.\n`
       );
       // Multi-line banner showing top ready issues with priority.
-      const bannerLines = JSON.parse(readyRaw).slice(0, 5).map(i =>
+      const bannerLines = bdJsonLib.parseList(readyRaw).filter(isWorkIssue).slice(0, 5).map(i =>
         `• [P${i.priority ?? '?'} ${i.id}] ${trunc(i.title, TITLE_MAX - 6)}`
       );
       process.stderr.write(banner(

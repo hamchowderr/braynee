@@ -26,6 +26,7 @@
 'use strict';
 
 const path = require('path');
+const bdJsonLib = require(path.join(__dirname, 'lib', 'bd-json.js'));
 const log = require(path.join(__dirname, 'lib', 'hook-logger.js'));
 const { findCodeRoot, findBeadsRoot, sessionDir } = require(path.join(__dirname, 'lib', 'is-code-context.js'));
 const { bdOut } = require(path.join(__dirname, 'lib', 'bd-safe.js'));
@@ -63,7 +64,7 @@ function claimedIssue(cwd) {
     const raw = bdOut('bd list --status=in_progress --json', { cwd: codeRoot });
     if (!raw) return null;
     let parsed;
-    try { parsed = JSON.parse(raw); } catch { return null; }
+    try { parsed = bdJsonLib.parse(raw); } catch { return null; }
     const list = Array.isArray(parsed) ? parsed : (parsed && parsed.issues) || [];
     if (!list.length) return null;
     // Cap it: this text is injected into context, and a repo with a dozen claimed

@@ -46,7 +46,9 @@ function run(cmd, args, fallback) {
   try { return execFileSync(cmd, args, { cwd: REPO, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 128 * 1024 * 1024 }); }
   catch { return fallback; }
 }
-const json = (text, fallback) => { try { return JSON.parse(text); } catch { return fallback; } };
+// bd's v2.0 JSON envelope ({schema_version, data}) or the legacy bare payload (cp-uif3.6).
+const unwrapBd = (v) => (v && typeof v === 'object' && !Array.isArray(v) && 'schema_version' in v && 'data' in v ? v.data : v);
+const json = (text, fallback) => { try { return unwrapBd(JSON.parse(text)); } catch { return fallback; } };
 
 // ---- data ---------------------------------------------------------------
 let issues = run('bd', ['export'], '').split('\n').filter(Boolean).map(l => json(l, null))

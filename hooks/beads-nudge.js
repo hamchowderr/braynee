@@ -16,6 +16,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const bdJsonLib = require(path.join(__dirname, 'lib', 'bd-json.js'));
 const os = require('os');
 const { execSync } = require('child_process');
 const log = require(path.join(__dirname, 'lib', 'hook-logger.js'));
@@ -49,7 +50,7 @@ function hasInProgress(beadsRoot) {
     const out = execSync('bd list --status in_progress --json', {
       cwd: beadsRoot, encoding: 'utf8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true
     }).trim();
-    const list = JSON.parse(out);
+    const list = bdJsonLib.parse(out);
     return Array.isArray(list) && list.length > 0;
   } catch {
     return false;

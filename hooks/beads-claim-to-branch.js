@@ -13,6 +13,7 @@
 const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const bdJsonLib = require(path.join(__dirname, 'lib', 'bd-json.js'));
 const log = require(path.join(__dirname, 'lib', 'hook-logger.js'));
 
 const HOOK = 'beads-claim-to-branch';
@@ -73,7 +74,10 @@ process.stdin.on('end', () => {
     let title = issueId, type = 'feature';
     if (showJson) {
       try {
-        const issue = JSON.parse(showJson);
+        // bd show --json is a one-element LIST, not an object: reading .title off
+        // the array always fell back to the bare id and the feature/ prefix.
+        const shown = bdJsonLib.parse(showJson);
+        const issue = (Array.isArray(shown) ? shown[0] : shown) || {};
         title = issue.title || issueId;
         type = (issue.issue_type || issue.type || '').toLowerCase() === 'bug' ? 'fix' : 'feature';
       } catch { /* bd returned unparseable JSON — fall back to the id-only branch name */ }

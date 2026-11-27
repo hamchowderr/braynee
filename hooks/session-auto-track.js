@@ -714,7 +714,7 @@ process.stdin.on('end', () => {
           if (fs.existsSync(beadsDir)) {
             const { execSync } = require('child_process');
             const raw = execSync('bd list --json --all', { cwd, encoding: 'utf8', timeout: 10000, stdio: ['pipe','pipe','ignore'], windowsHide: true });
-            const issues = JSON.parse(raw);
+            const issues = require(path.join(__dirname, 'lib', 'bd-json.js')).parseList(raw);
             const inProgress = issues.filter(i => i.status === 'in_progress');
             const open = issues.filter(i => i.status === 'open');
             if (inProgress.length === 0) {

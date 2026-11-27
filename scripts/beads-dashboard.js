@@ -10,6 +10,7 @@
 const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const bdJsonLib = require(path.join(__dirname, '..', 'hooks', 'lib', 'bd-json.js'));
 const os = require('os');
 const { getProjectsDir } = require('./lib/projects-root.js');
 
@@ -70,7 +71,7 @@ function findBeadsProjects() {
 
 function getProjectIssues(projectPath) {
   try {
-    return JSON.parse(execSync('bd list --json --all', {
+    return bdJsonLib.parse(execSync('bd list --json --all', {
       cwd: projectPath, timeout: 10000, encoding: 'utf8',
       stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true,
     }));

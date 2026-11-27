@@ -40,6 +40,7 @@
 'use strict';
 
 const path = require('path');
+const bdJsonLib = require(path.join(__dirname, 'lib', 'bd-json.js'));
 const log = require(path.join(__dirname, 'lib', 'hook-logger.js'));
 const payload = require(path.join(__dirname, 'lib', 'hook-payload.js'));
 const { splitSegments, tokenize, baseCmd, stripHeredocBodies } = require(path.join(__dirname, 'lib', 'shell-parse.js'));
@@ -333,7 +334,7 @@ function bdJson(cmd, cwd, budget) {
   if (timeout === null) return null;
   const r = runBdSafe(cmd, { cwd, timeout });
   if (!r.ok) return null;
-  try { return JSON.parse(r.out || 'null'); } catch { return null; }
+  try { return bdJsonLib.parse(r.out || 'null'); } catch { return null; }
 }
 
 const q = (s) => JSON.stringify(String(s));

@@ -105,7 +105,7 @@ function persistedIssues(prdLabel, repoDir) {
   }
   let parsed;
   try {
-    parsed = JSON.parse(out.trim() || '[]');
+    parsed = require(path.join(import.meta.dirname, '..', 'hooks', 'lib', 'bd-json.js')).parse(out.trim() || '[]');
   } catch {
     console.error(`Could not parse \`bd list --json\` output from target repo.`);
     return null;
