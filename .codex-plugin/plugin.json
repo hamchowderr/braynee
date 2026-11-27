@@ -1,0 +1,28 @@
+{
+  "name": "braynee",
+  "version": "2.1.35",
+  "description": "Braynee: an Obsidian-backed second brain. Skills, beads guards and session hooks; see docs/codex-compat.md for what runs on Codex.",
+  "author": {
+    "name": "Otaku Solutions"
+  },
+  "homepage": "https://github.com/hamchowderr/braynee",
+  "repository": "https://github.com/hamchowderr/braynee",
+  "license": "MIT",
+  "keywords": [
+    "second-brain",
+    "obsidian",
+    "PARA",
+    "vault",
+    "knowledge-management",
+    "daily-notes",
+    "zettelkasten"
+  ],
+  "skills": "./skills/",
+  "hooks": "./hooks/codex-hooks.json",
+  "interface": {
+    "displayName": "Braynee",
+    "shortDescription": "Obsidian second brain with beads task tracking",
+    "developerName": "Otaku Solutions",
+    "category": "Productivity"
+  }
+}

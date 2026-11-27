@@ -1,0 +1,450 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${PLUGIN_ROOT}/hooks/ensure-obsidian.js\"",
+            "timeout": 20,
+            "statusMessage": "Ensuring Obsidian is running..."
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${PLUGIN_ROOT}/hooks/ensure-dashboard.js\"",
+            "timeout": 60,
+            "async": true
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${PLUGIN_ROOT}/hooks/statusline-resync.js\"",
+            "timeout": 60,
+            "async": true
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${PLUGIN_ROOT}/scripts/vault-orphan-check.mjs\"",
+            "timeout": 30,
+            "statusMessage": "Checking for deleted-but-linked notes...",
+            "async": true
+          }
+        ]
+      },
+      {
+        "matcher": "compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${PLUGIN_ROOT}/hooks/reinject-after-compact.js\"",
+            "timeout": 20
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${PLUGIN_ROOT}/hooks/session-auto-track.js\"",
+            "timeout": 20
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${PLUGIN_ROOT}/hooks/braynee-heartbeat.js\"",
+            "timeout": 60,
+            "async": true
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${PLUGIN_ROOT}/hooks/check-beads-init.js\"",
+            "timeout": 90
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${PLUGIN_ROOT}/hooks/beads-server-heal.js\"",
+            "timeout": 60,
+            "statusMessage": "Checking beads server health..."
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${PLUGIN_ROOT}/hooks/beads-dr-sync.js\"",
+            "timeout": 20
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${PLUGIN_ROOT}/hooks/beads-version-check.js\"",
+            "timeout": 20
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${PLUGIN_ROOT}/hooks/beads-commit-actor.js\"",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${PLUGIN_ROOT}/hooks/beads-work-surface.js\"",
+            "timeout": 20,
+            "statusMessage": "Surfacing beads work queue..."
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${PLUGIN_ROOT}/hooks/check-git-init.js\"",
+            "timeout": 20
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${PLUGIN_ROOT}/hooks/check-testing-setup.js\"",
+            "timeout": 20
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${PLUGIN_ROOT}/hooks/check-no-main-push.js\"",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "node \"${PLUGIN_ROOT}/hooks/beads-actor-sign.js\"",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "node \"${PLUGIN_ROOT}/hooks/branch-name-check.js\"",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "node \"${PLUGIN_ROOT}/hooks/beads-close-gate.js\"",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "node \"${PLUGIN_ROOT}/hooks/beads-claim-gate.js\"",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "node \"${PLUGIN_ROOT}/hooks/prd-seed-gate.js\"",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "node \"${PLUGIN_ROOT}/hooks/commit-format-check.js\"",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "node \"${PLUGIN_ROOT}/hooks/obsidian-cli-guard.js\"",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Bash|Write|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${PLUGIN_ROOT}/hooks/secret-exposure-guard.js\"",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Glob|Grep|Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${PLUGIN_ROOT}/hooks/vault-search-guard.js\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${PLUGIN_ROOT}/hooks/session-end.js\"",
+            "timeout": 20
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${PLUGIN_ROOT}/hooks/memory-reminder.js\"",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${PLUGIN_ROOT}/hooks/beads-nudge.js\"",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${PLUGIN_ROOT}/hooks/context-budget-warn.js\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${PLUGIN_ROOT}/hooks/session-auto-close.js\"",
+            "timeout": 15
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${PLUGIN_ROOT}/hooks/session-export-qmd.js\"",
+            "timeout": 60,
+            "async": true
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${PLUGIN_ROOT}/hooks/session-stop-check.js\"",
+            "timeout": 15
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${PLUGIN_ROOT}/hooks/beads-stop-check.js\"",
+            "timeout": 15
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${PLUGIN_ROOT}/hooks/beads-gate-check.js\"",
+            "timeout": 15
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${PLUGIN_ROOT}/hooks/stop-task-verify.js\"",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${PLUGIN_ROOT}/hooks/pre-compact-snapshot.js\"",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "PostCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${PLUGIN_ROOT}/hooks/post-compact.js\"",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${PLUGIN_ROOT}/hooks/memory-index-sync.js\"",
+            "timeout": 15
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${PLUGIN_ROOT}/hooks/vault-changelog.js\"",
+            "timeout": 60,
+            "async": true
+          }
+        ]
+      },
+      {
+        "matcher": "ExitPlanMode",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${PLUGIN_ROOT}/hooks/plan-capture.js\"",
+            "timeout": 60,
+            "async": true
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit|Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${PLUGIN_ROOT}/hooks/session-note-nudge.js\"",
+            "timeout": 15
+          },
+          {
+            "type": "command",
+            "command": "node \"${PLUGIN_ROOT}/hooks/statusline-state.js\"",
+            "timeout": 60,
+            "async": true
+          }
+        ]
+      },
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${PLUGIN_ROOT}/hooks/commit-cadence-nudge.js\"",
+            "timeout": 60,
+            "async": true
+          }
+        ]
+      },
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${PLUGIN_ROOT}/hooks/beads-claim-to-branch.js\"",
+            "timeout": 60,
+            "async": true
+          }
+        ]
+      },
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${PLUGIN_ROOT}/hooks/beads-status-sync.js\"",
+            "timeout": 60,
+            "async": true
+          }
+        ]
+      },
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${PLUGIN_ROOT}/hooks/beads-todo-reminder.js\"",
+            "timeout": 15
+          }
+        ]
+      },
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${PLUGIN_ROOT}/hooks/beads-dashboard-refresh.js\"",
+            "timeout": 60,
+            "async": true
+          }
+        ]
+      },
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${PLUGIN_ROOT}/hooks/beads-pr-external-ref.js\"",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
+  }
+}

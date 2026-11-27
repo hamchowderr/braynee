@@ -1123,6 +1123,9 @@ results.ownerdata = { ok: 0, fail: 0, errors: [] };
     'LICENSE', 'README.md',
     '.claude-plugin/plugin.json',
     '.claude-plugin/marketplace.json',
+    // Generated from .claude-plugin/plugin.json (scripts/gen-codex-plugin.mjs):
+    // the same publisher name, in Codex's manifest.
+    '.codex-plugin/plugin.json',
     // The user's personal session-backfill overrides. Git-ignored, so the git
     // path already excludes it — named here so the no-git fallback, which cannot
     // read .gitignore, does not false-positive on it in a working checkout. What
@@ -2957,6 +2960,48 @@ function assertMcCmd(label, cond, detail) {
   assertMcCmd('every command targets a valid built-in subagent type', badType.length === 0, badType.join(', '));
 }
 log(`  ${results.mccommands.ok} passed | ${results.mccommands.fail} failed`);
+
+// === Codex CLI surface (cp-268) ===
+// Codex runs a hook as `sh -lc "<command>"` and ignores `args`, so it cannot use
+// hooks/hooks.json as is (every handler would run a bare `node`). It gets
+// hooks/codex-hooks.json, generated from hooks.json. A hook added to hooks.json
+// without regenerating would simply never run on Codex, with no error.
+log('\n=== Codex surface ===');
+results.codex = { ok: 0, fail: 0, errors: [] };
+function assertCodex(label, cond, detail) {
+  if (cond) { results.codex.ok++; log(`  OK: ${label}`); }
+  else { results.codex.fail++; results.codex.errors.push({ test: label, detail }); log(`  FAIL: ${label}${detail ? ' — ' + detail : ''}`); }
+}
+{
+  const gen = path.join(PLUGIN_ROOT, 'scripts', 'gen-codex-plugin.mjs');
+  assertCodex('the Codex generator ships', fs.existsSync(gen));
+  if (fs.existsSync(gen)) {
+    const r = spawnSync(process.execPath, [gen, '--check'], { encoding: 'utf8', timeout: 30_000 });
+    assertCodex('codex-hooks.json and .codex-plugin/plugin.json match their sources', r.status === 0,
+      (r.stdout || r.stderr || '').trim().split('\n')[0]);
+  }
+  let codexHooks = null;
+  try { codexHooks = JSON.parse(fs.readFileSync(path.join(PLUGIN_ROOT, 'hooks', 'codex-hooks.json'), 'utf8')).hooks; } catch { /* reported by the assertion below */ }
+  assertCodex('hooks/codex-hooks.json parses', !!codexHooks);
+  if (codexHooks) {
+    const handlers = Object.values(codexHooks).flat().flatMap(g => g.hooks);
+    const missing = [];
+    const badForm = [];
+    for (const h of handlers) {
+      if ('args' in h) badForm.push(h.command);
+      const m = /^node "\$\{PLUGIN_ROOT\}\/((?:hooks|scripts)\/[^"]+)"$/.exec(h.command);
+      if (!m) { badForm.push(h.command); continue; }
+      if (!fs.existsSync(path.join(PLUGIN_ROOT, m[1]))) missing.push(m[1]);
+    }
+    assertCodex('every Codex hook is one quoted `node "${PLUGIN_ROOT}/..."` command, no args', badForm.length === 0, badForm.slice(0, 3).join(' | '));
+    assertCodex('every Codex hook script exists', missing.length === 0, missing.join(', '));
+  }
+  let manifest = null;
+  try { manifest = JSON.parse(fs.readFileSync(path.join(PLUGIN_ROOT, '.codex-plugin', 'plugin.json'), 'utf8')); } catch { /* reported by the assertion below */ }
+  assertCodex('.codex-plugin/plugin.json points at codex-hooks.json and skills/',
+    !!manifest && manifest.hooks === './hooks/codex-hooks.json' && manifest.skills === './skills/');
+}
+log(`  ${results.codex.ok} passed | ${results.codex.fail} failed`);
 
 // ── Formula steps pass the claim gate ────────────────────────────────────────
 // `bd mol pour` skips validation.on-create and silently drops a step's
