@@ -218,8 +218,12 @@ If only one holds, stay build-only: do the local work, then mark the deploy step
 - `vercel link --yes --scope <team>` to wire the repo. Take `<team>` from the run
   prompt or the issue; if neither names one, mark the deploy step `blocked`
   rather than picking a team (the account may hold client teams).
-  `vercel git connect` is optional: with it, a human merge to `main` deploys
-  production, which is the intended human gate.
+- **Immediately after linking, `vercel git disconnect --yes`, before any push.**
+  `vercel link` connects the GitHub repo on its own, and Vercel makes a new
+  project's FIRST deployment production — so the first push of a feature branch
+  becomes a production deploy (seen in the cp-fs2 re-run, 2026-11-28). Make the
+  project's first deployment the CLI preview below, *then* push. Reconnecting
+  Git (`vercel git connect`) is the owner's call after the run, never autopilot's.
 - **Every CLI deploy passes `--target preview`**: `vercel deploy --yes --target preview`.
   Never a bare `vercel deploy`: on a project with no deployments yet, Vercel makes
   the first one **production** (seen in the cp-fs2 acceptance run, 2026-11-27).

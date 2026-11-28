@@ -897,6 +897,9 @@ function assertAgent(label, cond) {
   assertAgent('autopilot.md ship mode deploys with --target preview and a named --scope (cp-fs2)',
     /vercel deploy --yes --target preview/.test(ap) && /vercel link --yes --scope/.test(ap)
     && !/^- `vercel deploy`(?! --yes --target preview)/m.test(ap));
+  // `vercel link` auto-connects Git; the first push then deploys PRODUCTION (cp-fs2 re-run).
+  assertAgent('autopilot.md ship mode disconnects Vercel Git right after linking, before any push (cp-fs2)',
+    /vercel git disconnect --yes/.test(ap) && /before any push/i.test(ap));
 }
 {
   // cp-ci9.2: the beads-auditor must hold its key contracts — tool-restricted,
