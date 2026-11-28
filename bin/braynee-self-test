@@ -898,8 +898,19 @@ function assertAgent(label, cond) {
     /vercel deploy --yes --target preview/.test(ap) && /vercel link --yes --scope/.test(ap)
     && !/^- `vercel deploy`(?! --yes --target preview)/m.test(ap));
   // `vercel link` auto-connects Git; the first push then deploys PRODUCTION (cp-fs2 re-run).
-  assertAgent('autopilot.md ship mode disconnects Vercel Git right after linking, before any push (cp-fs2)',
+  assertAgent('autopilot.md ship mode checks the Vercel Git link right after linking, before any push (cp-fs2)',
     /vercel git disconnect --yes/.test(ap) && /before any push/i.test(ap));
+  // A chained `vercel link ... && vercel git disconnect` was refused as destructive (cp-fs2 run 4).
+  assertAgent('autopilot.md ship mode disconnects Git only when linked, as its own command (cp-nkv1)',
+    /only if it is\s+linked/i.test(ap) && /own command/i.test(ap)
+    && !/vercel link[^\n]*&&[^\n]*vercel git disconnect/.test(ap));
+  // CLI deploys uploaded .beads/.claude/.agents to Vercel (cp-fs2 run 4).
+  assertAgent('autopilot.md ship mode writes a .vercelignore excluding agent state before the first deploy (cp-pf1d)',
+    /\.vercelignore/.test(ap) && ['.beads/', '.claude/', '.agents/'].every(p => ap.includes('\n  ' + p + '\n')));
+  // Unattended gh pr create was refused even with Bash(gh:*) (cp-fs2 run 4).
+  assertAgent('autopilot.md ship mode names the gh pr create allow rule and blocks with the exact command (cp-6wsn)',
+    /Bash\(gh pr create:\*\)/.test(ap) && /PR not opened: gh pr create refused/.test(ap)
+    && /DONE = PR open \+ CI green \+ live preview/.test(ap));
   // A new project's first deployment is production whatever the flags (cp-fs2 run 3).
   assertAgent('autopilot.md ship mode never makes a Vercel project\'s first deployment (cp-fs2)',
     /only deploy to a vercel project that already has a deployment/i.test(ap) && /no deployments found/i.test(ap));

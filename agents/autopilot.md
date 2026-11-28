@@ -226,12 +226,30 @@ If only one holds, stay build-only: do the local work, then mark the deploy step
 - `vercel link --yes --scope <team>` to wire the repo. Take `<team>` from the run
   prompt or the issue; if neither names one, mark the deploy step `blocked`
   rather than picking a team (the account may hold client teams).
-- **Immediately after linking, `vercel git disconnect --yes`, before any push.**
-  `vercel link` connects the GitHub repo on its own, and Vercel makes a new
-  project's FIRST deployment production — so the first push of a feature branch
-  becomes a production deploy (seen in the cp-fs2 re-run, 2026-11-28). Make the
-  project's first deployment the CLI preview below, *then* push. Reconnecting
-  Git (`vercel git connect`) is the owner's call after the run, never autopilot's.
+- **Right after linking, check the project's Git link, before any push** (cp-nkv1).
+  `vercel link` can connect the GitHub repo on its own, and then every push of a
+  feature branch deploys through Git outside these rules (a Git push made a
+  production deploy in the cp-fs2 re-run, 2026-11-28). Check with
+  `vercel project inspect <project> --scope <team>` (or
+  `vercel api /v9/projects/<project>` and its `link` field). **Only if it is
+  linked**, run `vercel git disconnect --yes` as its **own command** — never
+  chained with `&&` after `vercel link`: the auto-mode classifier refused the
+  chained form as destructive (cp-fs2 run 4), and linking an existing project
+  did not connect Git there, so the disconnect was not needed. If the disconnect
+  is refused, mark the deploy step `blocked` and do not push. Reconnecting Git
+  (`vercel git connect`) is the owner's call after the run, never autopilot's.
+- **Before the first CLI deploy, make sure a `.vercelignore` keeps agent state
+  out of the upload** (cp-pf1d). A CLI deploy uploads the whole working tree;
+  the cp-fs2 run 4 deploys shipped `.beads/` (with `issues.jsonl`), `.claude/`
+  and `.agents/` to Vercel. Create or extend `.vercelignore` at the repo root
+  with at least these lines, and commit it on the feature branch:
+  ```
+  .beads/
+  .claude/
+  .agents/
+  .vercel/
+  .env*
+  ```
 - **Every CLI deploy passes `--target preview`**: `vercel deploy --yes --target preview`.
   Never a bare `vercel deploy`: on a project with no deployments yet, Vercel makes
   the first one **production** (seen in the cp-fs2 acceptance run, 2026-11-27).
@@ -244,13 +262,22 @@ If only one holds, stay build-only: do the local work, then mark the deploy step
   the Agent Vault. Never read, echo, or paste a secret value (guardrail #4 still
   applies in ship mode).
 - Push the `feature/*` branch → capture the **Vercel preview URL**.
+- **Open the PR with `gh pr create --fill --base main --head <branch>`** (cp-6wsn).
+  An unattended `claude -p` run cannot answer a permission prompt, and in the
+  cp-fs2 run 4 auto mode refused `gh pr create` even with `Bash(gh:*)` allowed.
+  Whoever launches an unattended ship run must pre-allow it explicitly:
+  `--allowedTools "Bash(gh pr create:*)" "Bash(gh pr view:*)"` (or the same rules
+  in the project's `.claude/settings.json` `permissions.allow`). If the command is
+  still refused, do not retry or work around it: the branch is pushed, so mark
+  the issue `blocked --append-notes "PR not opened: gh pr create refused; run: gh pr create --fill --base main --head <branch>"`
+  and report that exact command. The run is not DONE until a PR exists.
 - Ensure CI runs the tiers with **AIMock** (copy the block verbatim from
   `mastra-base/.github/workflows/ci.yml`; the image takes `-f <fixtures-dir>`,
   never `-c`).
 - DNS **only if a custom domain is in scope** — Cloudflare scoped
   *Edit-zone-DNS* token + `curl` the CF API. Otherwise use the `*.vercel.app` URL.
 
-**Hard stop — DONE = CI green + live preview.** Report the preview URL and stop.
+**Hard stop — DONE = PR open + CI green + live preview.** Report the preview URL and stop.
 **Never** merge the PR or run a production deploy: prod promotion is human-gated
 and out of band, even in ship mode (guardrail #2).
 
