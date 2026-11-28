@@ -906,7 +906,7 @@ function assertAgent(label, cond) {
     && !/vercel link[^\n]*&&[^\n]*vercel git disconnect/.test(ap));
   // CLI deploys uploaded .beads/.claude/.agents to Vercel (cp-fs2 run 4).
   assertAgent('autopilot.md ship mode writes a .vercelignore excluding agent state before the first deploy (cp-pf1d)',
-    /\.vercelignore/.test(ap) && ['.beads/', '.claude/', '.agents/'].every(p => ap.includes('\n  ' + p + '\n')));
+    /\.vercelignore/.test(ap) && ['.beads/', '.claude/', '.agents/'].every(p => ap.replace(/\r\n/g, '\n').includes('\n  ' + p + '\n')));
   // Unattended gh pr create was refused even with Bash(gh:*) (cp-fs2 run 4).
   assertAgent('autopilot.md ship mode names the gh pr create allow rule and blocks with the exact command (cp-6wsn)',
     /Bash\(gh pr create:\*\)/.test(ap) && /PR not opened: gh pr create refused/.test(ap)
