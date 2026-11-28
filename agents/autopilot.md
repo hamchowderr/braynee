@@ -215,7 +215,18 @@ If only one holds, stay build-only: do the local work, then mark the deploy step
 
 **What ship mode may do (shipping-rule phases 3–8, in order):**
 - `gh repo create <name> --private`; work a `feature/*` branch (never `main`).
-- `vercel link` / `vercel git connect` to wire the repo.
+- `vercel link --yes --scope <team>` to wire the repo. Take `<team>` from the run
+  prompt or the issue; if neither names one, mark the deploy step `blocked`
+  rather than picking a team (the account may hold client teams).
+  `vercel git connect` is optional: with it, a human merge to `main` deploys
+  production, which is the intended human gate.
+- **Every CLI deploy passes `--target preview`**: `vercel deploy --yes --target preview`.
+  Never a bare `vercel deploy`: on a project with no deployments yet, Vercel makes
+  the first one **production** (seen in the cp-fs2 acceptance run, 2026-11-27).
+  Never `--prod`. After each deploy, `vercel inspect <url>` must report target
+  `preview`; if a production deployment appears, stop, mark the issue `blocked`
+  with its URL and id, and do not delete it yourself (deletion is irreversible
+  and the owner's call).
 - `vercel env add <NAME> production|preview|development` across all three
   scopes — values **only** via `infisical run --path=/<project> --silent -- <cmd>` or
   the Agent Vault. Never read, echo, or paste a secret value (guardrail #4 still

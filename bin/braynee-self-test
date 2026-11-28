@@ -893,6 +893,10 @@ function assertAgent(label, cond) {
     /biome check/i.test(ap) && /tier-1/i.test(ap) && /red gate is a hard stop/i.test(ap));
   assertAgent('autopilot.md ship mode is opt-in + prod stays human-gated (cp-9f2.2)',
     /ship mode \(opt-in/i.test(ap) && /double opt-in/i.test(ap) && /human-gated/i.test(ap));
+  // A bare `vercel deploy` on a fresh project goes to PRODUCTION (cp-fs2 run).
+  assertAgent('autopilot.md ship mode deploys with --target preview and a named --scope (cp-fs2)',
+    /vercel deploy --yes --target preview/.test(ap) && /vercel link --yes --scope/.test(ap)
+    && !/^- `vercel deploy`(?! --yes --target preview)/m.test(ap));
 }
 {
   // cp-ci9.2: the beads-auditor must hold its key contracts — tool-restricted,
