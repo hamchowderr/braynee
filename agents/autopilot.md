@@ -215,6 +215,14 @@ If only one holds, stay build-only: do the local work, then mark the deploy step
 
 **What ship mode may do (shipping-rule phases 3–8, in order):**
 - `gh repo create <name> --private`; work a `feature/*` branch (never `main`).
+- **Only deploy to a Vercel project that already has a deployment.** Vercel
+  makes a project's first deployment production no matter how it is made: a
+  bare deploy, a Git push, and `vercel deploy --target preview` all did it in
+  the cp-fs2 runs (2026-11-28). So before deploying, `vercel ls <project> --scope <team>`:
+  if the project does not exist or shows "No deployments found", **do not create
+  or deploy it** — mark the deploy step `blocked --append-notes "needs a first
+  (production) deployment by the owner: vercel project <name> has none"` and stop.
+  Creating a project's first deployment is a production act, so it is human-gated.
 - `vercel link --yes --scope <team>` to wire the repo. Take `<team>` from the run
   prompt or the issue; if neither names one, mark the deploy step `blocked`
   rather than picking a team (the account may hold client teams).
